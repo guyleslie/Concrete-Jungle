@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `rampage` and `brawl` test scenarios; `PEDS` and `TIMING` metrics in the test log.
 - Backlog items CJ-010 to CJ-019 from the playtest feedback, and a recommended order for the next sessions.
 - A crosshair on foot, drawn by the game.
+- `AGENTS.md`, pointing AI coding agents other than Claude to the working notes in `CLAUDE.md`.
 
 ### Changed
 

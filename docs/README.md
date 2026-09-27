@@ -44,3 +44,4 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [CHANGELOG](../CHANGELOG.md) | Notable changes per milestone |
 | [CONTRIBUTING](../CONTRIBUTING.md) | Workflow, coding style, commit and documentation conventions |
 | [CREDITS](../CREDITS.md) | Third-party assets and licences |
+| [CLAUDE](../CLAUDE.md), [AGENTS](../AGENTS.md) | Working notes for AI coding agents (`AGENTS.md` points to `CLAUDE.md`) |
