@@ -1,0 +1,46 @@
+# Documentation
+
+Project documentation for Concrete Jungle. Start with the [architecture overview](architecture.md); the design documents go into each subsystem in depth.
+
+## Overview
+
+| Document | Read it when you want to… |
+|---|---|
+| [Architecture](architecture.md) | understand how the modules fit together, the frame lifecycle, units and conventions |
+| [Testing](testing.md) | run the automated scenarios and interpret their metrics |
+| [Backlog](backlog.md) | see what is planned, its priority and acceptance criteria |
+
+## Design documents
+
+How each subsystem works, why it works that way, and which constants tune it.
+
+| Document | Subsystem |
+|---|---|
+| [City](design/city.md) | Procedural layout, buildings, special structures, street furniture, traffic signals |
+| [Rendering](design/rendering.md) | Camera, render passes, day/night lighting, particles, HUD |
+| [Vehicles](design/vehicles.md) | Vehicle classes, handling model, damage, fire and explosions |
+| [Physics](design/physics.md) | Collision detection, contact solver, breakaway objects, crash consequences |
+| [Traffic](design/traffic.md) | Lane-following traffic, junction rules, recovery after crashes, police driving |
+| [Pedestrians](design/pedestrians.md) | Sidewalk behaviour, crossings, fleeing, knock-downs |
+| [Gameplay](design/gameplay.md) | Player, weapons, wanted level, police response, missions, pickups |
+| [Audio](design/audio.md) | Procedural sound synthesis and file overrides |
+
+## Guides
+
+| Document | Task |
+|---|---|
+| [Building](guides/building.md) | Toolchain setup, build options, troubleshooting |
+| [Adding content](guides/adding-content.md) | New vehicles, characters, weapons, foliage and sounds without code changes |
+
+## Decision records
+
+[Architecture decision records](adr/README.md) capture the significant technical decisions, the context they were made in and their consequences. Read the relevant record before changing a subsystem's fundamental approach.
+
+## Project files
+
+| File | Contents |
+|---|---|
+| [README](../README.md) | Project overview, quick start, controls |
+| [CHANGELOG](../CHANGELOG.md) | Notable changes per milestone |
+| [CONTRIBUTING](../CONTRIBUTING.md) | Workflow, coding style, commit and documentation conventions |
+| [CREDITS](../CREDITS.md) | Third-party assets and licences |

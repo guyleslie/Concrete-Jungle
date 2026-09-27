@@ -1,0 +1,52 @@
+# Changelog
+
+All notable changes to Concrete Jungle are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). There are no public releases yet; version numbers mark development milestones.
+
+## [Unreleased]
+
+Nothing yet.
+
+## [0.2.0] - 2026-09-27
+
+### Added
+
+- Vehicle contact solver (`src/physics.*`) in the style of Box2D v3: contact manifolds with up to two points, speculative contacts, 240 Hz sub-steps, soft push-out, Coulomb friction and speed-dependent restitution ([ADR-0005](docs/adr/0005-vehicle-contact-solver.md)).
+- Breakaway street furniture: lamp and signal posts fall over, hydrants burst, bins and cones fly, phone booths and bus shelters shatter; steel bollards, planters, trees and buildings stop vehicles. Shrubs slow vehicles down and get flattened.
+- Box-shaped collision for benches, picnic tables, bus shelters, dumpsters and planters (benches, picnic tables and bus shelters could previously be driven through).
+- Crash consequences based on delta-V: vehicle damage, driver injury in very hard crashes, motorbike riders thrown off.
+- Sparks and grinding sounds when scraping along walls and other vehicles.
+- Recovery for traffic knocked off its lane: the driver waits until the lane is clear, drives or reverses back to it, and only gives up when the car is badly damaged or recovery takes too long.
+- `crash` and `derby` test scenarios, the `--every` screenshot option, and physics metrics in the test log.
+- Git repository, `.gitattributes`, `CLAUDE.md`.
+- Documentation set: documentation index, architecture overview, design documents for every subsystem, building and content guides, testing guide, architecture decision records, prioritised backlog, this changelog and a contributing guide.
+- `tools/check_docs.py` to validate links in the documentation.
+
+### Changed
+
+- Tyre model runs per physics sub-step: limited yaw authority, saturated friction for sliding cars, static friction, locked wheels for parked cars and wrecks.
+- Vehicle damage now follows delta-V instead of closing speed, so mass matters; ramming parked cars does less damage than before, wall hits slightly more.
+- Traffic cars are knocked into physics after pushing on something for 0.35 s, not only by hard hits.
+- `README.md` restructured into an overview with links to the documentation.
+
+### Fixed
+
+- Vehicles getting stuck after hitting street furniture, with the sprite jumping in place: vehicle-versus-object contacts used an inverted normal and pulled vehicles into the object.
+- Vehicles wedged between obstacles being pushed back and forth by one-at-a-time position corrections.
+- Traffic cars pushing the player's vehicle into walls.
+- Steering flipping direction when the forward speed crossed zero.
+- Knocked traffic cars rocking back and forth because the brake engaged reverse at crawling speed.
+
+## [0.1.0] - 2026-09-26
+
+### Added
+
+- First playable version.
+- Procedurally generated island city with streets, traffic lights, buildings, parks, plazas, parking lots, a police station, a hospital, gate buildings, skybridges and an elevated metro.
+- Real 3D top-down renderer with sun shadows, day/night cycle, dynamic lights and bloom ([ADR-0001](docs/adr/0001-real-3d-top-down-renderer.md)).
+- Lane-following traffic with junction rules ([ADR-0004](docs/adr/0004-kinematic-rail-traffic.md)), police pursuit, pedestrians.
+- Player on foot with six weapons, carjacking, wanted level, arrests, missions and pickups.
+- Data-driven vehicles, characters, weapons and foliage ([ADR-0002](docs/adr/0002-data-driven-content.md)).
+- Procedural audio and procedural placeholder sprites.
+- `--shot` automated test mode.

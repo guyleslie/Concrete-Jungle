@@ -1,53 +1,45 @@
-# Concrete Jungle - notes for Claude
+# Concrete Jungle — working notes for Claude
 
-GTA1/2-style top-down open-city game in C++17 + raylib 6.0 (Windows, w64devkit GCC).
-Player-facing overview, controls and asset formats: README.md. Open work: BACKLOG.md.
+A GTA 1/2-style top-down open-city game in C++17 with raylib 6.0 (Windows, w64devkit GCC). The project documentation is the source of truth; this file only lists how to work here.
+
+## Read first
+
+| Need | Document |
+|---|---|
+| How the code fits together | [docs/architecture.md](docs/architecture.md) |
+| A subsystem in depth | [docs/design/](docs/README.md#design-documents) |
+| What to work on | [docs/backlog.md](docs/backlog.md) |
+| How to verify a change | [docs/testing.md](docs/testing.md) |
+| Why something is the way it is | [docs/adr/](docs/adr/README.md) — do not undo an accepted decision without a new ADR |
+| Workflow, style, commits, documentation rules | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Working with the user
-- The user writes Hungarian: answer in Hungarian. Code, comments and repo docs stay in English
-  (BACKLOG.md is Hungarian - it is the user's working list).
-- Quality bar: consistent, high-quality art (glossy Unlucky Studio style, no flat/cartoon or pixel art);
-  realistic scale 16 px = 1 m; GTA2 fake-3D look.
-- Data driven: new vehicles / characters / weapons / foliage come from `assets/data/*.cfg`,
-  never from code changes. Keep it that way.
-- One topic per session: agree a short spec first (target behaviour, numbers), add a measurable
-  `--shot` scenario, implement, let the user playtest, then tune. Update BACKLOG.md when done.
-- The user watches the test windows - verify with a run before claiming a fix works.
 
-## Build
-- `sh build.sh` - Git Bash, incremental (globs `src/*.cpp`), compiler output in `build/obj/<file>.log`. Preferred.
-- `build.bat` - cmd, full rebuild (~45 s). Must stay CRLF (enforced by .gitattributes).
-- CMake: Ninja only - MinGW Make breaks on the non-ASCII project path (`Programozás`).
-- raylib lives in `E:\Apps\raylib` (`RAYLIB_DIR`). This raylib build has no JPG support: PNG only.
-- A new `.cpp` must be added to `build.bat` and `CMakeLists.txt`.
+- The user writes Hungarian: reply in Hungarian. Code, comments and all repository documents are in English.
+- Quality bar: consistent, high-quality art (glossy, detailed; no flat cartoon or pixel art), realistic scale, the GTA 2 look.
+- Content stays data-driven (`assets/data/*.cfg`).
+- One backlog item per session. Agree a short specification with measurable criteria before coding, measure before and after with a test scenario, and let the user playtest anything that changes the feel.
+- Documentation is part of every change: update the affected documents, the changelog and the backlog in the same commit, following the writing style in CONTRIBUTING.md, and run `python tools/check_docs.py`.
+- The user watches the test windows. Verify with a run before claiming a fix works.
 
-## Test / verify
+## Commands
+
+```bash
+sh build.sh
 ```
-ConcreteJungle.exe --shot build/shots/x.png --frames 1500 [--every 30] --scenario crash
+
+```bash
+./ConcreteJungle.exe --shot build/shots/crash.png --frames 1500 --scenario crash > build/shots/crash.log 2>&1
 ```
-- Scenarios: `foot day drive night nightdrive chase overview title crash derby`.
-- Logs `TRAFFIC:` (speeds, stop reasons, jolts) and `PHYS:` lines (jitter flips, penetration,
-  stuck events, knocked / re-joined traffic); `crash` also logs every `IMPACT`.
-- Screenshot paths must be relative (raylib prepends the working directory). `--every N` saves a series.
-- `crash` = wall grind, head-on, building corner, lamp post, hydrant, bollard, shoving parked cars;
-  `derby` = full throttle through traffic.
 
-## Architecture (where things live)
-| Area | Files | Key facts |
-|---|---|---|
-| Loop / test mode | `main.cpp` | fixed dt 1/60 in `--shot` mode, dt clamped to 1/20 otherwise |
-| Rules, player, HUD | `game.*`, `hud.cpp` | `Game::UpdateVehicles` = AI -> `physics.Step` -> `HandleImpacts` (damage, sfx) -> effects |
-| Vehicle model | `vehicle.*`, `vehicle_types.*` | `VehicleForces` per physics sub-step (engine, brakes, tyres); classes from `vehicles.cfg` |
-| Collisions | `physics.*` | Box2D-v3-style: collide once/frame (speculative), 240 Hz sub-steps, soft push-out, restitution; emits `ImpactEvent`s only |
-| Traffic / police AI | `traffic.*` | traffic runs kinematically "on rails"; a hit knocks it into physics, then it re-joins or gives up. Do NOT go back to physics-driven traffic AI (it jittered and deadlocked) |
-| City | `city_map.*` | procedural blocks, buildings (AABB), street furniture; `ApplyMaterial` sets breakaway strength / soft / box shape |
-| Rendering | `render.*`, `lighting.*`, `particles.*` | real 3D, Camera3D looking straight down; light/emissive passes share the depth buffer; bloom |
-| People | `pedestrian.*` | sidewalk AI, obstacle avoidance |
-| Assets / audio | `assets.*`, `datafile.*`, `sprite_gen.*`, `audio.*` | cfg loaders with fallbacks; procedural placeholder sprites; synthesised sound |
+```bash
+python tools/check_docs.py
+```
 
-Conventions: angle 0 = facing up (-Y), clockwise positive; `Forward(a) = (sin a, -cos a)`, `RightOf(a) = (cos a, sin a)`.
-Masses in tonnes, speeds in px/s (16 px/s = 1 m/s = 3.6 km/h).
+## Environment gotchas
 
-## Harness gotchas
-- Bash heredocs containing quotes fail here: write scripts to the scratchpad and run them.
-- PowerShell needs `-LiteralPath` for the project path (the `á`).
+- The project path contains `á`: PowerShell needs `-LiteralPath`; CMake needs the Ninja generator.
+- `build.bat` must stay CRLF (enforced by `.gitattributes`).
+- raylib prefixes the working directory to screenshot paths: pass relative paths to `--shot`.
+- This raylib build cannot load JPG.
+- For longer scripts (patches, file splicing) write the script to the scratchpad and run it instead of inlining it in a shell command.

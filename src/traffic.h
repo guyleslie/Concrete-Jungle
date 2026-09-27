@@ -10,9 +10,11 @@
 //  there is room beyond it, left turns yield to oncoming traffic, and a right-of-way
 //  tie breaker means two cars can never wait for each other forever.
 //
-//  When something hits a rail car hard enough (collision, explosion, player), it is
-//  KNOCKED off the rail and becomes a normal physics body. The driver brakes to a stop,
-//  then either blends smoothly back onto its lane or abandons the car and walks away.
+//  When something hits a rail car hard enough (collision, explosion) or it keeps pushing
+//  on something, it is KNOCKED off the rail and becomes a normal physics body (see
+//  physics.h). The driver brakes to a stop, blends back onto its lane once the way is
+//  clear, drives or reverses back towards it otherwise, and abandons the car (walks
+//  away) only when it is badly damaged or recovery takes too long.
 //
 //  POLICE are physics driven all the time: they use the lane planner to close in on
 //  the player, ignore red lights, and switch to direct pursuit / ramming on sight.

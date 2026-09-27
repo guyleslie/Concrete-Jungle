@@ -8,7 +8,8 @@
 //    render.*          3D renderer core: camera, render targets, bloom, sprite helpers
 //    lighting.*        day/night cycle
 //    city_map.*        procedural city: tiles, 3D buildings, rail, furniture, signals
-//    vehicle.*         car physics & drawing;  vehicle_types.* class registry
+//    vehicle.*         engine / brake / tyre model & drawing;  vehicle_types.* class registry
+//    physics.*         vehicle collisions: contact generation + sub-stepped impulse solver
 //    traffic.*         traffic & police AI
 //    pedestrian.*      pedestrian AI & drawing
 //    particles.*       smoke, fire, debris, skid marks, decals, flashes
