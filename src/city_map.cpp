@@ -671,6 +671,41 @@ Vector2 CityMap::RandomSidewalkPoint(Rng& r) const {
     }
 }
 
+Vector2 CityMap::RandomSidewalkPointNear(Rng& r, Vector2 centre, float minDist, float maxDist) const {
+    Vector2 best = RandomSidewalkPoint(r);
+    for (int tries = 0; tries < 8; tries++) {
+        // uniform over the ring-shaped area, then snapped to the nearest sidewalk line
+        float a = r.Range(0, 2 * PI), d = sqrtf(r.Range(minDist * minDist, maxDist * maxDist));
+        Vector2 q = centre + Forward(a) * d;
+        int bi = std::clamp((int)(q.x / (BLOCK_PITCH * TILE)), 0, BLOCKS_X - 1);
+        int bj = std::clamp((int)(q.y / (BLOCK_PITCH * TILE)), 0, BLOCKS_Y - 1);
+        Rectangle ring = SidewalkRing(bi, bj);
+        Vector2 p = { Clampf(q.x, ring.x, ring.x + ring.width), Clampf(q.y, ring.y, ring.y + ring.height) };
+        float dl = p.x - ring.x, dr = ring.x + ring.width - p.x, dt = p.y - ring.y, db = ring.y + ring.height - p.y;
+        float m = std::min(std::min(dl, dr), std::min(dt, db));
+        if (m == dl) p.x = ring.x; else if (m == dr) p.x = ring.x + ring.width; else if (m == dt) p.y = ring.y; else p.y = ring.y + ring.height;
+        best = p;
+        float dd = Dist(p, centre);
+        if (dd >= minDist && dd <= maxDist) break;
+    }
+    return best;
+}
+
+bool CityMap::OnCrossing(Vector2 p, float margin, int* walkAxis, int* interI, int* interJ) const {
+    int i = std::clamp((int)roundf((p.x - TILE) / (BLOCK_PITCH * TILE)), 0, INTER_X - 1);
+    int j = std::clamp((int)roundf((p.y - TILE) / (BLOCK_PITCH * TILE)), 0, INTER_Y - 1);
+    Vector2 rel = p - InterCenter(i, j);
+    const float T = (float)TILE, half = 22.0f + margin;         // zebra stripes: 1.5 tiles from the centre, 44 px deep
+    int axis = -1;
+    if (fabsf(rel.x) <= T + margin && fabsf(fabsf(rel.y) - 1.5f * T) <= half) axis = 1;        // across a north-south street
+    else if (fabsf(rel.y) <= T + margin && fabsf(fabsf(rel.x) - 1.5f * T) <= half) axis = 0;   // across an east-west street
+    if (axis < 0) return false;
+    if (walkAxis) *walkAxis = axis;
+    if (interI) *interI = i;
+    if (interJ) *interJ = j;
+    return true;
+}
+
 Vector2 CityMap::RandomRoadPoint(Rng& r, float* angle) const {
     bool horizontal = r.Chance(0.5f);
     int i = r.Int(0, INTER_X - 2), j = r.Int(0, INTER_Y - 1);

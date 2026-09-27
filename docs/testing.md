@@ -37,6 +37,8 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `overview` | A zoomed-out view of the traffic around the player, each car ringed by the reason it is stopped |
 | `crash` | Scripted crash course: grinding along a wall at 35°, reversing, a full-speed head-on hit, a building corner at 45°, a lamp post at about 60 km/h, a hydrant, a steel bollard, and shoving three parked cars into a wall. Every impact is logged. |
 | `derby` | Full throttle through traffic with random steering; reverses when stuck |
+| `rampage` | At 13:00: straight 4 s runs at 50 km/h along the sidewalk walking lines of the blocks around the start, each from a fixed start point, so people have to get out of the way. Run it for 3,600 frames. |
+| `brawl` | At 13:00, on foot with fists: runs up to the nearest person standing (preferring anyone fighting back, not chasing runners) and punches them |
 
 ## Metrics
 
@@ -54,6 +56,17 @@ The run ends by logging:
 | `PHYS` traffic | Knocked off the lane / re-joined / drivers gave up; any car knocked for more than 12 s is listed as `LONG-KNOCKED` | Most knocked cars re-join; no long-knocked cars |
 | `IMPACT` (`crash`) | Contact kind, object, closing speed, delta-V of both bodies, whether an object broke | Plausible delta-V; breakaway objects break |
 | `DEEP` | A body deeper than 3 px in the static world (logged while it happens) | None |
+| `PEDS` fleeing, dodging | Average number of people in the `Flee` and `Dodge` states | Below 1 in `foot` and `day` (nothing is happening) |
+| `PEDS` on the road off a crossing | Average number of people standing or walking on a road tile outside a zebra crossing (not counting people on the ground) | Below 1 in `foot` and `day` |
+| `PEDS` visible | Average number of people on screen, not counting bodies | At least 4 in `foot` and `day` |
+| `PEDS` overlaps | Pairs of people closer than 1.6 body radii, per second | Low; a few in crowded scenes |
+| `PEDS` crossing | Person-seconds spent on a crossing's road part while the crossing traffic has green, split into people who started on green and jaywalkers | Close to 0 in `foot` and `day` |
+| `PEDS` down too long | Person-seconds spent knocked down for more than 1 s beyond their get-up time | 0 |
+| `PEDS` sliding | Share of moving time in which a person's body faces more than 35° away from its motion | Close to 0 % |
+| `PEDS` hits | People hit by traffic and by the player; in `rampage`, people in the car's straight path within 2 s and how many of them were hit | Traffic hits 0 in `foot` and `day`; at least 70 % escape in `rampage` |
+| `PEDS at the end` | People per state and within 30, 60 and 110 m of the player | Most people walking; everyone within 110 m |
+| `PEDS` fights | People who fought back and punches they landed (`brawl`) | Some in `brawl` |
+| `TIMING` | CPU time per frame of the vehicle update, the pedestrian update and the world drawing (CPU side only) | Pedestrians at most 0.5 ms |
 
 ## Baseline
 
@@ -66,6 +79,34 @@ Results on 2026-09-27 after the collision rewrite (1,500 frames each):
 | `chase` | 0 | 5 | 1.7 px | 0 | 4 / 3 / 1 |
 
 For comparison, before the rewrite the `crash` scenario produced 965 position flips, a maximum penetration of 33 px and 1,849 deep frames.
+
+After the pedestrian rework ([CJ-010](backlog.md#cj-010-pedestrian-behaviour), 2026-09-27) the traffic situations in these scenarios differ, because the larger population draws a different random sequence; the physics code itself did not change. New reference values (1,500 frames each):
+
+| Scenario | Position flips | Heading flips | Max penetration | Deep frames | Traffic knocked / re-joined / gave up |
+|---|---|---|---|---|---|
+| `crash` | 11 | 30 | 0.3 px | 0 | 11 / 9 / 1 |
+| `derby` | 3 | 3 | 0.1 px | 0 | 1 / 1 / 0 |
+| `chase` | 1 | 10 | 0.1 px | 0 | 5 / 5 / 0 |
+
+In `drive` the simple autopilot now ends up pressed against a building corner (9 stuck events); it cannot reverse ([CJ-008](backlog.md#cj-008-test-autopilot-improvements)).
+
+### Pedestrians
+
+Before and after CJ-010. `foot` ran 1,500 frames and `rampage` 3,600 frames. The old AI ran 220 people spread over the island; the new one runs 300 around the player.
+
+| Metric | Before (`foot`) | After (`foot`) | Before (`rampage`) | After (`rampage`) |
+|---|---|---|---|---|
+| Fleeing, average | 29.9 | 0.0 | 44.3 | 28.0 |
+| On the road off a crossing, average | 11.7 | 0.0 | 12.1 | 2.5 |
+| Visible, average | 1.3 | 5.9 | 22.7 | 58.0 |
+| Hit by traffic | 7 | 0 | 26 | 23 |
+| In the car's path / escaped | — | — | 55 / 67 % | 136 / 74 % |
+| Down too long | 71 person-s | 0 | 1,015 person-s | 0 |
+| Sliding | 4.0 % | 0.1 % | 4.0 % | 0.1 % |
+| Overlaps per second | 0.04 | 1.6 | 0.8 | 13.8 |
+| Pedestrian CPU time | 0.28 ms | 0.37 ms | 0.26 ms | 0.41 ms |
+
+The overlap count rose with the local density (about five times as many people near the player) and is highest in `rampage`, where crowds run from the car; people still never stay inside each other. Across runs the `rampage` escape rate varied between 72 % and 81 %. In `brawl`, 1–4 tough people fought back per run and landed up to 10 punches.
 
 ## Workflow
 

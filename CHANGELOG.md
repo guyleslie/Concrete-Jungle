@@ -6,7 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Pedestrians predict the motion of vehicles and jump out of their way; they react after a personal reaction time and panic after a close call ([ADR-0006](docs/adr/0006-pedestrian-steering.md)).
+- Anticipatory time-to-collision avoidance between people, the player and street furniture; people walk where they face and turn at a realistic rate.
+- Queueing at the kerb and safe crossing: people only cross on green when they can leave the road in time, check for vehicles, hurry when the lights change, and jaywalk only on a gap.
+- Tough people (about 15 %) hit back when the player punches them.
+- Vehicles drive over people lying on the ground instead of shoving them; blood splatter, blood pools where bodies come to rest, bodies that fade out after about 25 s.
+- Pedestrian grid for neighbour queries, used by pedestrians, traffic and vehicle–pedestrian collisions.
+- `rampage` and `brawl` test scenarios; `PEDS` and `TIMING` metrics in the test log.
+- Backlog items CJ-010 to CJ-019 from the playtest feedback, and a recommended order for the next sessions.
+
+### Changed
+
+- 300 pedestrians live within 110 m of the player instead of 220 spread over the island.
+- Injuries from vehicles grow with the impact energy: about half of the people hit at 36 km/h die, nearly everyone above 45 km/h.
+- Fleeing people choose a direction along the sidewalk, away from walls and out of the path of moving vehicles; panic spreads to bystanders, but only one step.
+- Traffic records where it plans to stop, so pedestrians can predict it.
+- Lying bodies are drawn at real size (they were almost three times too long); standing people are drawn 8 % larger.
+
+### Fixed
+
+- Pedestrians fled from normal passing traffic and ran into the road, where they were hit.
+- Knocked-down pedestrians never got up.
+- Pedestrians slid sideways and did not turn their bodies properly.
+- Pedestrians pushed off their walking line kept walking along the edge of the road.
 
 ## [0.2.0] - 2026-09-27
 

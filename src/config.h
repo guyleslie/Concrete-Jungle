@@ -41,8 +41,13 @@ constexpr float SEA_LEVEL         = -3.0f * M;        // water around the island
 // ---- Population --------------------------------------------------------------------
 constexpr int   TRAFFIC_CARS      = 50;
 constexpr int   PARKED_CARS       = 40;
-constexpr int   PEDESTRIANS       = 220;
+constexpr int   PEDESTRIANS       = 300;
 constexpr int   MAX_POLICE        = 6;
+// People live around the player (like GTA): anyone further than PED_KEEP_RADIUS and
+// off-screen is moved to an off-screen sidewalk point PED_SPAWN_MIN..MAX away.
+constexpr float PED_KEEP_RADIUS   = 110.0f * M;
+constexpr float PED_SPAWN_MIN     = 30.0f * M;
+constexpr float PED_SPAWN_MAX     = 100.0f * M;
 
 // ---- Heights of things (for the 3D renderer) ---------------------------------------
 constexpr float H_DECAL           = 0.15f;

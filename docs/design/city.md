@@ -94,7 +94,7 @@ Each junction runs a 16-second cycle with a random offset:
 | 14–15.5 s | Red | Yellow |
 | 15.5–16 s | Red | Red |
 
-Pedestrians cross only when the green phase has more than 3 s left (see [Pedestrians](pedestrians.md)).
+Pedestrians cross only when the green phase leaves them time to get off the road before the crossing traffic gets green (see [Pedestrians › Crossing the street](pedestrians.md#crossing-the-street)). `OnCrossing` tells whether a point is on a zebra crossing, and which signal axis lets people walk across it.
 
 ## Surfaces
 
@@ -111,5 +111,7 @@ Buildings and solid objects are indexed per tile, so spatial queries only touch 
 | `LineOfSight` | Police spotting the player |
 | `RayCast` | Bullets against buildings and objects |
 | `SignalState`, `GreenTimeLeft` | Traffic and pedestrians at junctions |
+| `OnCrossing` | Whether a point is on a zebra crossing (pedestrian metrics) |
+| `RandomSidewalkPointNear` | Spawning pedestrians around the player |
 
 A pre-rendered minimap (2 px per tile) is built once after generation.

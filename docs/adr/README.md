@@ -11,6 +11,7 @@ An architecture decision record (ADR) captures one significant technical decisio
 | [0003](0003-world-scale.md) | World scale of 16 pixels per metre | Accepted | 2026-09-26 |
 | [0004](0004-kinematic-rail-traffic.md) | Kinematic "rail" traffic | Accepted | 2026-09-26 |
 | [0005](0005-vehicle-contact-solver.md) | Sub-stepped impulse solver for vehicle contacts | Accepted | 2026-09-27 |
+| [0006](0006-pedestrian-steering.md) | Predictive perception and time-to-collision steering for pedestrians | Accepted | 2026-09-27 |
 
 ADRs 0001–0004 were recorded retroactively on 2026-09-27 for decisions made during the first development session.
 

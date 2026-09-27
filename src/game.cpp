@@ -29,7 +29,7 @@ void Game::DebugScenario(const char* name) {
     if (n == "title") return;
     state = GameState::Playing;
     showHelp = false;
-    if (n == "drive" || n == "chase" || n == "nightdrive" || n == "crash" || n == "derby") {
+    if (n == "drive" || n == "chase" || n == "nightdrive" || n == "crash" || n == "derby" || n == "rampage") {
         int best = -1; float bd = 1e9f;
         for (size_t k = 0; k < vehicles.size(); k++)
             if (vehicles[k].active && vehicles[k].driver == DriverType::Parked && Dist(vehicles[k].pos, player.pos) < bd) { bd = Dist(vehicles[k].pos, player.pos); best = (int)k; }
@@ -37,8 +37,10 @@ void Game::DebugScenario(const char* name) {
         if (n == "chase") heat = 3.0f;
         if (n == "crash") autoMode = 1;
         if (n == "derby") autoMode = 2;
+        if (n == "rampage") { autoMode = 3; dn.hour = 13.0f; }
     }
     if (n == "overview") { debugOverview = true; dn.hour = 13.0f; }
+    if (n == "brawl") { autoMode = 4; dn.hour = 13.0f; }
     if (n == "night" || n == "nightdrive") dn.hour = 22.5f;
     if (n == "day") dn.hour = 13.0f;
     cam.Snap(PlayerPos(), player.inVehicle ? CAM_VIEW_IDLE : CAM_VIEW_FOOT);
@@ -75,6 +77,8 @@ void Game::LogTrafficStats() const {
 //          45 degrees, a lamp post, a hydrant, a steel bollard, then shove a row of
 //          abandoned cars against the wall.
 //   derby: full throttle through traffic with random steering, reversing when stuck.
+//   rampage: straight 4 s runs at 50 km/h along the sidewalk walking lines of the blocks
+//            around the start, each run from a fixed start (people have to dodge).
 void Game::AutoPilot(Vehicle& v, VehicleInput& in, float dt) {
     autoT += dt;
     in = VehicleInput{};
@@ -162,6 +166,27 @@ void Game::AutoPilot(Vehicle& v, VehicleInput& in, float dt) {
         }
         return;
     }
+    if (autoMode == 3) {                               // sidewalk rampage
+        const float RUN = 4.0f, SPEED = 50.0f / 3.6f * M;
+        int run = (int)(autoT / RUN);
+        static Vector2 lineP{}; static float lineA = 0;
+        if (run != autoPhase) {
+            autoPhase = run;
+            // blocks around the centre in a fixed order; each run follows one side clockwise
+            static const int order[9][2] = { { 4, 4 }, { 3, 4 }, { 5, 4 }, { 4, 3 }, { 4, 5 }, { 3, 3 }, { 5, 5 }, { 5, 3 }, { 3, 5 } };
+            int bi = order[run % 9][0], bj = order[run % 9][1], side = (run / 9 + run) % 4;
+            lineP = map.SidewalkCorner(bi, bj, side);
+            lineA = side * PI * 0.5f + PI * 0.5f;      // corner 0 -> 1 heads east, 1 -> 2 south, ...
+            place(lineP, lineA);
+            v.vel = Forward(lineA) * SPEED;
+            TraceLog(LOG_INFO, "RAMPAGE run %d block (%d,%d) side %d at t=%.1f", run, bi, bj, side, autoT);
+        }
+        Vector2 n = RightOf(lineA);
+        float e = Dot(v.pos - lineP, n), he = WrapAngle(lineA - v.angle);
+        in.steer = Clampf(-e * 0.03f + he * 2.5f, -1, 1);
+        if (v.speedFwd < SPEED) in.throttle = 1; else in.brake = v.speedFwd > SPEED + 20 ? 0.3f : 0.0f;
+        return;
+    }
     if (autoMode == 2) {                               // demolition derby
         autoTimer -= dt;
         if (autoTimer <= 0) { autoTimer = GRng().Range(0.8f, 2.2f); autoSteer = GRng().Range(-1, 1); }
@@ -174,6 +199,25 @@ void Game::AutoPilot(Vehicle& v, VehicleInput& in, float dt) {
         autoSlow = fabsf(v.speedFwd) < 25 ? autoSlow + dt : 0;
         if (autoSlow > 0.8f) { autoReverse = 1.0f; autoSlow = 0; }
     }
+}
+
+// --scenario brawl: walk up to the nearest person standing and punch them (fists).
+bool Game::BrawlPilot(Vector2& move) {
+    int best = -1; float bd = 30 * M;
+    for (size_t k = 0; k < peds.size(); k++) {
+        const Pedestrian& p = peds[k];
+        if (!p.active || p.state == PedState::Down || p.state == PedState::Dead) continue;
+        float d = Dist(p.pos, player.pos);
+        if (p.state == PedState::Fight) d *= 0.3f;       // deal with whoever fights back first
+        else if (p.state == PedState::Flee) d *= 3.0f;   // and do not chase runners
+        if (d < bd) { bd = d; best = (int)k; }
+    }
+    move = { 0, 0 };
+    if (best < 0) return false;
+    Vector2 to = peds[best].pos - player.pos;
+    player.aim = AngleOf(to);
+    if (Len(to) > 1.0f * M) move = Norm(to);
+    return Len(to) < 1.3f * M;
 }
 
 void Game::PhysDiagnostics(float dt) {
@@ -256,6 +300,75 @@ void Game::LogPhysStats() const {
     }
 }
 
+// Pedestrian behaviour metrics for the --shot scenarios (see docs/testing.md).
+void Game::PedDiagnostics(float dt) {
+    PedDiag& d = pdiag;
+    d.frames++;
+    if (pedThreat.size() < peds.size()) pedThreat.resize(peds.size(), 0.0f);
+    const Vehicle* pv = player.inVehicle && player.vehicle >= 0 ? &vehicles[player.vehicle] : nullptr;
+    for (size_t k = 0; k < peds.size(); k++) {
+        const Pedestrian& p = peds[k];
+        if (!p.active) { pedThreat[k] = 0; continue; }
+        bool lying = p.state == PedState::Down || p.state == PedState::Dead;
+        if (p.state == PedState::Flee) d.flee += 1;
+        if (IsDodging(p)) d.dodge += 1;
+        if (p.state == PedState::Down && p.timer < -1.0f) d.downOverdue += dt;
+        if (lying) { pedThreat[k] = 0; continue; }
+        if (OnScreen(p.pos)) d.visible += 1;
+        // sliding: moving (> 0.4 m/s) while the body faces more than 35 degrees away from the motion
+        if (Len2(p.vel) > (0.4f * M) * (0.4f * M)) {
+            d.moving += dt;
+            if (fabsf(WrapAngle(AngleOf(p.vel) - p.angle)) > 35 * DEG2RAD) d.sliding += dt;
+        }
+        if (map.TileAt(p.pos) == Tile::Road) {
+            int axis, ci, cj;
+            if (!map.OnCrossing(p.pos, 16, &axis, &ci, &cj)) d.offCrossing += 1;
+            else if (map.SignalState(ci, cj, 1 - axis) == SIG_GREEN) {                        // crossing traffic has green
+                if (p.state == PedState::Cross && p.jaywalk) d.jaywalking += dt; else d.againstLights += dt;
+            }
+        }
+        for (size_t o = k + 1; o < peds.size(); o++) {
+            const Pedestrian& q = peds[o];
+            if (q.active && q.state != PedState::Dead && q.state != PedState::Down && Len2(q.pos - p.pos) < (PED_RADIUS * 1.6f) * (PED_RADIUS * 1.6f)) d.overlaps += 1;
+        }
+        // rampage: standing in the straight path of the player's car, reached within 2 s
+        pedThreat[k] = std::max(0.0f, pedThreat[k] - dt);
+        if (pv && pedThreat[k] <= 0 && pv->Speed() > 60) {
+            Vector2 f = Norm(pv->vel), rel = p.pos - pv->pos;
+            float front = OBBProjectRadius(pv->Box(), f), halfW = OBBProjectRadius(pv->Box(), Perp(f));
+            float along = Dot(rel, f), lat = fabsf(Cross(f, rel));
+            if (along > 0 && along - front < pv->Speed() * 2.0f && lat < halfW + PED_RADIUS) { pedThreat[k] = 3.0f; d.threatened++; }
+        }
+    }
+}
+
+void Game::LogPedStats() const {
+    const PedDiag& d = pdiag;
+    float n = (float)std::max(1, d.frames), secs = n / 60.0f;
+    int active = 0;
+    for (const Pedestrian& p : peds) active += p.active;
+    TraceLog(LOG_INFO, "PEDS: %d people | avg fleeing %.2f, dodging %.2f, on the road off a crossing %.2f, visible %.2f",
+             active, d.flee / n, d.dodge / n, d.offCrossing / n, d.visible / n);
+    TraceLog(LOG_INFO, "PEDS: overlaps %.2f per s | still on a crossing at the crossing traffic's green %.1f person-s, jaywalking %.1f person-s | down too long %.1f person-s | sliding %.1f %% of the time moving",
+             d.overlaps / secs, d.againstLights, d.jaywalking, d.downOverdue, d.moving > 0 ? 100.0f * d.sliding / d.moving : 0.0f);
+    TraceLog(LOG_INFO, "PEDS: hit by traffic %d, by the player %d | in the player's path %d, of them hit %d (escaped %.0f %%)",
+             d.trafficHits, d.playerHits, d.threatened, d.threatHits,
+             d.threatened ? 100.0f * (d.threatened - d.threatHits) / d.threatened : 0.0f);
+    int byState[(int)PedState::Dead + 1] = {}, near30 = 0, near60 = 0, near110 = 0;
+    for (const Pedestrian& p : peds) {
+        if (!p.active) continue;
+        byState[(int)p.state]++;
+        float dd = Dist(p.pos, PlayerPos());
+        near30 += dd < 30 * M; near60 += dd < 60 * M; near110 += dd < 110 * M;
+    }
+    TraceLog(LOG_INFO, "PEDS at the end: walk %d wait %d cross %d idle %d wander %d flee %d rejoin %d dodge %d fight %d down %d dead %d | within 30 m %d, 60 m %d, 110 m %d",
+             byState[0], byState[1], byState[2], byState[3], byState[4], byState[5], byState[6], byState[7], byState[8], byState[9], byState[10], near30, near60, near110);
+    TraceLog(LOG_INFO, "PEDS: fought back %d times, landed %d punches on the player (player health %.0f)", pedFights, pedPunches, player.health);
+    float cf = (float)std::max(1, cpuFrames);
+    TraceLog(LOG_INFO, "TIMING: CPU per frame - vehicles %.3f ms, pedestrians %.3f ms, world drawing %.3f ms",
+             cpuVehicles * 1000.0 / cf, cpuPeds * 1000.0 / cf, cpuDraw * 1000.0 / cf);
+}
+
 void Game::Unload() {
     renderer.Unload();
     map.UnloadMinimap();
@@ -285,6 +398,7 @@ int Game::SpawnPed(Vector2 pos, int skin, bool fleeing) {
 void Game::NewGame() {
     Rng& r = GRng();
     vehicles.clear(); vehicles.reserve(256);
+    deathSpots.clear();
     peds.clear(); peds.reserve(400);
     pickups.clear(); toasts.clear();
     fx.Clear();
@@ -321,14 +435,17 @@ void Game::NewGame() {
         int idx = SpawnVehicle(skin, { 0, 0 }, 0, DriverType::Traffic);
         if (!AIPlaceOnRoad(*this, vehicles[idx], { WORLD_W * 0.5f, WORLD_H * 0.5f }, 0, 1e9f, false)) vehicles[idx].active = false;
     }
-    // ---- pedestrians ----
-    for (int i = 0; i < PEDESTRIANS; i++) SpawnPed(map.RandomSidewalkPoint(r), r.Int(0, (int)gAssets.peds.size() - 1));
-
     // ---- player: on foot at the central square, a sports car waiting at the curb ----
     player = PlayerState{};
     int cb = BLOCKS_X / 2, cbj = BLOCKS_Y / 2;
     Rectangle ring = map.SidewalkRing(cb, cbj);
     player.pos = { ring.x + ring.width * 0.45f, ring.y + ring.height };
+
+    // ---- pedestrians: around the player ----
+    for (int i = 0; i < PEDESTRIANS; i++) {
+        Vector2 at = map.RandomSidewalkPointNear(r, player.pos, 0, PED_SPAWN_MAX);
+        SpawnPed(Dist(at, player.pos) > 1.5f * M ? at : map.RandomSidewalkPointNear(r, player.pos, 6 * M, PED_SPAWN_MAX), r.Int(0, (int)gAssets.peds.size() - 1));
+    }
     player.aim = player.feetAngle = 0;
     size_t nw = gAssets.weapons.size();
     player.clip.assign(nw, 0); player.ammo.assign(nw, 0); player.owned.assign(nw, 0);
@@ -392,7 +509,7 @@ void Game::Scare(Vector2 where, float radius) {
     for (Pedestrian& p : peds)
         if (p.active && Len2(p.pos - where) < radius * radius) {
             if (p.state != PedState::Flee && GRng().Chance(0.05f)) audio.Play(Sfx::Scream, p.pos, 0.35f, GRng().Range(0.85f, 1.3f));
-            ScarePed(p, where, GRng().Range(4, 7));
+            AlarmPed(p, where, GRng().Range(4, 7), false);          // runs after their reaction time
         }
     for (Vehicle& v : vehicles)
         if (v.active && v.driver == DriverType::Traffic && Len2(v.pos - where) < radius * radius) v.ai.panic = 8;
@@ -483,11 +600,13 @@ void Game::DamagePed(int idx, float dmg, Vector2 dir, bool byPlayer, bool knockD
         KnockDownPed(p, d * std::min(260.0f, 60 + dmg * 3));
         if (p.health <= 0) {
             p.state = PedState::Dead; p.deadTime = 0;
-            fx.AddDecal(p.pos + d * 8, DECAL_BLOOD, 1.6f * M, GRng().Range(0, 6), 40);
+            fx.AddDecal(p.pos + d * 8, DECAL_BLOOD, 0.9f * M, GRng().Range(0, 6), 60);   // splash; the pool forms where the body stops
+            deathSpots.push_back({ p.pos, time });
+            if (deathSpots.size() > 32) deathSpots.erase(deathSpots.begin());
             if (byPlayer) { kills++; Crime(1.0f, p.pos); }
         } else if (byPlayer) Crime(0.35f, p.pos);
     } else {
-        ScarePed(p, p.pos - d * 20, 6);
+        if (p.state != PedState::Fight) ScarePed(p, p.pos - d * 20, 6);   // a fighter keeps fighting (see ProvokePed)
         if (byPlayer) Crime(0.3f, p.pos);
     }
     if (GRng().Chance(0.5f)) audio.Play(Sfx::Scream, p.pos, 0.5f, GRng().Range(0.85f, 1.3f));
@@ -547,9 +666,16 @@ void Game::UpdatePlaying(float dt) {
     if (state == GameState::Playing) {
         if (player.inVehicle) UpdatePlayerDriving(dt); else UpdatePlayerOnFoot(dt);
     }
+    double t0 = GetTime();
     UpdateVehicles(dt);
+    double t1 = GetTime();
     if (debugContacts) PhysDiagnostics(dt);
+    double t2 = GetTime();
     UpdatePeds(dt);
+    if (debugContacts) {
+        cpuVehicles += t1 - t0; cpuPeds += GetTime() - t2; cpuFrames++;
+        PedDiagnostics(dt);
+    }
     UpdatePolice(dt);
     UpdateSpawning(dt);
     UpdateMission(dt);
@@ -606,9 +732,10 @@ void Game::UpdatePlayerOnFoot(float dt) {
     if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN)) mv.y += 1;
     if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) mv.x -= 1;
     if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) mv.x += 1;
-    P.running = IsKeyDown(KEY_LEFT_SHIFT);
+    P.running = IsKeyDown(KEY_LEFT_SHIFT) || autoMode == 4;
     float speed = P.running ? 6.5f * M : 4.0f * M;
     if (P.reloadTimer > 0) speed *= 0.6f;
+    bool autoAttack = autoMode == 4 && BrawlPilot(mv);
     Vector2 want = Len2(mv) > 0 ? Norm(mv) * speed : V2(0, 0);
     P.vel = LerpV(P.vel, want, Damp(12, dt));
 
@@ -618,7 +745,9 @@ void Game::UpdatePlayerOnFoot(float dt) {
     bool aiming = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) || IsMouseButtonDown(MOUSE_BUTTON_LEFT) || aimHold > 0;
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) aimHold = 0.8f; else aimHold = std::max(0.0f, aimHold - dt);
     float spd = Len(P.vel);
-    if (aiming) {
+    if (autoMode == 4) {
+        aiming = true;                                   // BrawlPilot has set the aim
+    } else if (aiming) {
         Vector2 aimPt = cam.ScreenToGround(GetMousePosition(), H_PED * 0.8f);
         if (Dist(aimPt, P.pos) > 4) P.aim += WrapAngle(AngleOf(aimPt - P.pos) - P.aim) * Damp(25, dt);
     } else if (spd > 8) {
@@ -705,6 +834,7 @@ void Game::UpdatePlayerOnFoot(float dt) {
     }
     bool wantFire = W.kind == WeaponKind::Auto ? IsMouseButtonDown(MOUSE_BUTTON_LEFT) : IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     if (W.kind == WeaponKind::Melee) wantFire = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    if (autoAttack) wantFire = true;
     if (wantFire && P.fireCooldown <= 0 && P.reloadTimer <= 0) {
         if (W.kind == WeaponKind::Melee) {
             MeleeHit();
@@ -793,7 +923,10 @@ void Game::MeleeHit() {
         Vector2 rel = p.pos - player.pos;
         float d = Len(rel);
         if (d > W.rangePx + PED_RADIUS + PLAYER_RADIUS || Dot(rel / std::max(d, 0.01f), f) < 0.45f) continue;
+        bool wasFighting = p.state == PedState::Fight;
         DamagePed((int)i, W.damage, f, true, GRng().Chance(W.sound == "knife" ? 0.2f : 0.45f));
+        ProvokePed(p, *this);
+        if (!wasFighting && p.state == PedState::Fight) pedFights++;
         hit = true;
     }
     for (size_t i = 0; i < vehicles.size(); i++) {
@@ -871,6 +1004,7 @@ void Game::UpdatePlayerDriving(float dt) {
 //  Vehicles: AI, physics, fire, wreck clean-up
 // -------------------------------------------------------------------------------------
 void Game::UpdateVehicles(float dt) {
+    pedGrid.Build(peds);
     // ---- drivers decide (rail traffic computes where it will be at the end of the frame) ----
     for (size_t i = 0; i < vehicles.size(); i++) {
         Vehicle& v = vehicles[i];
@@ -1024,18 +1158,41 @@ void Game::VehiclePedCollisions() {
         if (!v.active) continue;
         float r = v.length * 0.5f + 4;
         float sp = v.Speed();
-        for (size_t k = 0; k < peds.size(); k++) {
+        static std::vector<int> near;
+        near.clear();
+        pedGrid.Query(v.pos, r + 20, [&](int k) { near.push_back(k); });
+        for (int k : near) {
             Pedestrian& p = peds[k];
             if (!p.active || Len2(p.pos - v.pos) > r * r + 400) continue;
             Vector2 n; float depth;
             if (!CircleOBB(p.pos, PED_RADIUS, v.Box(), n, depth)) continue;
-            if (sp > 95 && p.state != PedState::Dead && p.state != PedState::Down) {
-                DamagePed((int)k, sp * 0.14f, v.vel, (int)i == pv, true);
-                p.vel = v.vel * 0.7f + n * 90;
+            if (p.state == PedState::Dead || p.state == PedState::Down) {
+                // the wheels go over someone on the ground: they are not shoved along
+                if (sp > 40 && p.runOverT <= 0) {
+                    p.runOverT = 0.8f;
+                    fx.BloodSpray(p.pos, Norm(v.vel), 8);
+                    fx.AddDecal(p.pos + Norm(v.vel) * 10, DECAL_BLOOD, 1.1f * M, GRng().Range(0, 6), 75);
+                    audio.Play(Sfx::Punch, p.pos, 0.6f, 0.55f);
+                    if (p.state == PedState::Down) DamagePed((int)k, 40 + sp * 0.2f, v.vel, (int)i == pv, true);
+                    if ((int)i == pv) cam.AddShake(0.08f);
+                }
+                continue;
+            }
+            if (sp > 95) {
+                if (debugContacts) {
+                    if ((int)i == pv) pdiag.playerHits++; else pdiag.trafficHits++;
+                    if (k < (int)pedThreat.size() && pedThreat[k] > 0) { pdiag.threatHits++; pedThreat[k] = 0; }
+                }
+                // injury grows with the impact energy: about half die at 36 km/h, nearly all above 45 km/h
+                float dmg = 100.0f * (sp / 160.0f) * (sp / 160.0f) * GRng().Range(0.8f, 1.25f);
+                DamagePed((int)k, dmg, v.vel, (int)i == pv, true);
+                p.vel = v.vel * 0.45f + n * 50;                 // thrown a couple of metres, then lies there
+                p.runOverT = 0.5f;
                 if (v.driver == DriverType::Traffic && GRng().Chance(0.6f)) v.ai.panic = 10;   // hit and run
                 audio.Play(Sfx::Punch, p.pos, 0.8f, 0.7f);
                 v.vel = v.vel * 0.95f;
                 if ((int)i == pv) cam.AddShake(0.12f);
+                continue;
             }
             p.pos = p.pos + n * depth;
         }
@@ -1046,6 +1203,7 @@ void Game::VehiclePedCollisions() {
 //  Pedestrians, police, population management
 // -------------------------------------------------------------------------------------
 void Game::UpdatePeds(float dt) {
+    pedGrid.Build(peds);
     for (Pedestrian& p : peds) if (p.active) UpdatePed(p, *this, dt);
 }
 
@@ -1112,14 +1270,29 @@ void Game::UpdateSpawning(float dt) {
     for (Pedestrian& p : peds) {
         if (!p.active) continue;
         bool dead = p.state == PedState::Dead;
-        bool far = Dist(p.pos, pp) > 2800;
-        if ((far || (dead && p.deadTime > 25)) && !OnScreen(p.pos, 150)) {
+        bool far = Dist(p.pos, pp) > PED_KEEP_RADIUS;
+        bool gone = dead && p.deadTime > PED_BODY_GONE;                  // the body has faded out
+        if (gone || (far && !OnScreen(p.pos, 150))) {
             for (int tries = 0; tries < 10; tries++) {
-                Vector2 np = map.RandomSidewalkPoint(r);
+                Vector2 np = map.RandomSidewalkPointNear(r, pp, PED_SPAWN_MIN, PED_SPAWN_MAX);
                 float d = Dist(np, pp);
-                if (d > 700 && d < 2400 && !OnScreen(np, 100)) { InitPed(p, np, r.Int(0, (int)gAssets.peds.size() - 1), map); break; }
+                if (d <= PED_SPAWN_MIN || d >= PED_SPAWN_MAX || OnScreen(np, 100)) continue;
+                bool nearDeath = false;
+                for (const DeathSpot& ds : deathSpots) if (time - ds.time < 90 && Dist(ds.pos, np) < 20 * M) nearDeath = true;
+                if (nearDeath) continue;
+                InitPed(p, np, r.Int(0, (int)gAssets.peds.size() - 1), map);
+                break;
             }
+            if (gone && p.state == PedState::Dead) p.active = false;      // no place found: just remove the body
         }
+    }
+    // keep the population up (removed bodies): one newcomer per frame at most
+    int alive = 0;
+    for (const Pedestrian& p : peds) alive += p.active;
+    if (alive < PEDESTRIANS) {
+        Vector2 np = map.RandomSidewalkPointNear(r, pp, PED_SPAWN_MIN, PED_SPAWN_MAX);
+        float d = Dist(np, pp);
+        if (d > PED_SPAWN_MIN && d < PED_SPAWN_MAX && !OnScreen(np, 100)) SpawnPed(np, r.Int(0, (int)gAssets.peds.size() - 1));
     }
 }
 
@@ -1440,7 +1613,9 @@ void Game::DrawWorld() {
 }
 
 void Game::Draw() {
+    double t0 = GetTime();
     DrawWorld();
+    if (debugContacts) cpuDraw += GetTime() - t0;
     switch (state) {
         case GameState::Title: DrawTitle(); break;
         case GameState::Paused: DrawHUD(); DrawPause(); break;

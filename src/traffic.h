@@ -30,5 +30,8 @@ void AIUpdateTraffic(Game& g, int idx, float dt);
 void AIUpdatePolice(Game& g, int idx, float dt);
 void AIKnock(Vehicle& v);                                    // rail -> physics
 inline bool AIOnRail(const Vehicle& v) { return v.driver == DriverType::Traffic && v.ai.rail && !v.wrecked && !v.burning; }
+// Rail car: its pose after driving 'ahead' px further along its planned path (people use
+// it to predict where a turning car will go).
+Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle);
 // Places v on a random lane between minDist..maxDist from 'near' (optionally off-screen).
 bool AIPlaceOnRoad(Game& g, Vehicle& v, Vector2 near, float minDist, float maxDist, bool offscreen);

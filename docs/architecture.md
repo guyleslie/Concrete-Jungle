@@ -33,7 +33,7 @@ The `Game` class owns the world and the rules. Subsystems are plain modules with
 | Vehicles | `vehicle.*`, `vehicle_types.*` | Vehicle classes, engine / brake / tyre model, vehicle drawing |
 | Physics | `physics.*` | Vehicle collision detection and the contact solver |
 | Traffic | `traffic.*` | Traffic and police driving AI |
-| Pedestrians | `pedestrian.*` | Pedestrian AI and drawing |
+| Pedestrians | `pedestrian.*` | Pedestrian AI, steering, the pedestrian grid and drawing |
 | Rendering | `render.*`, `lighting.*`, `particles.*` | Camera, render passes, day/night cycle, particles, decals |
 | Audio | `audio.*` | Procedural sound synthesis, positional playback |
 | Utilities | `math_utils.h` | Vectors, angles, oriented boxes, intersection tests, random numbers |
@@ -59,7 +59,7 @@ Dependencies point downwards: `game` uses every other module; `traffic`, `physic
 | 2 | Signals, metro train, fountain and hydrant water | `CityMap::Update` |
 | 3 | Player input (on foot or driving) | `UpdatePlayerOnFoot` / `UpdatePlayerDriving` |
 | 4 | Vehicles: AI, physics, crash consequences, effects | `UpdateVehicles` (see below) |
-| 5 | Pedestrians | `UpdatePeds` |
+| 5 | Pedestrians (the pedestrian grid is rebuilt first) | `UpdatePeds` |
 | 6 | Police spawning and arrests | `UpdatePolice` |
 | 7 | Recycling far-away traffic and pedestrians | `UpdateSpawning` |
 | 8 | Missions and pickups | `UpdateMission`, `UpdatePickups` |
@@ -72,9 +72,9 @@ After `Wasted` or `Busted`, the world keeps running in slow motion (35 % speed) 
 
 `Game::UpdateVehicles` is the heart of the simulation. It keeps decision making, physics and consequences strictly separate:
 
-1. **Decide.** Every vehicle records its pose at the start of the frame. Traffic and police AI then run. Traffic that is on its lane (a *rail car*) computes where it will be at the end of the frame; police cars and the player only set their controls. Burning vehicles count down to their explosion.
+1. **Decide.** The pedestrian grid is rebuilt, and every vehicle records its pose at the start of the frame. Traffic and police AI then run. Traffic that is on its lane (a *rail car*) computes where it will be at the end of the frame; police cars and the player only set their controls. Burning vehicles count down to their explosion.
 2. **Simulate.** `VehiclePhysics::Step` applies engine, brake and tyre forces, detects and solves all contacts in sub-steps, and moves every vehicle. Rail cars move kinematically along their path. The step produces a list of `ImpactEvent`s but applies no game rules.
-3. **Consequences.** `Game::HandleImpacts` turns impact events into damage, driver injury, motorbike rider ejection, sparks, sounds, camera shake and driver reactions. `VehiclePedCollisions` handles vehicles hitting people.
+3. **Consequences.** `Game::HandleImpacts` turns impact events into damage, driver injury, motorbike rider ejection, sparks, sounds, camera shake and driver reactions. `VehiclePedCollisions` handles vehicles hitting people and driving over people on the ground.
 4. **Effects.** Skid marks, tyre smoke, dust, engine sound state and damage smoke are updated from the final velocities.
 
 See [Physics](design/physics.md), [Vehicles](design/vehicles.md) and [Traffic](design/traffic.md) for the details.

@@ -28,10 +28,10 @@ Weapons are defined in `assets/data/weapons.cfg` (format: [Adding content › We
 
 | Mode | Behaviour |
 |---|---|
-| Melee | Hits people in front of the player; can knock them down (knife 20 %, others 45 % per hit). Vehicles take 15 % of the damage. |
+| Melee | Hits people in front of the player; can knock them down (knife 20 %, others 45 % per hit). About 15 % of people hit back (see [Pedestrians › Fighting back](pedestrians.md#fighting-back)). Vehicles take 15 % of the damage. |
 | Semi-automatic / automatic | Each shot (or pellet) is a ray against buildings, street furniture, vehicles and people. Vehicles take 55 % of the damage and sometimes lose glass; breakable props such as hydrants and bins break. |
 
-Firing scares pedestrians within 34 m and, below one star, raises the wanted level slightly. An empty clip reloads automatically when the player fires again; R reloads manually.
+Firing scares pedestrians within 34 m (they run after their reaction time) and, below one star, raises the wanted level slightly. An empty clip reloads automatically when the player fires again; R reloads manually.
 
 ## Vehicles
 

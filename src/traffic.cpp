@@ -99,6 +99,16 @@ static Vector2 Sample(const DriverAI& ai, float s, float* heading = nullptr) {
     return P.back().p;
 }
 
+Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle) {
+    const DriverAI& ai = v.ai;
+    float axle = v.length * 0.32f, s = ai.s + ahead;
+    Vector2 fp = Sample(ai, s + axle), rp = Sample(ai, s - axle);
+    Vector2 dir = Norm(fp - rp);
+    if (Len2(dir) < 0.5f) dir = Forward(v.angle);
+    if (angle) *angle = AngleOf(dir);
+    return (fp + rp) * 0.5f + Perp(dir) * ai.laneShift;
+}
+
 void AIResetPath(Vehicle& v, const CityMap& map) {
     DriverAI& ai = v.ai;
     ai.path.clear();
@@ -274,13 +284,15 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
         }
         if (best.gap <= d) break;
         if (watchPeople) {
-            for (const Pedestrian& pd : g.peds) {
-                if (!pd.active || pd.state == PedState::Dead) continue;
-                if (Len2(pd.pos - p) > (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) continue;
-                if (g.map.TileAt(pd.pos) != Tile::Road && lateralShift <= 0) continue;   // on the sidewalk: ignore
-                best = Obstacle{}; best.gap = d; best.isPed = true;
-                break;
-            }
+            bool seen = false;
+            g.pedGrid.Query(p, halfW + PED_RADIUS, [&](int k) {
+                const Pedestrian& pd = g.peds[k];
+                if (seen || !pd.active || pd.state == PedState::Dead) return;
+                if (Len2(pd.pos - p) > (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) return;
+                if (g.map.TileAt(pd.pos) != Tile::Road && lateralShift <= 0) return;   // on the sidewalk: ignore
+                seen = true;
+            });
+            if (seen) { best = Obstacle{}; best.gap = d; best.isPed = true; }
             if (!g.player.inVehicle && Len2(g.player.pos - p) < (halfW + PED_RADIUS) * (halfW + PED_RADIUS) &&
                 (g.map.TileAt(g.player.pos) == Tile::Road || lateralShift > 0) && d < best.gap) {
                 best = Obstacle{}; best.gap = d; best.isPlayer = true; best.isPed = true;
@@ -420,6 +432,7 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
     float desired = ai.cruise * (ai.panic > 0 ? 1.5f : 1.0f);
     ai.panic = std::max(0.0f, ai.panic - dt);
     ai.reason = 0;
+    ai.stopDist = 1e9f;
     float front = ai.s + v.length * 0.5f;
     for (size_t k = 0; k < ai.path.size(); k++) {
         const Waypoint& w = ai.path[k];
@@ -434,7 +447,10 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
             bool mustStop = false;
             if (ai.panic <= 0 && (sig == SIG_RED || (sig == SIG_YELLOW && canStop))) { mustStop = true; ai.reason = 1; }
             else if (stopGap < 90 && !JunctionClear(g, idx, w)) { mustStop = true; ai.reason = w.turnType == 2 ? 4 : 6; }
-            if (mustStop) desired = std::min(desired, sqrtf(2 * COMFORT_DECEL * std::max(0.0f, stopGap - 2)));
+            if (mustStop) {
+                desired = std::min(desired, sqrtf(2 * COMFORT_DECEL * std::max(0.0f, stopGap - 2)));
+                ai.stopDist = std::max(0.0f, stopGap - 2);
+            }
             break;
         }
     }
@@ -446,6 +462,7 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
         float lim = std::max(0.0f, ob.gap - 10) * 2.0f + std::max(0.0f, ob.speed) * 0.8f;
         if (ob.gap < 14) lim = 0;
         if (lim < desired) { desired = lim; if (lim < 20) ai.reason = ob.isStatic ? 5 : ob.vehicle >= 0 ? 2 : 3; }
+        if (ob.isPed || ob.isStatic || ob.speed < 10) ai.stopDist = std::min(ai.stopDist, std::max(0.0f, ob.gap - 14));
     }
 
     // ---- getting around trouble: overtake, mount the kerb, U-turn, honk ----

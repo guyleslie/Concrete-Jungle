@@ -121,7 +121,12 @@ public:
     Rectangle SidewalkRing(int bi, int bj) const;                 // centre line of the ring
     Rectangle BlockInterior(int bi, int bj) const;
     Vector2   RandomSidewalkPoint(Rng& r) const;
+    // A sidewalk point roughly minDist..maxDist from 'centre' (the caller checks the distance).
+    Vector2   RandomSidewalkPointNear(Rng& r, Vector2 centre, float minDist, float maxDist) const;
     Vector2   RandomRoadPoint(Rng& r, float* angle) const;        // on a lane, facing traffic
+    // On a zebra crossing (grown by 'margin'). walkAxis: the signal axis whose green lets
+    // people walk across it (1 = crossing a north-south street, walking east-west).
+    bool      OnCrossing(Vector2 p, float margin, int* walkAxis = nullptr, int* interI = nullptr, int* interJ = nullptr) const;
 
     // ---- drawing (called by the game inside the right render pass) ----
     void DrawGround(Rectangle view, float time) const;            // scene: opaque ground

@@ -12,7 +12,7 @@ A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C+
 | Rendering | Perspective top-down camera, day/night cycle with sun shadows, headlights and street lamps, lit windows and neon, bloom |
 | Traffic | Lane-following traffic that obeys signals and junction rules, overtakes, honks and makes U-turns; police pursuits |
 | Physics | Sub-stepped rigid-body contact solver, crash damage based on delta-V, breakaway lamp posts, hydrants and other street furniture |
-| Pedestrians | Sidewalk walkers who wait for the green light, wander into parks, flee danger and can be knocked down |
+| Pedestrians | 300 people around the player who walk their blocks, queue at the kerb and cross safely at the lights, jump out of the way of vehicles, flee gunfire and violence, sometimes fight back, and are hurt realistically by vehicles |
 | Gameplay | On-foot combat with six weapons, carjacking, a six-star wanted level, arrests, missions from ringing pay phones, pickups |
 | Audio | Every sound synthesised at start-up; any of them can be replaced with a WAV file |
 | Content | Vehicles, characters, weapons and foliage defined in plain-text data files |

@@ -36,8 +36,12 @@ The path is planned one junction ahead and always extends at least 520 px beyond
 | Cruise speed | 215–265 px/s (≈ 48–60 km/h); large vehicles 170–205 px/s. Panicking drivers go 50 % faster. |
 | Curves | Slows to 130 px/s (95 px/s for large vehicles) before and through turns. |
 | Signals | Stops for red. Stops for yellow if it can do so comfortably. |
-| Obstacles | A look-ahead of 40 px + 1.1 × speed + half its length along the path finds vehicles and, unless the driver is distracted, pedestrians on the road. The allowed speed follows the gap; the car stops 14 px short of the obstacle. |
+| Obstacles | A look-ahead of 40 px + 1.1 × speed + half its length along the path finds vehicles and, unless the driver is distracted, pedestrians on the road (found through the pedestrian grid). The allowed speed follows the gap; the car stops 14 px short of the obstacle. |
 | Acceleration | 45 % of the class acceleration; comfortable braking at 670 px/s², hard braking at 900 px/s² for an obstacle right ahead. |
+
+### Planned stop
+
+Every frame a rail car records in `DriverAI::stopDist` how far its front can still travel before a stop it has planned: the stop line at a red light or a blocked junction, or 14 px short of a person, a stopped vehicle or a static obstacle ahead. Pedestrians read it, together with the planned path (`AIPathPose`), to predict whether the car will reach them (see [Pedestrians › Perception and dodging](pedestrians.md#perception-and-dodging)).
 
 ## Junction rules
 

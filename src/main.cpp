@@ -32,7 +32,7 @@ static void LoadingScreen(const char* msg) {
 }
 
 int main(int argc, char** argv) {
-    // --shot <file.png> [--frames N] [--every N] [--scenario foot|drive|night|nightdrive|chase|day|crash|derby]
+    // --shot <file.png> [--frames N] [--every N] [--scenario foot|drive|night|nightdrive|chase|day|crash|derby|rampage]
     // (file names are relative to the working directory; --every also saves <file>_<frame>.png)
     const char* shot = nullptr; const char* scenario = "foot"; int shotFrames = 180, every = 0;
     for (int i = 1; i < argc; i++) {
@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
         ClearBackground(BLACK);
         game.Draw();
         bool lastShot = shot && ++frame >= shotFrames;
-        if (lastShot) { rlDrawRenderBatchActive(); TakeScreenshot(shot); game.LogTrafficStats(); game.LogPhysStats(); }
+        if (lastShot) { rlDrawRenderBatchActive(); TakeScreenshot(shot); game.LogTrafficStats(); game.LogPhysStats(); game.LogPedStats(); }
         else if (shot && every > 0 && frame % every == 0) {
             rlDrawRenderBatchActive();
             const char* ext = GetFileExtension(shot);

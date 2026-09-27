@@ -71,6 +71,9 @@ public:
     CityMap                 map;
     std::vector<Vehicle>    vehicles;
     std::vector<Pedestrian> peds;
+    PedGrid                 pedGrid;          // who is where (rebuilt before vehicles and pedestrians update)
+    struct DeathSpot { Vector2 pos; float time; };
+    std::vector<DeathSpot>  deathSpots;       // recent deaths: nobody new appears there for a while
     std::vector<Pickup>     pickups;
     VehiclePhysics          physics;
     Particles               fx;
@@ -108,10 +111,11 @@ public:
     bool debugContacts = false;
     bool debugOverview = false;                    // AI-vs-AI collision count (diagnostics)
     void LogTrafficStats() const;
-    // --shot autopilots: 0 cruise, 1 scripted crash course, 2 demolition derby
+    // --shot autopilots: 0 cruise, 1 scripted crash course, 2 demolition derby, 3 sidewalk rampage
     int   autoMode = 0, autoPhase = -1, testBuilding = -1;
     float autoT = 0, autoTimer = 0, autoSteer = 0, autoReverse = 0, autoSlow = 0;
     void  AutoPilot(Vehicle& v, VehicleInput& in, float dt);
+    bool  BrawlPilot(Vector2& move);             // --scenario brawl: walk up to people and punch them
     // physics diagnostics (--shot): jitter = position / heading reversing frame after frame
     struct PhysDiag { Vector2 prevPos{}, prevD{}; float prevA = 0, prevDa = 0; bool init = false, rail = false; };
     std::vector<PhysDiag> diag;
@@ -120,6 +124,18 @@ public:
     float diagMaxPen = 0, diagBodySeconds = 0, diagPlayerSlow = 0;
     void  PhysDiagnostics(float dt);
     void  LogPhysStats() const;
+    // pedestrian diagnostics (--shot): per-frame sums (divide by 'frames' for averages)
+    struct PedDiag {
+        double flee = 0, dodge = 0, offCrossing = 0, visible = 0, overlaps = 0;
+        float  againstLights = 0, jaywalking = 0, downOverdue = 0, sliding = 0, moving = 0;   // person-seconds
+        int    frames = 0, trafficHits = 0, playerHits = 0, threatened = 0, threatHits = 0;
+    };
+    PedDiag pdiag;
+    int     pedFights = 0, pedPunches = 0;       // people who hit back / punches they landed on the player
+    std::vector<float> pedThreat;                  // per person: > 0 while in the player's path (rampage)
+    double  cpuVehicles = 0, cpuPeds = 0, cpuDraw = 0; int cpuFrames = 0;
+    void  PedDiagnostics(float dt);
+    void  LogPedStats() const;
     void Update(float dt);
     void Draw();
     void Unload();

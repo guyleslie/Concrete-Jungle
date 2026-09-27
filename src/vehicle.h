@@ -69,6 +69,7 @@ struct DriverAI {
     float uturnCooldown = 0;
     float temper = 1;        // 0.5 calm .. 1.5 impatient (honking, overtaking)
     int   blocker = -1;      // vehicle we are waiting for (-1 none / person)
+    float stopDist = 1e9f;   // rail: how far the front can still go before a planned stop (people read it)
     Vector2 lastVel{};       // diagnostics (jolt detection)
     int   reason = 0;        // diagnostics: 0 cruise, 1 red light, 2 queue, 3 blocked, 4 yield, 5 static, 6 box
 };

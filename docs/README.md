@@ -21,7 +21,7 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [Vehicles](design/vehicles.md) | Vehicle classes, handling model, damage, fire and explosions |
 | [Physics](design/physics.md) | Collision detection, contact solver, breakaway objects, crash consequences |
 | [Traffic](design/traffic.md) | Lane-following traffic, junction rules, recovery after crashes, police driving |
-| [Pedestrians](design/pedestrians.md) | Sidewalk behaviour, crossings, fleeing, knock-downs |
+| [Pedestrians](design/pedestrians.md) | Sidewalk behaviour, crossings, perception and dodging, fleeing, fighting back, steering, injuries, population |
 | [Gameplay](design/gameplay.md) | Player, weapons, wanted level, police response, missions, pickups |
 | [Audio](design/audio.md) | Procedural sound synthesis and file overrides |
 
