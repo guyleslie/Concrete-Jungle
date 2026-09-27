@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Pedestrian grid for neighbour queries, used by pedestrians, traffic and vehicle–pedestrian collisions.
 - `rampage` and `brawl` test scenarios; `PEDS` and `TIMING` metrics in the test log.
 - Backlog items CJ-010 to CJ-019 from the playtest feedback, and a recommended order for the next sessions.
+- A crosshair on foot, drawn by the game.
 
 ### Changed
 
@@ -24,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fleeing people choose a direction along the sidewalk, away from walls and out of the path of moving vehicles; panic spreads to bystanders, but only one step.
 - Traffic records where it plans to stop, so pedestrians can predict it.
 - Lying bodies are drawn at real size (they were almost three times too long); standing people are drawn 8 % larger.
+- The game runs in borderless full screen only: no window frame, no resizing, no F11 toggle, and the Windows cursor is hidden. Alt+F4 quits. Test runs keep the fixed window.
 
 ### Fixed
 

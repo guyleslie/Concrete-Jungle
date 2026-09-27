@@ -41,10 +41,19 @@ int main(int argc, char** argv) {
         else if (TextIsEqual(argv[i], "--every") && i + 1 < argc) every = TextToInteger(argv[++i]);
         else if (TextIsEqual(argv[i], "--scenario") && i + 1 < argc) scenario = argv[++i];
     }
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
+    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
     InitWindow(cfg::SCREEN_W, cfg::SCREEN_H, cfg::WINDOW_TITLE);
     SetExitKey(KEY_NULL);                 // Esc opens the pause menu instead of quitting
-    SetWindowMinSize(960, 540);
+    if (!shot) {
+        // The game only runs full screen: a borderless window at the monitor's resolution,
+        // with no frame to resize or minimise. Alt+F4 closes it. The Windows cursor is
+        // hidden; the HUD draws a crosshair on foot. Test runs keep the fixed window so
+        // their screenshots stay comparable.
+        ToggleBorderlessWindowed();
+        HideCursor();
+        TraceLog(LOG_INFO, "WINDOW: borderless full screen %dx%d on a %dx%d monitor", GetScreenWidth(), GetScreenHeight(),
+                 GetMonitorWidth(GetCurrentMonitor()), GetMonitorHeight(GetCurrentMonitor()));
+    }
 
     // Assets are loaded relative to the working directory; fall back to the exe folder.
     if (!DirectoryExists("assets")) ChangeDirectory(GetApplicationDirectory());

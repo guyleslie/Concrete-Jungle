@@ -620,7 +620,6 @@ void Game::Update(float dt) {
     time += dt;
     if (IsKeyPressed(KEY_F1)) showHelp = !showHelp;
     if (IsKeyPressed(KEY_F3)) debug = !debug;
-    if (IsKeyPressed(KEY_F11)) ToggleBorderlessWindowed();
 
     switch (state) {
     case GameState::Title:

@@ -26,6 +26,22 @@ static void Star(Vector2 c, float r, Color fill, Color outline) {
     for (int i = 1; i < 11; i++) DrawLineEx(pts[i], pts[i + 1], 1.5f, outline);
 }
 
+// The game's own mouse pointer (the Windows cursor is hidden): a ring with four ticks,
+// tighter and brighter while aiming.
+static void Crosshair(Vector2 m, float ui, bool aiming) {
+    float r = (aiming ? 9.0f : 12.0f) * ui, gap = r * 0.45f, len = 7.0f * ui;
+    Color c = ColorA(WHITE, aiming ? 0.95f : 0.7f), sh = ColorA(BLACK, 0.55f);
+    for (int pass = 0; pass < 2; pass++) {
+        Color col = pass == 0 ? sh : c;
+        float w = pass == 0 ? 3.5f * ui : 1.6f * ui;
+        Vector2 o = pass == 0 ? V2(1, 1) : V2(0, 0);
+        DrawRing(m + o, r - w * 0.5f, r + w * 0.5f, 0, 360, 32, col);
+        Vector2 d[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+        for (Vector2 v : d) DrawLineEx(m + o + v * (r + gap), m + o + v * (r + gap + len), w, col);
+    }
+    DrawCircleV(m, 1.6f * ui, c);
+}
+
 static void Bar(float x, float y, float w, float h, float v, Color c, const char* label) {
     DrawRectangleRounded({ x, y, w, h }, 0.5f, 6, ColorA(BLACK, 0.5f));
     if (v > 0) DrawRectangleRounded({ x + 2, y + 2, (w - 4) * Saturate(v), h - 4 }, 0.5f, 6, c);
@@ -191,7 +207,7 @@ void Game::DrawHUD() {
             "          1-6 / Q / wheel weapons   E / F / Enter  enter or hijack vehicle",
             "DRIVING:  W/S throttle & brake/reverse   A/D steer   Space handbrake",
             "          E exit   H horn   L headlights   G siren (emergency vehicles)",
-            "WORLD:    T fast-forward time   F11 fullscreen   F3 debug   Esc/P pause   F1 hide help",
+            "WORLD:    T fast-forward time   F3 debug   Esc/P pause   F1 hide help   Alt+F4 quit",
         };
         float lh = 22 * ui, bw = 0;
         for (auto l : lines) bw = std::max(bw, MeasureUIText(l, 20 * ui, true));
@@ -206,6 +222,7 @@ void Game::DrawHUD() {
         snprintf(buf, sizeof(buf), "FPS %d  vehicles %d  peds %d  particles %d  heat %.2f", GetFPS(), nv, np, fx.Count(), heat);
         DrawUIText(buf, 20 * ui, 140 * ui, 20 * ui, YELLOW, true);
     }
+    if (state == GameState::Playing && !player.inVehicle && IsCursorHidden()) Crosshair(GetMousePosition(), ui, player.aiming);
 }
 
 void Game::DrawTitle() {

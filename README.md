@@ -72,8 +72,8 @@ Run the game from the project folder so it finds `assets/`:
 | T (hold) | Fast-forward time |
 | F1 | Show or hide help |
 | F3 | Debug information |
-| F11 | Fullscreen |
 | Esc / P | Pause (Q quits from the pause menu) |
+| Alt+F4 | Quit |
 
 ## Documentation
 

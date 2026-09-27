@@ -75,4 +75,7 @@ Drawn in screen space after the composite (`src/hud.cpp`):
 - a minimap and, in a vehicle, a speedometer with the vehicle's health;
 - the mission objective, its timer and an arrow with the distance to the target;
 - an "[E] Enter / Hijack" prompt next to vehicles;
-- messages (toasts), large banners such as WASTED, the help overlay (F1) and a debug line (F3).
+- messages (toasts), large banners such as WASTED, the help overlay (F1) and a debug line (F3);
+- on foot, a crosshair at the mouse position (tighter while aiming), because the Windows cursor is hidden.
+
+The game runs in a borderless full-screen window at the monitor's resolution (`src/main.cpp`); the render targets follow the screen size. Test runs (`--shot`) keep a fixed 1,600 × 900 window.

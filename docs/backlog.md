@@ -32,7 +32,7 @@ Before each item, search for open-source code, assets and references that would 
 | ID | Title | Priority | Status |
 |---|---|---|---|
 | [CJ-010](#cj-010-pedestrian-behaviour) | Pedestrian behaviour | High | Implemented, awaiting playtest |
-| [CJ-013](#cj-013-full-screen-only) | Full screen only | High | Open |
+| [CJ-013](#cj-013-full-screen-only) | Full screen only | High | Implemented, awaiting playtest |
 | [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | Open |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
@@ -80,13 +80,13 @@ Remaining: the playtest.
 ### CJ-013 Full screen only
 
 - **Priority:** High
-- **Status:** Open
+- **Status:** Implemented on 2026-09-27, awaiting playtest
 
 **Problem.** The game opened in a resizable window that could be minimised, resized or switched with F11, and the Windows mouse cursor was visible.
 
-**Scope.** The game starts in borderless full screen at the monitor's resolution and cannot be resized; the Windows cursor is hidden and the game draws its own crosshair on foot; Alt+F4 closes the game. The `--shot` test mode keeps the 1,600 × 900 window so screenshots stay comparable.
+**Done.** The game starts in borderless full screen at the monitor's resolution and cannot be resized; the Windows cursor is hidden and the game draws its own crosshair on foot; Alt+F4 closes the game. The `--shot` test mode keeps the 1,600 × 900 window so screenshots stay comparable.
 
-**Acceptance criteria.** Playtested: full screen after start, no window controls, no Windows cursor, crosshair visible on foot, Alt+F4 quits.
+**Acceptance criteria.** Playtested: full screen after start, no window controls, no Windows cursor, crosshair visible on foot, Alt+F4 quits. Verified on 2026-09-27: the start-up log reports a 1,920 × 1,080 borderless window on a 1,920 × 1,080 monitor, and Alt+F4 ends the process.
 
 ### CJ-002 Vehicle handling model
 
