@@ -1,0 +1,646 @@
+// =====================================================================================
+//  AI drivers - see traffic.h
+// =====================================================================================
+#include "traffic.h"
+#include "game.h"
+
+using namespace cfg;
+
+static Vector2 DirVec(int d) { return d == 0 ? V2(0, -1) : d == 1 ? V2(1, 0) : d == 2 ? V2(0, 1) : V2(-1, 0); }
+static Vector2 RightV(int d) { return DirVec((d + 1) & 3); }
+static int DX(int d) { return d == 1 ? 1 : d == 3 ? -1 : 0; }
+static int DY(int d) { return d == 2 ? 1 : d == 0 ? -1 : 0; }
+
+static const float STOP_BACK = 72.0f;      // stop line distance before the junction entry point
+static const float COMFORT_DECEL = 420.0f;
+
+// -------------------------------------------------------------------------------------
+//  Path construction
+// -------------------------------------------------------------------------------------
+static void Push(DriverAI& ai, Waypoint w) {
+    w.cum = ai.path.empty() ? 0.0f : ai.path.back().cum + Dist(ai.path.back().p, w.p);
+    ai.path.push_back(w);
+}
+
+// Plans the route through junction (ti,tj) approached in direction ai.dir.
+// 'goal' (optional) makes the turn choice close in on a point (police).
+static void PlanNext(Vehicle& v, const CityMap& map, const Vector2* goal) {
+    DriverAI& ai = v.ai;
+    int d = ai.dir;
+    ai.ti = std::clamp(ai.ti, 0, INTER_X - 1); ai.tj = std::clamp(ai.tj, 0, INTER_Y - 1);
+    Vector2 c = map.InterCenter(ai.ti, ai.tj);
+    int opts[3] = { d, (d + 1) & 3, (d + 3) & 3 };
+    float w[3] = { v.S().large() ? 0.7f : 0.55f, 0.25f, v.S().large() ? 0.1f : 0.2f };
+    int cand[3]; float cw[3]; int n = 0;
+    for (int k = 0; k < 3; k++) {
+        int d2 = opts[k];
+        if (!map.ValidInter(ai.ti + DX(d2), ai.tj + DY(d2))) continue;
+        float weight = w[k];
+        if (goal) weight = 0.05f + Saturate(Dot(DirVec(d2), Norm(*goal - c)) + 0.3f) + GRng().Range(0, 0.25f);
+        cand[n] = d2; cw[n] = weight; n++;
+    }
+    int d2;
+    if (n == 0) d2 = (d + 2) & 3;
+    else if (goal) { int b = 0; for (int k = 1; k < n; k++) if (cw[k] > cw[b]) b = k; d2 = cand[b]; }
+    else {
+        float tot = 0; for (int k = 0; k < n; k++) tot += cw[k];
+        float r = GRng().Float() * tot; d2 = cand[n - 1];
+        for (int k = 0; k < n; k++) { r -= cw[k]; if (r <= 0) { d2 = cand[k]; break; } }
+    }
+    int turnType = d2 == d ? 0 : d2 == ((d + 1) & 3) ? 1 : d2 == ((d + 3) & 3) ? 2 : 3;
+
+    Vector2 E = c - DirVec(d) * ROAD_HALF + RightV(d) * LANE_OFFSET;
+    Vector2 X = c + DirVec(d2) * ROAD_HALF + RightV(d2) * LANE_OFFSET;
+    Waypoint e; e.p = E; e.stop = true; e.si = ai.ti; e.sj = ai.tj; e.axis = (d == 0 || d == 2) ? 0 : 1;
+    e.turnType = turnType; e.d = d; e.d2 = d2;
+    Push(ai, e);
+    if (turnType == 0) {
+        Waypoint x; x.p = X; Push(ai, x);
+    } else {
+        Vector2 ctrl;
+        if (turnType == 3) ctrl = c + DirVec(d) * 40.0f;
+        else if (turnType == 1 && v.S().large()) ctrl = c + (RightV(d) + RightV(d2)) * 10.0f;   // wide right turn
+        else ctrl = c + RightV(d) * LANE_OFFSET + RightV(d2) * LANE_OFFSET;
+        for (int k = 1; k <= 10; k++) { Waypoint t; t.p = QuadBezier(E, ctrl, X, k / 10.0f); t.turn = true; Push(ai, t); }
+    }
+    // points along the next block so the path stays smooth and long enough
+    Vector2 nc = map.InterCenter(ai.ti + DX(d2), ai.tj + DY(d2));
+    Vector2 nE = nc - DirVec(d2) * ROAD_HALF + RightV(d2) * LANE_OFFSET;
+    for (int k = 1; k <= 3; k++) { Waypoint m; m.p = LerpV(X, nE, k / 4.0f); Push(ai, m); }
+    ai.ti += DX(d2); ai.tj += DY(d2); ai.dir = d2;
+}
+
+// Starts a path at 'start' heading 'dir', with a tail behind it so the rear-axle sample
+// is always on the path (otherwise the pose would lurch when a path begins).
+static void StartPath(Vehicle& v, Vector2 start, Vector2 dir) {
+    DriverAI& ai = v.ai;
+    ai.path.clear();
+    Waypoint tail; tail.p = start - dir * (v.length + 24); Push(ai, tail);
+    Waypoint s0; s0.p = start; Push(ai, s0);
+    ai.s = ai.path.back().cum;
+}
+
+// Point (and heading) at distance 's' along the path.
+static Vector2 Sample(const DriverAI& ai, float s, float* heading = nullptr) {
+    const auto& P = ai.path;
+    if (P.empty()) return { 0, 0 };
+    if (P.size() == 1 || s <= P.front().cum) {
+        if (heading && P.size() > 1) *heading = AngleOf(P[1].p - P[0].p);
+        return P.front().p;
+    }
+    for (size_t i = 0; i + 1 < P.size(); i++) {
+        if (s <= P[i + 1].cum) {
+            float seg = std::max(1e-3f, P[i + 1].cum - P[i].cum);
+            if (heading) *heading = AngleOf(P[i + 1].p - P[i].p);
+            return LerpV(P[i].p, P[i + 1].p, (s - P[i].cum) / seg);
+        }
+    }
+    if (heading) *heading = AngleOf(P.back().p - P[P.size() - 2].p);
+    return P.back().p;
+}
+
+void AIResetPath(Vehicle& v, const CityMap& map) {
+    DriverAI& ai = v.ai;
+    ai.path.clear();
+    int d = (int)floorf(WrapAngle(v.angle) / (PI * 0.5f) + 0.5f);
+    d = ((d % 4) + 4) % 4;
+    ai.dir = d;
+    const float pitch = (float)(BLOCK_PITCH * TILE);
+    float fx = (v.pos.x - TILE) / pitch, fy = (v.pos.y - TILE) / pitch;
+    int ti, tj;
+    if (d == 0 || d == 2) { ti = (int)roundf(fx); tj = d == 2 ? (int)ceilf(fy + 0.05f) : (int)floorf(fy - 0.05f); }
+    else                  { tj = (int)roundf(fy); ti = d == 1 ? (int)ceilf(fx + 0.05f) : (int)floorf(fx - 0.05f); }
+    if (!map.ValidInter(ti, tj)) { d = (d + 2) & 3; ai.dir = d; }
+    ai.ti = std::clamp(ti, 0, INTER_X - 1); ai.tj = std::clamp(tj, 0, INTER_Y - 1);
+}
+
+// Lane point nearest to the vehicle (ai.dir / ti / tj are re-derived from its pose).
+// Fails if the vehicle is too far from / misaligned with a lane, or inside a junction.
+static bool LanePose(Vehicle& v, const CityMap& map, float maxLateral, float maxAngle, Vector2& lanePos) {
+    AIResetPath(v, map);
+    DriverAI& ai = v.ai;
+    int d = ai.dir;
+    Vector2 c = map.InterCenter(ai.ti, ai.tj);
+    float along = Dot(v.pos - c, DirVec(d));                   // negative: before the junction
+    lanePos = c + DirVec(d) * along + RightV(d) * LANE_OFFSET;
+    float lateral = Dist(v.pos, lanePos);
+    float angDiff = fabsf(WrapAngle(v.angle - AngleOf(DirVec(d))));
+    if (lateral > maxLateral || angDiff > maxAngle) return false;
+    return along <= -ROAD_HALF - 10;
+}
+
+// Is the way from our pose onto the lane (half-way and the end pose) free of other
+// vehicles and obstacles? Re-joining is kinematic, so it must not slide through anything.
+static bool RejoinClear(Game& g, int self, Vector2 target, float targetAng) {
+    const Vehicle& v = g.vehicles[self];
+    static std::vector<int> ids;
+    for (float t : { 0.5f, 1.0f }) {
+        Vector2 p = LerpV(v.pos, target, t);
+        OBB box = MakeOBB(p, v.angle + WrapAngle(targetAng - v.angle) * t, v.width * 0.5f + 3, v.length * 0.5f + 3);
+        for (int k = 0; k < (int)g.vehicles.size(); k++) {
+            const Vehicle& o = g.vehicles[k];
+            if (k == self || !o.active || Len2(o.pos - p) > 200 * 200) continue;
+            Vector2 n; float depth;
+            if (OBBOverlap(box, o.Box(2), n, depth)) return false;
+        }
+        g.map.QueryObjects({ p.x - 60, p.y - 60, 120, 120 }, ids);
+        for (int k : ids) { Vector2 n; float depth; if (!g.map.objects[k].soft && CircleOBB(g.map.objects[k].pos, g.map.objects[k].radius, box, n, depth)) return false; }
+        if (g.map.PointInBuilding(p, v.width * 0.5f)) return false;
+    }
+    return true;
+}
+
+// U-turn in the middle of a block: swing across into the opposite lane.
+static bool PlanUTurn(Game& g, Vehicle& v) {
+    const CityMap& map = g.map;
+    DriverAI& ai = v.ai;
+    AIResetPath(v, map);
+    int d = ai.dir;
+    Vector2 c = map.InterCenter(ai.ti, ai.tj);
+    float along = Dot(v.pos - c, DirVec(d));
+    if (along > -ROAD_HALF - 90) return false;                  // too close to the junction
+    int od = (d + 2) & 3;
+    int bi = ai.ti - DX(d), bj = ai.tj - DY(d);                 // junction behind us
+    if (!map.ValidInter(bi, bj)) return false;
+    Vector2 start = c + DirVec(d) * along + RightV(d) * LANE_OFFSET;
+    Vector2 end = start - RightV(d) * (LANE_OFFSET * 2);
+    // is the opposite lane clear?
+    for (const Vehicle& o : g.vehicles) {
+        if (!o.active || &o == &v) continue;
+        Vector2 rel = o.pos - end;
+        if (fabsf(Dot(rel, RightV(d))) < 40 && Dot(rel, DirVec(od)) > -80 && Dot(rel, DirVec(od)) < 260) return false;
+    }
+    StartPath(v, start, DirVec(d));
+    Vector2 ctrl = start + DirVec(d) * 70.0f - RightV(d) * LANE_OFFSET;
+    for (int k = 1; k <= 12; k++) { Waypoint t; t.p = QuadBezier(start, ctrl, end, k / 12.0f); t.turn = true; Push(ai, t); }
+    ai.dir = od; ai.ti = bi; ai.tj = bj;
+    PlanNext(v, map, nullptr);
+    ai.blend = 0.6f; ai.blendPos = v.pos; ai.blendAng = v.angle;
+    ai.uturnCooldown = 20;
+    return true;
+}
+
+void AIKnock(Vehicle& v) {
+    if (!v.ai.rail) return;
+    DriverAI& ai = v.ai;
+    ai.rail = false;
+    ai.dynTimer = 0;
+    ai.blend = 0;
+    ai.shove = ai.recover = ai.gearTimer = ai.jammed = ai.retry = 0;
+    v.in = VehicleInput{};
+}
+
+// -------------------------------------------------------------------------------------
+//  Junction logic
+// -------------------------------------------------------------------------------------
+static bool InBox(Vector2 p, Vector2 c, float grow = 6) {
+    return fabsf(p.x - c.x) < ROAD_HALF + grow && fabsf(p.y - c.y) < ROAD_HALF + grow;
+}
+
+// May vehicle 'self' enter the junction of stop waypoint w now?
+static bool JunctionClear(Game& g, int self, const Waypoint& w) {
+    const Vehicle& v = g.vehicles[self];
+    Vector2 c = g.map.InterCenter(w.si, w.sj);
+    float myDir = AngleOf(DirVec(w.d));
+    for (int k = 0; k < (int)g.vehicles.size(); k++) {
+        if (k == self) continue;
+        const Vehicle& o = g.vehicles[k];
+        if (!o.active || o.wrecked) continue;
+        bool isPlayer = g.player.inVehicle && g.player.vehicle == k;
+        bool mover = AIOnRail(o) || o.driver == DriverType::Police || (isPlayer && o.Speed() > 20);
+        if (!mover || Len2(o.pos - c) > 420 * 420) continue;
+        float diff = fabsf(WrapAngle(o.angle - myDir));
+        if (InBox(o.pos, c)) {
+            if (diff < 0.6f) continue;                                         // same way: follow through
+            bool opposite = diff > PI - 0.6f;
+            int theirTurn = AIOnRail(o) ? o.ai.curTurn : 0;
+            if (opposite && w.turnType != 2 && theirTurn != 2) continue;       // straight/right vs straight/right
+            return false;
+        }
+        // left turns yield to oncoming cars that are about to come through
+        if (w.turnType == 2 && AIOnRail(o) && o.ai.dir == ((w.d + 2) & 3) && o.ai.ti == w.si && o.ai.tj == w.sj) {
+            bool coming = g.map.SignalState(w.si, w.sj, w.axis) != SIG_RED && o.ai.speed > 30;
+            if (coming && Dist(o.pos, c) < 260) return false;
+        }
+    }
+    // don't block the box: is there room on the exit lane?
+    Vector2 X = c + DirVec(w.d2) * ROAD_HALF + RightV(w.d2) * LANE_OFFSET;
+    for (int k = 0; k < (int)g.vehicles.size(); k++) {
+        if (k == self) continue;
+        const Vehicle& o = g.vehicles[k];
+        if (!o.active) continue;
+        Vector2 rel = o.pos - X;
+        float along = Dot(rel, DirVec(w.d2)), lat = fabsf(Dot(rel, RightV(w.d2)));
+        if (along > -10 && along < v.length + 40 && lat < 26 && o.Speed() < 40) return false;
+    }
+    return true;
+}
+
+// -------------------------------------------------------------------------------------
+//  Look along our future path for anything in the way.
+// -------------------------------------------------------------------------------------
+struct Obstacle { float gap = 1e9f; float speed = 0; int vehicle = -1; bool isPlayer = false; bool isStatic = false; bool isPed = false; };
+
+static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift, bool watchPeople) {
+    const Vehicle& v = g.vehicles[self];
+    const DriverAI& ai = v.ai;
+    Obstacle best;
+    const float step = 12.0f;
+    int n = (int)(lookAhead / step) + 1;
+    float front = ai.s + v.length * 0.5f;
+    float halfW = v.width * 0.5f + 4.0f;
+    static std::vector<int> cands;
+    cands.clear();
+    for (int k = 0; k < (int)g.vehicles.size(); k++) {
+        if (k == self || !g.vehicles[k].active) continue;
+        if (Len2(g.vehicles[k].pos - v.pos) < (lookAhead + 220) * (lookAhead + 220)) cands.push_back(k);
+    }
+    for (int i = 0; i < n; i++) {
+        float d = i * step;
+        float hd = 0;
+        Vector2 p = Sample(ai, front + d, &hd);
+        p = p + Perp(Forward(hd)) * lateralShift;
+        for (int k : cands) {
+            const Vehicle& o = g.vehicles[k];
+            if (!PointInOBB(o.Box(), p, halfW)) continue;
+            if (AIOnRail(o) && o.ai.blocker == self && self < k && d > 6) continue;   // right of way tie breaker
+            if (d < best.gap) {
+                bool isPlayer = g.player.inVehicle && g.player.vehicle == k;
+                best = Obstacle{};
+                best.gap = d; best.vehicle = k; best.isPlayer = isPlayer;
+                best.isStatic = !isPlayer && !AIOnRail(o) && o.driver != DriverType::Police && o.Speed() < 8;
+                best.speed = Dot(o.vel, Forward(hd));
+            }
+        }
+        if (best.gap <= d) break;
+        if (watchPeople) {
+            for (const Pedestrian& pd : g.peds) {
+                if (!pd.active || pd.state == PedState::Dead) continue;
+                if (Len2(pd.pos - p) > (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) continue;
+                if (g.map.TileAt(pd.pos) != Tile::Road && lateralShift <= 0) continue;   // on the sidewalk: ignore
+                best = Obstacle{}; best.gap = d; best.isPed = true;
+                break;
+            }
+            if (!g.player.inVehicle && Len2(g.player.pos - p) < (halfW + PED_RADIUS) * (halfW + PED_RADIUS) &&
+                (g.map.TileAt(g.player.pos) == Tile::Road || lateralShift > 0) && d < best.gap) {
+                best = Obstacle{}; best.gap = d; best.isPlayer = true; best.isPed = true;
+            }
+        }
+        if (best.gap <= d) break;
+    }
+    return best;
+}
+
+// Can we drive along our path shifted sideways by 'shift' (checks vehicles and, for
+// shifts onto the sidewalk, street furniture) over the next 'len' px?
+static bool SideClear(Game& g, int self, float shift, float len, bool sidewalk) {
+    const Vehicle& v = g.vehicles[self];
+    float front = v.ai.s;
+    static std::vector<int> ids;
+    for (float d = 0; d < len; d += 16) {
+        float hd = 0;
+        Vector2 p = Sample(v.ai, front + d, &hd) + Perp(Forward(hd)) * shift;
+        for (int k = 0; k < (int)g.vehicles.size(); k++) {
+            if (k == self || !g.vehicles[k].active) continue;
+            const Vehicle& o = g.vehicles[k];
+            if (Len2(o.pos - p) > 200 * 200) continue;
+            if (PointInOBB(o.Box(), p, v.width * 0.5f + 6)) return false;
+            if (!sidewalk && o.Speed() > 20 && Dot(o.vel, Forward(hd)) < -20 && Dist(o.pos, p) < 220) return false;   // oncoming
+        }
+        if (sidewalk) {
+            g.map.QueryObjects({ p.x - 30, p.y - 30, 60, 60 }, ids);
+            for (int k : ids) if (Dist(g.map.objects[k].pos, p) < g.map.objects[k].radius + v.width * 0.5f + 2) return false;
+            if (g.map.PointInBuilding(p, v.width * 0.5f)) return false;
+        }
+    }
+    return true;
+}
+
+// -------------------------------------------------------------------------------------
+//  Traffic update
+// -------------------------------------------------------------------------------------
+// A traffic car knocked off its rail is a normal physics car. The driver:
+//   1. brakes to a stop after the hit,
+//   2. re-joins the lane when close to it and the spot is actually free (waits otherwise),
+//   3. else drives back towards the lane - backing out and turning when wedged,
+//   4. gives up (gets out and walks off) when the car is badly damaged or it takes too long.
+static void UpdateKnocked(Game& g, int idx, float dt) {
+    Vehicle& v = g.vehicles[idx];
+    DriverAI& ai = v.ai;
+    ai.dynTimer += dt;
+    v.in = VehicleInput{};
+    if (ai.recover <= 0 && (ai.dynTimer < 0.7f || (v.Speed() > 18 && ai.dynTimer < 3.0f))) {
+        // brake pedal only while clearly moving (at a crawl it would engage reverse and the
+        // car would rock back and forth); the handbrake holds it still
+        v.in.brake = v.speedFwd > 40 ? 1.0f : 0.0f;
+        v.in.throttle = v.speedFwd < -40 ? 1.0f : 0.0f;       // rolling backwards: brake that too
+        v.in.handbrake = fabsf(v.speedFwd) < 60;
+        return;
+    }
+    if (v.health < v.S().health * 0.35f || ai.recover > 12.0f) {
+        g.statAbandons++;
+        if (!g.OnScreen(v.pos, 150) && !v.missionTarget) { AIPlaceOnRoad(g, v, g.PlayerPos(), 900, 2600, true); return; }
+        g.SpawnPed(v.pos - RightOf(v.angle) * (v.width * 0.5f + 12), v.driverSkin, v.health < v.S().health * 0.6f);
+        v.driver = DriverType::None;
+        return;
+    }
+    ai.recover += dt;
+
+    // ---- back onto the lane ----
+    ai.retry -= dt;
+    if (ai.retry <= 0) {
+        ai.retry = 0.25f;
+        Vector2 lanePos;
+        if (LanePose(v, g.map, 64, 0.95f, lanePos) && RejoinClear(g, idx, lanePos, AngleOf(DirVec(ai.dir)))) {
+            StartPath(v, lanePos, DirVec(ai.dir));
+            PlanNext(v, g.map, nullptr);
+            ai.rail = true;
+            ai.speed = std::max(0.0f, v.speedFwd);
+            ai.blend = 1.0f;
+            ai.blendPos = v.pos; ai.blendAng = v.angle;
+            ai.laneShift = ai.laneShiftTarget = 0;
+            ai.recover = ai.gearTimer = ai.jammed = 0;
+            g.statRejoins++;
+            if (GRng().Chance(0.5f)) g.audio.Play(Sfx::Horn, v.pos, 0.5f);
+            return;
+        }
+    }
+
+    // ---- drive towards a point on our lane a few car lengths ahead ----
+    AIResetPath(v, g.map);
+    int d = ai.dir;
+    Vector2 c = g.map.InterCenter(ai.ti, ai.tj);
+    float along = Dot(v.pos - c, DirVec(d));
+    float ahead = along > -ROAD_HALF - 10 ? ROAD_HALF + v.length * 2.0f                    // in a junction: out the far side
+                                          : std::min(along + v.length * 2.5f, -ROAD_HALF - v.length);
+    Vector2 aim = c + DirVec(d) * ahead + RightV(d) * LANE_OFFSET;
+    float err = WrapAngle(AngleOf(aim - v.pos) - v.angle);
+    if (ai.gearTimer > 0) {                                     // backing out, nose swinging to the aim
+        ai.gearTimer -= dt;
+        if (v.speedFwd > -90) v.in.brake = 0.7f;
+        v.in.steer = -Clampf(err * 2.0f, -1, 1);
+    } else {
+        v.in.steer = Clampf(err * 2.0f, -1, 1);
+        float want = fabsf(err) > 1.2f ? 45.0f : 110.0f;
+        if (v.speedFwd < want) v.in.throttle = 0.55f; else if (v.speedFwd > want + 30) v.in.brake = 0.5f;
+        if (fabsf(err) > 2.3f) ai.gearTimer = 1.0f;             // aim is behind us: three-point turn
+    }
+    // wedged against something: pressing on without moving -> swap gear
+    bool pressing = v.in.throttle > 0.3f || v.in.brake > 0.3f;
+    ai.jammed = pressing && v.Speed() < 12 ? ai.jammed + dt : 0.0f;
+    if (ai.jammed > 0.8f) { ai.jammed = 0; ai.gearTimer = ai.gearTimer > 0 ? 0.0f : 1.2f; }
+}
+
+void AIUpdateTraffic(Game& g, int idx, float dt) {
+    Vehicle& v = g.vehicles[idx];
+    const CityMap& map = g.map;
+    DriverAI& ai = v.ai;
+    Rng& r = GRng();
+    v.headlights = g.dn.night > 0.35f;
+    if (!ai.rail) { UpdateKnocked(g, idx, dt); return; }
+
+    // ---- keep enough path ahead, drop what is far behind ----
+    while (ai.path.empty() || ai.path.back().cum - ai.s < 520) {
+        if (ai.path.empty()) StartPath(v, v.pos, Forward(v.angle));
+        PlanNext(v, map, nullptr);
+    }
+    while (ai.path.size() > 3 && ai.path[1].cum < ai.s - v.length - 60) {
+        float base = ai.path[1].cum;
+        ai.path.pop_front();
+        for (Waypoint& w : ai.path) w.cum -= base;
+        ai.s -= base;
+    }
+    ai.uturnCooldown = std::max(0.0f, ai.uturnCooldown - dt);
+    // now and then a driver looks at their phone... (accidents happen)
+    if (ai.distracted > 0) ai.distracted -= dt;
+    else if (r.Chance(dt * 0.004f * ai.temper)) ai.distracted = r.Range(1.0f, 2.5f);
+
+    // ---- desired speed ----
+    const VehicleSpec& sp = v.S();
+    float desired = ai.cruise * (ai.panic > 0 ? 1.5f : 1.0f);
+    ai.panic = std::max(0.0f, ai.panic - dt);
+    ai.reason = 0;
+    float front = ai.s + v.length * 0.5f;
+    for (size_t k = 0; k < ai.path.size(); k++) {
+        const Waypoint& w = ai.path[k];
+        float gap = w.cum - front;
+        if (gap > 320) break;
+        if (w.turn && gap > -v.length) desired = std::min(desired, (sp.large() ? 95.0f : 130.0f) + std::max(0.0f, gap) * 1.1f);
+        if (w.stop) {
+            float stopGap = w.cum - STOP_BACK - front;
+            if (stopGap < -8) { ai.curTurn = w.turnType; continue; }       // committed: past the stop line
+            int sig = map.SignalState(w.si, w.sj, w.axis);
+            bool canStop = stopGap > (ai.speed * ai.speed) / (2 * COMFORT_DECEL * 1.6f) - 6;
+            bool mustStop = false;
+            if (ai.panic <= 0 && (sig == SIG_RED || (sig == SIG_YELLOW && canStop))) { mustStop = true; ai.reason = 1; }
+            else if (stopGap < 90 && !JunctionClear(g, idx, w)) { mustStop = true; ai.reason = w.turnType == 2 ? 4 : 6; }
+            if (mustStop) desired = std::min(desired, sqrtf(2 * COMFORT_DECEL * std::max(0.0f, stopGap - 2)));
+            break;
+        }
+    }
+    // ---- vehicles / people ahead on our path ----
+    float look = 40 + ai.speed * 1.1f + v.length * 0.5f;
+    Obstacle ob = ScanPath(g, idx, look, ai.laneShift, ai.distracted <= 0);
+    ai.blocker = ob.gap < 30 ? ob.vehicle : -1;
+    if (ob.gap < 1e8f) {
+        float lim = std::max(0.0f, ob.gap - 10) * 2.0f + std::max(0.0f, ob.speed) * 0.8f;
+        if (ob.gap < 14) lim = 0;
+        if (lim < desired) { desired = lim; if (lim < 20) ai.reason = ob.isStatic ? 5 : ob.vehicle >= 0 ? 2 : 3; }
+    }
+
+    // ---- getting around trouble: overtake, mount the kerb, U-turn, honk ----
+    bool stoppedByBlocker = ob.gap < 70 && (ob.isStatic || (ob.vehicle >= 0 && g.vehicles[ob.vehicle].Speed() < 5 && !AIOnRail(g.vehicles[ob.vehicle])));
+    if (stoppedByBlocker || (ob.vehicle >= 0 && ob.gap < 40 && ai.speed < 5 && ai.reason == 2)) ai.blocked += dt;
+    else ai.blocked = std::max(0.0f, ai.blocked - dt);
+    if (ai.laneShiftTarget == 0 && stoppedByBlocker && ai.blocked > 1.0f / ai.temper) {
+        const float overtake = -LANE_OFFSET * 1.9f, kerb = LANE_OFFSET * 1.35f;
+        if (SideClear(g, idx, overtake, look + 160, false)) ai.laneShiftTarget = overtake;           // oncoming lane
+        else if (!sp.large() && SideClear(g, idx, kerb, look + 120, true)) ai.laneShiftTarget = kerb; // onto the sidewalk
+    }
+    if (ai.blocked > 6.0f && ai.uturnCooldown <= 0 && !sp.large()) {                               // give up: turn round
+        if (PlanUTurn(g, v)) { ai.blocked = 0; return; }
+        ai.uturnCooldown = 4;
+    }
+    if (ai.laneShiftTarget != 0) {
+        desired = std::min(desired, ai.laneShiftTarget > 0 ? 70.0f : 150.0f);
+        bool beside = false;
+        for (const Vehicle& o : g.vehicles) {
+            if (!o.active || &o == &v || o.Speed() > 8 || AIOnRail(o)) continue;
+            Vector2 rel = o.pos - v.pos;
+            float al = Dot(rel, Forward(v.angle));
+            if (al > -v.length && al < v.length + 60 && fabsf(Dot(rel, Perp(Forward(v.angle)))) < 80) beside = true;
+        }
+        if (!beside && fabsf(ai.laneShift - ai.laneShiftTarget) < 6) ai.laneShiftTarget = 0;
+    }
+    ai.laneShift = Lerpf(ai.laneShift, ai.laneShiftTarget, Damp(2.2f, dt));
+    // horn: at the player, at people in the road, and at anyone blocking us for too long
+    ai.honk -= dt;
+    bool annoyed = (ob.isPlayer && ob.gap < 40) || (ob.isPed && ob.gap < 30 && ai.speed < 20) || (ai.blocked > 2.5f / ai.temper);
+    if (annoyed && ai.honk <= 0) {
+        g.audio.Play(Sfx::Horn, v.pos, 0.55f, r.Range(0.85f, 1.2f));
+        ai.honk = r.Range(2.5f, 5.0f) / ai.temper;
+    }
+
+    // ---- speed integration (smooth, jerk-free) ----
+    float accel = sp.accel * 0.45f;
+    float decel = desired < 1 && ob.gap < 30 ? 900.0f : COMFORT_DECEL * 1.6f;
+    float prevSpeed = ai.speed;
+    if (desired > ai.speed) ai.speed = std::min(desired, ai.speed + accel * dt);
+    else ai.speed = std::max(desired, ai.speed - decel * dt);
+    ai.speed = std::max(0.0f, ai.speed);
+    ai.s += ai.speed * dt;
+
+    // ---- pose from two points on the path (front / rear axle) ----
+    float axle = v.length * 0.32f;
+    Vector2 fp = Sample(ai, ai.s + axle), rp = Sample(ai, ai.s - axle);
+    Vector2 dir = Norm(fp - rp);
+    if (Len2(dir) < 0.5f) dir = Forward(v.angle);
+    Vector2 pos = (fp + rp) * 0.5f + Perp(dir) * ai.laneShift;
+    float ang = AngleOf(dir);
+    if (ai.blend > 0) {
+        ai.blend = std::max(0.0f, ai.blend - dt * 1.4f);
+        float t = SmoothStep(0, 1, ai.blend);
+        pos = LerpV(pos, ai.blendPos, t);
+        ang = ang + WrapAngle(ai.blendAng - ang) * t;
+    }
+    float idt = dt > 1e-5f ? 1.0f / dt : 0.0f;
+    v.vel = (pos - v.pos) * idt;
+    if (Len(v.vel) > ai.speed * 1.5f + 60) v.vel = dir * ai.speed;   // no velocity spikes when re-attaching
+    v.angVel = WrapAngle(ang - v.angle) * idt;
+    v.pos = pos;
+    v.angle = ang;
+    v.speedFwd = ai.speed;
+    v.slip = 0;
+    v.braking = ai.speed < prevSpeed - 0.5f || (ai.speed < 1 && desired < 1);
+    v.reversing = false;
+    v.in = VehicleInput{};
+    v.in.throttle = desired > ai.speed ? 0.6f : 0.0f;
+    v.rpm = Lerpf(v.rpm, 0.25f + 0.6f * Saturate(ai.speed / sp.maxSpeed), Damp(4, dt));
+}
+
+// -------------------------------------------------------------------------------------
+//  Police (physics driven)
+// -------------------------------------------------------------------------------------
+static Vector2 LookAheadPts(const Vehicle& v, float L) {
+    Vector2 prev = v.pos, target = v.ai.path.empty() ? v.pos + v.Fwd() * L : v.ai.path.front().p;
+    float remain = L;
+    for (const Waypoint& w : v.ai.path) {
+        float seg = Dist(prev, w.p);
+        if (seg >= remain) return prev + Norm(w.p - prev) * remain;
+        remain -= seg; prev = w.p; target = w.p;
+    }
+    return target;
+}
+
+static void PopReached(Vehicle& v) {
+    Vector2 f = v.Fwd();
+    while (!v.ai.path.empty()) {
+        Vector2 to = v.ai.path.front().p - v.pos;
+        float d = Len(to);
+        if (d < 30 || (d < 130 && Dot(to, f) < 0)) v.ai.path.pop_front(); else break;
+    }
+}
+
+void AIUpdatePolice(Game& g, int idx, float dt) {
+    Vehicle& v = g.vehicles[idx];
+    const CityMap& map = g.map;
+    DriverAI& ai = v.ai;
+    v.headlights = g.dn.night > 0.35f;
+    bool chasing = g.heat > 0.01f && g.state == GameState::Playing;
+    v.siren = chasing;
+    Vector2 tp = g.PlayerPos(), tv = g.PlayerVel();
+    float dist = Dist(v.pos, tp);
+    bool see = chasing && dist < 650 && map.LineOfSight(v.pos, tp);
+    if (see) g.heatCooldown = 0;
+
+    if (ai.reverse > 0) {                                        // backing out after getting wedged
+        ai.reverse -= dt;
+        v.in.throttle = 0; v.in.brake = 1; v.in.handbrake = false;
+        return;
+    }
+    if (see || (chasing && dist < 160)) {
+        // direct pursuit: lead the target, ram when close
+        Vector2 aim = tp + tv * Clampf(dist / 700.0f, 0, 0.7f);
+        float err = WrapAngle(AngleOf(aim - v.pos) - v.angle);
+        v.in.steer = Clampf(err * 2.2f, -1, 1);
+        float desired = dist < 120 && !g.PlayerInCar() ? 60.0f : v.S().maxSpeed;
+        float e = desired - v.speedFwd;
+        v.in.throttle = e > 0 ? 1.0f : 0.0f;
+        v.in.brake = e < 0 ? Clampf(-e / 60, 0, 1) : 0.0f;
+        v.in.handbrake = fabsf(err) > 1.1f && v.speedFwd > 280;
+        ai.path.clear();
+        if (chasing && dist < 400) {
+            ai.honk -= dt;
+            if (ai.honk <= 0 && GRng().Chance(0.3f)) { g.audio.Play(Sfx::Horn, v.pos, 0.5f, 0.8f); ai.honk = 3; }
+        }
+    } else {
+        // road driving: pursuit along the grid choosing turns that close in, or patrol
+        if (ai.path.empty()) AIResetPath(v, map);
+        PopReached(v);
+        while (ai.path.size() < 12) PlanNext(v, map, chasing ? &tp : nullptr);
+        if (Dist(v.pos, ai.path.front().p) > 380) { AIResetPath(v, map); while (ai.path.size() < 12) PlanNext(v, map, chasing ? &tp : nullptr); }
+        Vector2 target = LookAheadPts(v, 50 + fabsf(v.speedFwd) * 0.35f);
+        float desired = chasing ? v.S().maxSpeed * 0.8f : 210.0f;
+        float along = 0; Vector2 prev = v.pos;
+        for (size_t k = 0; k < ai.path.size() && along < 260; k++) {
+            along += Dist(prev, ai.path[k].p); prev = ai.path[k].p;
+            if (ai.path[k].turn) { desired = std::min(desired, 200.0f + std::max(0.0f, along - 60) * 1.5f); break; }
+        }
+        // don't plough into traffic when not chasing
+        if (!chasing) {
+            for (const Vehicle& o : g.vehicles) {
+                if (!o.active || &o == &v) continue;
+                Vector2 rel = o.pos - v.pos;
+                float al = Dot(rel, v.Fwd());
+                if (al > 0 && al < 160 && fabsf(Dot(rel, Perp(v.Fwd()))) < 36) desired = std::min(desired, std::max(0.0f, al - 60) * 1.5f);
+            }
+        }
+        float err = WrapAngle(AngleOf(target - v.pos) - v.angle);
+        v.in.steer = Clampf(err * 2.0f, -1, 1);
+        float e = desired - v.speedFwd;
+        v.in.throttle = e > 0 ? Clampf(e / 80, 0.2f, 1.0f) : 0.0f;
+        v.in.brake = e < 0 ? Clampf(-e / 60, 0, 1) : 0.0f;
+        v.in.handbrake = false;
+    }
+    // wedged against something while trying to drive? back out once
+    if (v.in.throttle > 0.5f && fabsf(v.speedFwd) < 15) ai.stuck += dt; else ai.stuck = std::max(0.0f, ai.stuck - dt * 2);
+    if (ai.stuck > 1.8f) { ai.stuck = 0; ai.reverse = 1.0f; ai.path.clear(); }
+}
+
+// -------------------------------------------------------------------------------------
+//  Spawning
+// -------------------------------------------------------------------------------------
+bool AIPlaceOnRoad(Game& g, Vehicle& v, Vector2 near, float minDist, float maxDist, bool offscreen) {
+    const CityMap& map = g.map;
+    Rng& r = GRng();
+    for (int tries = 0; tries < 40; tries++) {
+        bool horizontal = r.Chance(0.5f);
+        int i = horizontal ? r.Int(0, INTER_X - 2) : r.Int(0, INTER_X - 1);
+        int j = horizontal ? r.Int(0, INTER_Y - 1) : r.Int(0, INTER_Y - 2);
+        Vector2 a = map.InterCenter(i, j), b = horizontal ? map.InterCenter(i + 1, j) : map.InterCenter(i, j + 1);
+        bool fwd = r.Chance(0.5f);
+        int d = horizontal ? (fwd ? 1 : 3) : (fwd ? 2 : 0);
+        Vector2 p = LerpV(a, b, r.Range(0.3f, 0.6f)) + RightV(d) * LANE_OFFSET;
+        float dist = Dist(p, near);
+        if (dist < minDist || dist > maxDist) continue;
+        if (offscreen && g.OnScreen(p, 150)) continue;
+        bool clear = true;
+        for (const Vehicle& o : g.vehicles) if (o.active && &o != &v && Len2(o.pos - p) < 150 * 150) { clear = false; break; }
+        if (!clear) continue;
+        v.pos = p; v.vel = { 0, 0 }; v.angle = AngleOf(DirVec(d)); v.angVel = 0;
+        v.ai = DriverAI{};
+        v.ai.dir = d;
+        v.ai.ti = fwd ? (horizontal ? i + 1 : i) : i;
+        v.ai.tj = fwd ? (horizontal ? j : j + 1) : j;
+        v.ai.cruise = (v.S().large() ? r.Range(170, 205) : r.Range(215, 265));   // ~48-60 km/h
+        v.ai.temper = r.Range(0.6f, 1.5f);
+        if (v.driver == DriverType::Traffic) {
+            StartPath(v, p, DirVec(d));
+            PlanNext(v, map, nullptr);
+            v.ai.rail = true;
+            v.ai.speed = v.ai.cruise * 0.6f;
+        }
+        return true;
+    }
+    return false;
+}

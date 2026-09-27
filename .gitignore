@@ -1,0 +1,7 @@
+build/
+build_cmake/
+*.exe
+*.o
+*.log
+shot_*.png
+screenshot*.png
