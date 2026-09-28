@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- CJ-002 specification draft and proposed ADR-0007: researched handling references, calibration targets for all 17 vehicle classes, collision acceptance and a before/after measurement plan. Awaiting approval; gameplay and test commands are unchanged.
+- Follow-up playtest notes for CJ-010/CJ-013, including the request to match GTA 1/2's approach to the crosshair.
+
 - Pedestrians predict the motion of vehicles and jump out of their way; they react after a personal reaction time and panic after a close call ([ADR-0006](docs/adr/0006-pedestrian-steering.md)).
 - Anticipatory time-to-collision avoidance between people, the player and street furniture; people walk where they face and turn at a realistic rate.
 - Queueing at the kerb and safe crossing: people only cross on green when they can leave the road in time, check for vehicles, hurry when the lights change, and jaywalk only on a gap.

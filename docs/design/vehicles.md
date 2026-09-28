@@ -6,6 +6,8 @@ Source: `src/vehicle_types.*` (classes), `src/vehicle.*` (handling, effects, dra
 
 > **Status:** the handling model and the damage model are due for a rework — see [CJ-002](../backlog.md#cj-002-vehicle-handling-model) and [CJ-003](../backlog.md#cj-003-vehicle-damage-model).
 
+The [CJ-002 proposal](vehicle-handling-proposal.md) contains researched references, proposed targets for all 17 classes and the measurement plan. It awaits approval; this document still describes the implemented arcade model.
+
 ## Contents
 
 - [Vehicle classes](#vehicle-classes)

@@ -8,6 +8,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Scenarios](#scenarios)
 - [Metrics](#metrics)
 - [Baseline](#baseline)
+- [Proposed CJ-002 measurements](#proposed-cj-002-measurements)
 - [Workflow](#workflow)
 
 ## Running a scenario
@@ -107,6 +108,12 @@ Before and after CJ-010. `foot` ran 1,500 frames and `rampage` 3,600 frames. The
 | Pedestrian CPU time | 0.28 ms | 0.37 ms | 0.26 ms | 0.41 ms |
 
 The overlap count rose with the local density (about five times as many people near the player) and is highest in `rampage`, where crowds run from the car; people still never stay inside each other. Across runs the `rampage` escape rate varied between 72 % and 81 %. In `brawl`, 1–4 tough people fought back per run and landed up to 10 punches.
+
+## Proposed CJ-002 measurements
+
+The [handling proposal](design/vehicle-handling-proposal.md#measurement-plan) defines class-by-class acceleration, braking, skidpad, rear-brake and collision tests. `handling`, `crash-handling` and `--vehicle` are proposed extensions, not supported commands yet. The proposal is awaiting approval; no CJ-002 build, baseline, after measurement or playtest has been performed.
+
+After approval, implement the measurement-only harness before changing production physics, record the baseline, then freeze the scenarios for the after run. Keep the existing `crash`, `derby` and `chase` scripts; their run-up speeds depend on the handling, so prescribed-speed collision fixtures are also required. Report contact-only momentum/energy separately from tyre-ground and damage effects, include vehicle–vehicle penetration, and inspect screenshot series. See the proposal for per-class bands, exact planned commands and collision acceptance criteria.
 
 ## Workflow
 

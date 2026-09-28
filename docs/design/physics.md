@@ -4,6 +4,8 @@ Vehicle collision detection and response: how vehicles touch each other and the 
 
 Source: `src/physics.h`, `src/physics.cpp`; crash consequences in `Game::HandleImpacts` (`src/game.cpp`); object materials in `ApplyMaterial` (`src/city_map.cpp`). The reasoning behind the design is recorded in [ADR-0005](../adr/0005-vehicle-contact-solver.md).
 
+The [CJ-002 proposal](vehicle-handling-proposal.md#collision-acceptance) defines additional collision measurements for review. It does not change the implemented solver or supersede ADR-0005.
+
 ## Contents
 
 - [Goals](#goals)
