@@ -89,6 +89,9 @@ class CityMap {
 public:
     void Generate(uint32_t seed);
     void Update(float dt, Particles& fx);
+    // Unbounded uniform surface for measurements; rebuild after adding fixture obstacles.
+    void ResetTestGround(Tile surface);
+    void RebuildTestIndex();
 
     // ---- tiles & surfaces ----
     Tile      TileAtIdx(int tx, int ty) const;
@@ -155,6 +158,8 @@ public:
     float   time = 0;
 
 private:
+    bool testGround = false;
+    Tile testSurface = Tile::Road;
     Tile      tiles[cfg::MAP_H][cfg::MAP_W]{};
     BlockType blocks[cfg::BLOCKS_Y][cfg::BLOCKS_X]{};
     float     signalOffset[cfg::INTER_Y][cfg::INTER_X]{};

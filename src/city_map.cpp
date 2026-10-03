@@ -592,6 +592,17 @@ void CityMap::IndexBuildings() {
     stamp.assign(std::max(buildings.size(), objects.size()) + 1, 0);
 }
 
+void CityMap::ResetTestGround(Tile surface) {
+    testGround = true;
+    testSurface = surface;
+    buildings.clear(); objects.clear(); parking.clear(); characters.clear();
+    rail = RailLoop{}; trainPos.clear(); trainSpeed = 0;
+    for (auto& row : tiles) for (Tile& tile : row) tile = surface;
+    IndexBuildings();
+}
+
+void CityMap::RebuildTestIndex() { IndexBuildings(); }
+
 // -------------------------------------------------------------------------------------
 //  Update: signals, train, broken hydrants
 // -------------------------------------------------------------------------------------
@@ -610,6 +621,7 @@ void CityMap::Update(float dt, Particles& fx) {
 //  Queries
 // -------------------------------------------------------------------------------------
 Tile CityMap::TileAtIdx(int tx, int ty) const {
+    if (testGround) return testSurface;
     if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return Tile::Road;
     return tiles[ty][tx];
 }

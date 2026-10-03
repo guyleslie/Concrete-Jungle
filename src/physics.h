@@ -38,6 +38,13 @@
 class Game;
 struct Vehicle;
 
+// Isolated fixtures can remove external tyre forces and island walls.
+// Defaults preserve the production simulation.
+struct PhysicsStepOptions {
+    bool disableForces = false;
+    bool disableWorldEdges = false;
+};
+
 enum class ContactKind : uint8_t { Vehicle, Building, Object, WorldEdge };
 
 struct ImpactEvent {
@@ -53,7 +60,7 @@ struct ImpactEvent {
 
 class VehiclePhysics {
 public:
-    void Step(Game& g, float dt);
+    void Step(Game& g, float dt, const PhysicsStepOptions& options = {});
     std::vector<ImpactEvent> events;  // filled by Step, consumed by the game
 
     // tuning (px, s, tonnes)
@@ -66,6 +73,7 @@ public:
     static constexpr float KNOCK_SHOVE_TIME = 0.35f;   // ... or pushing on something this long
 
 private:
+    PhysicsStepOptions stepOptions;
     struct Body {
         Vehicle* v = nullptr;
         float im = 0, iI = 0;         // inverse mass / inertia (0: kinematic or static)

@@ -7,6 +7,10 @@
 #include "particles.h"
 #include "render.h"
 
+float VehicleYawInertia(const Vehicle& v) {
+    return v.S().mass * (v.width * v.width + v.length * v.length) / 12.0f;
+}
+
 void InitVehicle(Vehicle& v, int skin, Vector2 pos, float angle) {
     const VehicleSprite& s = gAssets.vehicles[skin];
     v = Vehicle{};

@@ -8,7 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- CJ-002 specification draft and proposed ADR-0007: researched handling references, calibration targets for all 17 vehicle classes, collision acceptance and a before/after measurement plan. Awaiting approval; gameplay and test commands are unchanged.
+- Approved CJ-002 specification and proposed ADR-0007: researched handling references, calibration targets for all 17 vehicle classes, collision acceptance and a before/after measurement plan.
+- Isolated `handling --vehicle <Class>` and `crash-handling` measurements, sequential evidence runner and a baseline report covering all 17 classes and 122 collision phases. Named runs preserve earlier evidence; the report distinguishes failed acceptance checks from incomplete execution and documents unavailable arcade tyre telemetry. Production handling is unchanged.
 - Follow-up playtest notes for CJ-010/CJ-013, including the request to match GTA 1/2's approach to the crosshair.
 
 - Pedestrians predict the motion of vehicles and jump out of their way; they react after a personal reaction time and panic after a close call ([ADR-0006](docs/adr/0006-pedestrian-steering.md)).

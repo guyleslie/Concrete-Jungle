@@ -5,7 +5,7 @@
 
 ## Context
 
-The current arcade model sets a target yaw rate and removes lateral velocity directly. Acceleration and braking are several times real-world magnitudes, class differences are weak, and tyre forces can obscure collision response. [CJ-002](../backlog.md#cj-002-vehicle-handling-model) calls for believable handling, distinct classes and more carefully verified impacts. The user must approve the [specification and class targets](../design/vehicle-handling-proposal.md) before implementation.
+The current arcade model sets a target yaw rate and removes lateral velocity directly. Acceleration and braking are several times real-world magnitudes, class differences are weak, and tyre forces can obscure collision response. [CJ-002](../backlog.md#cj-002-vehicle-handling-model) calls for believable handling, distinct classes and more carefully verified impacts. The user approved the [specification and class targets](../design/vehicle-handling-proposal.md) on 2026-09-28.
 
 ## Decision
 
@@ -27,4 +27,4 @@ Add isolated handling and prescribed-speed collision fixtures before changing pr
 - Mass, axle geometry and tyre force saturation make vehicle differences and impact response measurable.
 - Realistic acceleration and braking require deliberate adaptation of consumers such as the rail-traffic speed controller and police controls.
 - Heavy-vehicle masses will change collision delta-V under existing damage rules; damage-system redesign remains CJ-003.
-- The proposal has no implementation or baseline results yet. Acceptance requires class metrics, collision fixtures, city regressions, screenshot inspection and a user playtest. Any copied permissively licensed code must retain licence notices and be recorded in CREDITS.md.
+- The handling model is not implemented yet. Measurement-only fixtures and the [arcade baseline](../design/vehicle-handling-baseline.md) are available. Acceptance requires after measurements, city regressions, screenshot inspection and a user playtest. Any copied permissively licensed code must retain licence notices and be recorded in CREDITS.md.

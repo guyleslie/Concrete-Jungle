@@ -5,3 +5,4 @@ build_cmake/
 *.log
 shot_*.png
 screenshot*.png
+__pycache__/

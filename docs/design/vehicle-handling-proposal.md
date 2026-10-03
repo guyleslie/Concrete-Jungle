@@ -1,6 +1,6 @@
 # CJ-002: Vehicle handling proposal
 
-Proposed specification for believable, distinct vehicle handling and carefully measured collision response. This is a review draft dated 2026-09-27, awaiting user approval before implementation. The current behaviour remains documented in [Vehicles](vehicles.md) and [Physics](physics.md); none of the targets below are measured results.
+Approved specification for believable, distinct vehicle handling and carefully measured collision response. Drafted on 2026-09-27 and approved by the user on 2026-09-28. Implementation starts with measurement-only fixtures and a baseline. The current behaviour remains documented in [Vehicles](vehicles.md) and [Physics](physics.md); none of the targets below are measured results.
 
 ## Contents
 
@@ -106,7 +106,7 @@ Keep the current restitution law initially; evaluate friction and restitution ag
 
 ## Measurement plan
 
-After approval, first add measurement-only fixtures while leaving production handling, collision response and class values unchanged. Run the baseline on that build. Freeze input scripts, initial poses, scenario seeds, measurement definitions and tolerances before modifying physics; run exactly those fixtures again afterwards. Record revision, configuration and fixture identifiers in every result. The new CLI option and scenarios below are **planned, not currently available**.
+After approval, first add measurement-only fixtures while leaving production handling, collision response and class values unchanged. Run the baseline on that build. Freeze input scripts, initial poses, scenario seeds, measurement definitions and tolerances before modifying physics; run exactly those fixtures again afterwards. Record revision, configuration and fixture identifiers in every result. The CLI options and scenarios below are implemented in fixture `cj002-v1`; see the [recorded arcade baseline](vehicle-handling-baseline.md) for results and measurement limitations.
 
 `handling --vehicle <Class>` selects one of the 17 classes and uses an isolated, rendered test ground large enough for the entire manoeuvre, with no traffic, pedestrians, spawning, world-edge collision or live gameplay input contaminating the run. Keep the production tyre model, road material and integrator. Report every phase separately, and fail explicitly on missing measurements. A fixed 240 s (14,400-frame) budget per class allows:
 

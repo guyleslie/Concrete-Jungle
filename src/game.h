@@ -124,6 +124,7 @@ public:
     float diagMaxPen = 0, diagBodySeconds = 0, diagPlayerSlow = 0;
     void  PhysDiagnostics(float dt);
     void  LogPhysStats() const;
+    void ApplyTestImpacts(float dt) { HandleImpacts(dt); }
     // pedestrian diagnostics (--shot): per-frame sums (divide by 'frames' for averages)
     struct PedDiag {
         double flee = 0, dodge = 0, offCrossing = 0, visible = 0, overlaps = 0;

@@ -8,7 +8,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Scenarios](#scenarios)
 - [Metrics](#metrics)
 - [Baseline](#baseline)
-- [Proposed CJ-002 measurements](#proposed-cj-002-measurements)
+- [CJ-002 measurements](#cj-002-measurements)
 - [Workflow](#workflow)
 
 ## Running a scenario
@@ -23,6 +23,8 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 | `--frames <n>` | Number of frames to run (default 180); the frame time is fixed at 1/60 s |
 | `--every <n>` | Also saves `<file>_<frame>.png` every *n* frames |
 | `--scenario <name>` | The scenario to set up (default `foot`) |
+| `--vehicle <Class>` | Selects a class for the isolated `handling` scenario (default `Taxi`) |
+| `--uncapped` | Disables vsync in screenshot mode; simulation still advances exactly 1/60 s per rendered frame |
 
 Screenshot paths must be **relative** to the working directory: raylib prefixes the working directory to the file name. The window opens while the test runs. Keep test output in `build/`, which is not version-controlled.
 
@@ -40,6 +42,8 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `derby` | Full throttle through traffic with random steering; reverses when stuck |
 | `rampage` | At 13:00: straight 4 s runs at 50 km/h along the sidewalk walking lines of the blocks around the start, each from a fixed start point, so people have to get out of the way. Run it for 3,600 frames. |
 | `brawl` | At 13:00, on foot with fists: runs up to the nearest person standing (preferring anyone fighting back, not chasing runners) and punches them |
+| `handling` | Isolated acceleration, braking, top-speed, skidpad, rear-brake, reverse and surface measurements for the selected class; 14,400 frames |
+| `crash-handling` | Prescribed-speed contacts with isolated forces and production consequences measured separately, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
 
 ## Metrics
 
@@ -109,11 +113,17 @@ Before and after CJ-010. `foot` ran 1,500 frames and `rampage` 3,600 frames. The
 
 The overlap count rose with the local density (about five times as many people near the player) and is highest in `rampage`, where crowds run from the car; people still never stay inside each other. Across runs the `rampage` escape rate varied between 72 % and 81 %. In `brawl`, 1–4 tough people fought back per run and landed up to 10 punches.
 
-## Proposed CJ-002 measurements
+## CJ-002 measurements
 
-The [handling proposal](design/vehicle-handling-proposal.md#measurement-plan) defines class-by-class acceleration, braking, skidpad, rear-brake and collision tests. `handling`, `crash-handling` and `--vehicle` are proposed extensions, not supported commands yet. The proposal is awaiting approval; no CJ-002 build, baseline, after measurement or playtest has been performed.
+The [approved handling specification](design/vehicle-handling-proposal.md#measurement-plan) defines class-by-class acceleration, braking, skidpad, rear-brake and collision tests. The measurement-only harness is implemented before changing production handling or collision response. The [recorded arcade baseline](design/vehicle-handling-baseline.md) contains all 17 class results and 122 collision phases. No after measurement or handling playtest has been performed yet.
 
-After approval, implement the measurement-only harness before changing production physics, record the baseline, then freeze the scenarios for the after run. Keep the existing `crash`, `derby` and `chase` scripts; their run-up speeds depend on the handling, so prescribed-speed collision fixtures are also required. Report contact-only momentum/energy separately from tyre-ground and damage effects, include vehicle–vehicle penetration, and inspect screenshot series. See the proposal for per-class bands, exact planned commands and collision acceptance criteria.
+Use `--run-name review-20261003` to save a new runner evidence set in a subdirectory of the selected phase without replacing previous results. Names allow letters, digits, underscores and hyphens only. Run `python tools/summarize_cj002.py --output docs/design/vehicle-handling-baseline.md` to rebuild the baseline report from complete before manifests. The summarizer requires all classes, matching isolated input hashes, fixture summaries and final screenshots; failed target checks remain visible. An unbracketed skidpad sweep is a bound, not a measured grip maximum; missing baseline tyre telemetry is distinct from a handling defect.
+
+Run `python tools/run_cj002.py --phase before --suite all` after building, then repeat with `--phase after`. The runner opens one visible window at a time and records exact arguments, revision, dirty status, executable/configuration/fixture SHA-256 hashes, exit status and screenshot presence in timestamped manifests under `build/shots/cj002/`. Existing evidence requires explicit `--replace`; `--dry-run` previews the schedule without changing files. `--suite handling --vehicle Taxi` and `--suite city --scenario crash` select individual cases. Isolated fixtures use `--uncapped`; city runs preserve the existing timing options.
+
+Fixture `cj002-v1` reports each scheduled phase and fails missing measurements, incomplete execution, non-finite state or penetration above 3 px, including vehicle pairs. A skidpad trial needs exactly 180 measurement samples, radius error at most 5 %, speed error at most 2 % and measured lateral acceleration within 0.03 g of the requested value. The maximum is bracketed by both successful and unsuccessful trials; slowing down cannot count as meeting a higher-speed target. Axle-slip telemetry is unavailable on the baseline arcade model and is reported explicitly. Rear-brake yaw travel uses the first 3 s, and recovery requires 0.25 s continuously below the specified lateral/yaw limits.
+
+Keep the existing `crash`, `derby` and `chase` scripts; their run-up speeds depend on the handling, so prescribed-speed collision fixtures are also required. Contact-only momentum/energy checks exclude tyre-ground and damage effects. Inspect screenshot series and phase-labelled captures as well as numeric results. See the specification for per-class bands and collision acceptance criteria.
 
 ## Workflow
 

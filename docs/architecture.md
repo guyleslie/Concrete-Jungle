@@ -31,6 +31,7 @@ The `Game` class owns the world and the rules. Subsystems are plain modules with
 | Procedural art | `sprite_gen.*` | Signed-distance-field painter for sprites no asset pack covers |
 | City | `city_map.*` | City generation, 3D structures, street furniture, spatial queries, traffic signals, minimap |
 | Vehicles | `vehicle.*`, `vehicle_types.*` | Vehicle classes, engine / brake / tyre model, vehicle drawing |
+| Measurements | `vehicle_tests.*` | Isolated CJ-002 handling and collision fixtures, enabled only by screenshot scenarios |
 | Physics | `physics.*` | Vehicle collision detection and the contact solver |
 | Traffic | `traffic.*` | Traffic and police driving AI |
 | Pedestrians | `pedestrian.*` | Pedestrian AI, steering, the pedestrian grid and drawing |

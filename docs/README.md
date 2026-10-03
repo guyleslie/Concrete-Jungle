@@ -19,7 +19,8 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [City](design/city.md) | Procedural layout, buildings, special structures, street furniture, traffic signals |
 | [Rendering](design/rendering.md) | Camera, render passes, day/night lighting, particles, HUD |
 | [Vehicles](design/vehicles.md) | Vehicle classes, handling model, damage, fire and explosions |
-| [CJ-002 handling proposal](design/vehicle-handling-proposal.md) | Proposed class targets, source research, collision criteria and before/after measurements; awaiting approval |
+| [CJ-002 handling proposal](design/vehicle-handling-proposal.md) | Approved class targets, source research, collision criteria and before/after measurements |
+| [CJ-002 arcade baseline](design/vehicle-handling-baseline.md) | Recorded handling results for all 17 classes, collision failures and evidence provenance |
 | [Physics](design/physics.md) | Collision detection, contact solver, breakaway objects, crash consequences |
 | [Traffic](design/traffic.md) | Lane-following traffic, junction rules, recovery after crashes, police driving |
 | [Pedestrians](design/pedestrians.md) | Sidewalk behaviour, crossings, perception and dodging, fleeing, fighting back, steering, injuries, population |

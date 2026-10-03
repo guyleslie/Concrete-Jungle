@@ -33,7 +33,7 @@ Before each item, search for open-source code, assets and references that would 
 |---|---|---|---|
 | [CJ-010](#cj-010-pedestrian-behaviour) | Pedestrian behaviour | High | Implemented, awaiting playtest |
 | [CJ-013](#cj-013-full-screen-only) | Full screen only | High | Implemented, awaiting playtest |
-| [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | Open |
+| [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | In progress |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
 | [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Open |
@@ -77,7 +77,7 @@ Before each item, search for open-source code, assets and references that would 
 
 Remaining: the playtest.
 
-**Feedback request (2026-09-27).** Follow-up feedback requested on walking, crossings, dodging and getting up. No new acceptance or defect report received yet; keep this item awaiting playtest.
+**Feedback request (2026-09-27, repeated 2026-09-28).** Follow-up feedback requested on walking, crossings, dodging and getting up. No new acceptance or defect report received yet; keep this item awaiting playtest.
 
 ### CJ-013 Full screen only
 
@@ -95,11 +95,15 @@ Remaining: the playtest.
 ### CJ-002 Vehicle handling model
 
 - **Priority:** High
-- **Status:** Open
+- **Status:** In progress; specification approved, isolated baseline recorded
 
-**Specification draft (2026-09-27).** [Vehicle handling proposal](design/vehicle-handling-proposal.md), with source/licence research, numeric targets for all 17 shipped classes, rear-brake profiles, prescribed-speed collision cases and a baseline-first measurement plan. [ADR-0007](adr/0007-dynamic-vehicle-handling.md) is Proposed. Awaiting user approval before coding; no CJ-002 measurements or implementation yet. Work stays directly on `main` for this session, as requested.
+**Specification approved (2026-09-28).** [Vehicle handling proposal](design/vehicle-handling-proposal.md), with source/licence research, numeric targets for all 17 shipped classes, rear-brake profiles, prescribed-speed collision cases and a baseline-first measurement plan. [ADR-0007](adr/0007-dynamic-vehicle-handling.md) stays Proposed until implemented. Work stays directly on `main` for this session, as requested.
+
+**Baseline review (2026-10-03).** All 17 classes completed their isolated handling measurements; the collision fixture completed 122 phases with 18 failed acceptance checks. The recorded executable, configuration and fixture hashes match the current build. See the [baseline report](design/vehicle-handling-baseline.md) for class results, collision failures and limitations of the old model's slip/skidpad telemetry. A fresh Taxi run reproduced all 97 metric records, including its missing stop and 23 failed checks. All six city reference runs completed on the matching build; `crash`, `derby` and `chase` reproduced the documented physics reference, with no deep frames. Production handling remains unchanged. Next: implement the approved axle model and compare against this evidence; keep CJ-002 open for the driving playtest.
 
 **Problem.** Playtesting shows the vehicles are not controllable enough; the handling maths is not right. The physics is far from perfect: collisions need much closer attention, the vehicle types must handle clearly differently, and the game needs a reasonably realistic physics engine so that driving and every other vehicle action feel real.
+
+**City collision finding (2026-10-03).** The matching `rampage` baseline recorded 4 deep-overlap frames and a maximum penetration of 5.4 px. Keep this visible alongside the isolated collision failures; a zero process exit status is not proof of collision acceptance.
 
 **Current state.** An arcade model (`VehicleForces` in `src/vehicle.cpp`, described in [Vehicles › Handling model](design/vehicles.md#handling-model)): steering sets a target yaw rate, and sideways velocity decays exponentially. The class values in `vehicles.cfg` are 4–9 times real-world figures (for example 90 m/s² braking). The contact solver ([ADR-0005](adr/0005-vehicle-contact-solver.md)) is sound but was tuned for the arcade model.
 

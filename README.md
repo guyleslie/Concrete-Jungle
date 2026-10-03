@@ -84,6 +84,7 @@ Run the game from the project folder so it finds `assets/`:
 | [Building](docs/guides/building.md) | Toolchain, build options, troubleshooting |
 | [Adding content](docs/guides/adding-content.md) | New vehicles, characters, weapons, foliage and sounds without code changes |
 | [Testing](docs/testing.md) | Automated scenario runs and their metrics |
+| [Vehicle handling baseline](docs/design/vehicle-handling-baseline.md) | Measured class performance and collision findings before the CJ-002 physics rework |
 | [Backlog](docs/backlog.md) | Planned work with priorities and acceptance criteria |
 | [Changelog](CHANGELOG.md) | Notable changes per milestone |
 | [Contributing](CONTRIBUTING.md) | Workflow, coding style, commits and documentation conventions |

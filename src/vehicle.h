@@ -97,6 +97,7 @@ struct Vehicle {
 
     bool    headlights = false, braking = false, reversing = false, siren = false;
     float   slip = 0, speedFwd = 0, rpm = 0;
+    float   frontSlipAngle = NAN, rearSlipAngle = NAN;  // radians; N/A for the baseline arcade model
     Vector2 lastSkid[2]{};
     bool    skidOn[2]{ false, false };
     bool    missionTarget = false;
@@ -109,6 +110,7 @@ struct Vehicle {
 };
 
 void InitVehicle(Vehicle& v, int skin, Vector2 pos, float angle);
+float VehicleYawInertia(const Vehicle& v);   // tonnes * px^2, shared by tyres, contacts and measurements
 // Engine, brakes and tyres for one physics sub-step: changes vel / angVel only.
 void VehicleForces(Vehicle& v, const CityMap& map, float h);
 // Once per frame after the physics step: gauges, skid marks, tyre smoke, dust, damage fx.

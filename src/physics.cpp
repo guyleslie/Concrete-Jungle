@@ -194,6 +194,7 @@ void VehiclePhysics::Collide(Game& g, float dt) {
             bool hit = o.box ? CollideBoxes(box, o.Box(), margin, m) : CollideBoxCircle(box, o.pos, o.radius, margin, m);
             if (hit) add(m, ContactKind::Object, k, 0.3f, o.strength);
         }
+        if (stepOptions.disableWorldEdges) continue;
         // the seawall around the island
         Vector2 cs[4]; OBBCorners(box, cs);
         static const Vector2 N[4] = { { -1, 0 }, { 0, -1 }, { 1, 0 }, { 0, 1 } };   // from the car into the wall
@@ -313,7 +314,8 @@ void VehiclePhysics::ApplyRestitution(Contact& c) {
 // -------------------------------------------------------------------------------------
 //  Frame step
 // -------------------------------------------------------------------------------------
-void VehiclePhysics::Step(Game& g, float dt) {
+void VehiclePhysics::Step(Game& g, float dt, const PhysicsStepOptions& options) {
+    stepOptions = options;
     events.clear();
     auto& V = g.vehicles;
     const int nv = (int)V.size();
@@ -368,7 +370,7 @@ void VehiclePhysics::Step(Game& g, float dt) {
     gSoftStatic = MakeSoft(2.0f * hz, CONTACT_DAMPING, h);
     for (int s = 0; s < n; s++) {
         for (int i = 0; i < nv; i++)
-            if (V[i].active && !bodies[i].kin) VehicleForces(V[i], g.map, h);
+            if (V[i].active && !bodies[i].kin && !stepOptions.disableForces) VehicleForces(V[i], g.map, h);
         for (const SoftHit& sh : soft) {               // pushing through a shrub
             Vehicle& v = V[sh.v];
             float drag = expf(-(1.5f + g.map.objects[sh.obj].radius / 8.0f) * h);
