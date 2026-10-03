@@ -23,6 +23,7 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [CJ-002 arcade baseline](design/vehicle-handling-baseline.md) | Recorded handling results for all 17 classes, collision failures and evidence provenance |
 | [Physics](design/physics.md) | Collision detection, contact solver, breakaway objects, crash consequences |
 | [Traffic](design/traffic.md) | Lane-following traffic, junction rules, recovery after crashes, police driving |
+| [CJ-016 traffic behaviour proposal](design/traffic-behaviour-proposal.md) | Proposed physical manoeuvres, cooperative recovery, persistent drivers, incidents and CPU/test targets |
 | [Pedestrians](design/pedestrians.md) | Sidewalk behaviour, crossings, perception and dodging, fleeing, fighting back, steering, injuries, population |
 | [Gameplay](design/gameplay.md) | Player, weapons, wanted level, police response, missions, pickups |
 | [Audio](design/audio.md) | Procedural sound synthesis and file overrides |

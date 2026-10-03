@@ -4,6 +4,8 @@ How traffic and police vehicles drive. Traffic follows its lane kinematically ("
 
 Source: `src/traffic.h`, `src/traffic.cpp`; population management in `Game::UpdateSpawning` and `Game::UpdatePolice` (`src/game.cpp`).
 
+The user requested replacing timeout-based abandonment and relocation with persistent drivers, feasible manoeuvres and cause-based incidents on 2026-10-03. See the [CJ-016 proposal](traffic-behaviour-proposal.md). It is awaiting agreement; this document still describes the implemented system.
+
 ## Contents
 
 - [Rail driving](#rail-driving)

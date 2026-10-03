@@ -17,13 +17,15 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, based on the playtest feedback of 2026-09-27:
+Recommended order, updated by the user's traffic feedback on 2026-10-03:
 
-1. **Playtest CJ-010** (pedestrian behaviour) and CJ-013 (full screen) and close them, or note what still feels wrong.
-2. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — the most frequent complaint: the vehicles need a realistic physics model with clearly different handling per vehicle type.
+1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — agree the [behaviour and recovery proposal](design/traffic-behaviour-proposal.md), then measure persistent recovery and conflict resolution before implementation. The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
+2. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities needed by CJ-016 deliberately rather than changing traffic behaviour incidentally.
 3. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 4. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
 5. **[CJ-004](#cj-004-replace-placeholder-art) and [CJ-011](#cj-011-relaxed-player-posture) Character art** — one art session: civilians, motorbikes, and a relaxed player.
+
+CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance. The new traffic priority does not close them.
 
 Before each item, search for open-source code, assets and references that would help (the licence must allow redistribution; see [Adding content](guides/adding-content.md#art-and-licence-requirements)). Examples worth evaluating: Box2D or Jolt Physics as a reference for CJ-002, recorded CC0 sound libraries for CJ-012, OpenGameArt and Kenney-style texture packs of the right quality for CJ-014.
 
@@ -41,7 +43,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-018](#cj-018-police-drivers-avoid-pedestrians) | Police drivers avoid pedestrians | Medium | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
-| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Road rage and traffic incidents | Medium | Open |
+| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | Specification proposed |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
@@ -219,12 +221,16 @@ Remaining: the playtest.
 
 ### CJ-016 Road rage and traffic incidents
 
-- **Priority:** Medium
-- **Status:** Open
+- **Priority:** High
+- **Status:** Specification proposed on 2026-10-03, awaiting agreement
 
-**Idea.** Traffic that gets stuck or bumped now and then turns aggressive, as in real cities: a driver gets out, drags the other driver out of their car or beats them up, then gets back in and drives on — or leaves the car where it is. Abandoned cars and wrecks are towed away later by a tow truck (or cleared by the fire brigade).
+**User direction (2026-10-03).** Drivers should behave like people: follow, yield, avoid, reverse, honk, sometimes misjudge and collide, and occasionally get out to confront or fight another driver. A blocked situation must not be solved by deleting a driver, forcing them to walk away after a timer, or relocating an involved vehicle. This is the current priority; CJ-002 supplies the necessary vehicle capabilities.
 
-**Acceptance criteria.** A written rule set, agreed before implementation (what triggers an incident, how often, what each side does, when police react); incidents reuse the pedestrian fight behaviour ([Pedestrians › Fighting back](design/pedestrians.md#fighting-back)); a test scenario that provokes incidents and logs their outcomes; no traffic deadlocks caused by abandoned cars.
+**Current problem.** `UpdateKnocked` gives up after 12 s or below 35 % vehicle health; it spawns an unrelated pedestrian on-screen or relocates the vehicle off-screen. Recovery alternates controls towards one target without validating a full escape path. Pedestrian fighting currently targets the player, so a driver-versus-driver incident also needs persistent ownership and explicit actor targeting.
+
+**Proposed specification.** [Human-like traffic and incident proposal](design/traffic-behaviour-proposal.md): predicted occupancy, feasible swept-footprint manoeuvres, stable yielding roles, impossible-blockage handling, persistent drivers, cause-based incidents, reusable spatial queries and measured CPU budgets. [ADR-0008](adr/0008-human-like-traffic.md) is Proposed; the accepted rail decision remains in force until a tested replacement addresses its original jitter/deadlock concerns.
+
+**Acceptance criteria.** Agree the proposal's scenario table before implementation. Feasible blockages resolve physically; impossible ones remain stable and observable; timeout-based disappearance/relocation is zero; incident participants retain identity and car ownership; exiting, approaching, fighting and returning are visible actions with interruption rules. Validate with fixed seeds, 60 Hz/20 Hz scenarios, class-specific recovery tests, regression runs, separate traffic CPU timings and a user playtest. First deliver reliable manoeuvring, then incidents and combat; visible towing follows the accepted core.
 
 ### CJ-017 Pedestrian life
 

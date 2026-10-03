@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- CJ-016 proposal for human-like traffic: persistent recovery instead of timeout-based abandonment/relocation, cooperative manoeuvres, driver identities and incidents, with test and CPU targets. Proposed ADR-0008 records the replacement constraints for rail traffic. Gameplay is unchanged pending specification agreement.
 - Approved CJ-002 specification and proposed ADR-0007: researched handling references, calibration targets for all 17 vehicle classes, collision acceptance and a before/after measurement plan.
 - Isolated `handling --vehicle <Class>` and `crash-handling` measurements, sequential evidence runner and a baseline report covering all 17 classes and 122 collision phases. Named runs preserve earlier evidence; the report distinguishes failed acceptance checks from incomplete execution and documents unavailable arcade tyre telemetry. Production handling is unchanged.
 - Follow-up playtest notes for CJ-010/CJ-013, including the request to match GTA 1/2's approach to the crosshair.

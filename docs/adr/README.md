@@ -13,6 +13,7 @@ An architecture decision record (ADR) captures one significant technical decisio
 | [0005](0005-vehicle-contact-solver.md) | Sub-stepped impulse solver for vehicle contacts | Accepted | 2026-09-27 |
 | [0006](0006-pedestrian-steering.md) | Predictive perception and time-to-collision steering for pedestrians | Accepted | 2026-09-27 |
 | [0007](0007-dynamic-vehicle-handling.md) | Dynamic axle-based vehicle handling | Proposed | 2026-09-27 |
+| [0008](0008-human-like-traffic.md) | Human-like physical traffic and persistent drivers | Proposed | 2026-10-03 |
 
 ADRs 0001–0004 were recorded retroactively on 2026-09-27 for decisions made during the first development session.
 
