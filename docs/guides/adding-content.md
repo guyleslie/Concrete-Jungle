@@ -6,6 +6,7 @@ Vehicles, characters, weapons, foliage and sounds are data-driven: you add them 
 
 - [Data file format](#data-file-format)
 - [Vehicles](#vehicles)
+- [Traffic recovery](#traffic-recovery)
 - [Characters](#characters)
 - [Weapons](#weapons)
 - [Foliage](#foliage)
@@ -76,6 +77,31 @@ Generators: `car_hatch`, `car_sedan`, `car_coupe`, `car_suv`, `car_limo`, `bus`,
 ### Colours
 
 Named colours: `red blue white black silver green darkgreen beige teal maroon yellow orange cream grey darkgrey navy brown purple pink`, or `r,g,b`.
+
+## Traffic recovery
+
+File: `assets/data/traffic.cfg`. The first CJ-016 increment configures physical recovery after a car is knocked from its lane. It does not yet define driver personality or incident profiles. See [Traffic](../design/traffic.md#knocked-off-the-lane) for the behaviour contract.
+
+```text
+RECOVERY <name> <value>
+```
+
+Use these lowercase parameter names. The record type is case-insensitive, and `#` starts a comment. Values must be finite and within the listed inclusive range. Unknown names, malformed records and invalid values emit a warning and retain the prior validated value. Missing parameters use the built-in defaults; the shipped file is the reference for current tuning. Settings load once per process, so restart the game after changing the file.
+
+| Name | Unit and valid range | Meaning |
+|---|---|---|
+| `forward_speed` | 20–100 px/s | Desired speed during a forward recovery move |
+| `reverse_speed` | 15–80 px/s | Desired magnitude of reverse recovery speed |
+| `horizon` | 1–4 s | Time covered by each full candidate prediction |
+| `stop_tail` | 0.25–1 s | End of the prediction reserved for stopping; also bounded to half the horizon |
+| `clearance` | 0.25–1.6 px | Safety margin around checked actor and obstacle footprints |
+| `planning_interval` | 0.1–1 s | Scheduled delay between full planning attempts |
+| `commitment` | 0.15–1 s | Minimum commitment to a selected move, unless a hazard invalidates it |
+| `hysteresis` | 0–30 score units | Penalty for changing between forward and reverse |
+| `stall_time` | 0.5–3 s | Poor-progress duration before penalising repetition of the same move |
+| `nearby_radius` | 300–1,500 px | Search extent for potential nearby recovery obstacles |
+
+The predictor uses the current production vehicle forces. It matches the measured 60 Hz/20 Hz frame intervals with 240 Hz/160 Hz force steps respectively, and caps faster-frame forecasts at 240 Hz. Control refreshes follow the actual frame interval, rounded to the next forecast sample, with the same cap. Tuning does not bypass class dimensions, steering limits or physical contacts. Lowering a safety margin changes the accepted clearance, so compare the [frozen recovery scenarios](../testing.md#cj-016-recovery-measurements) before and after tuning.
 
 ## Characters
 

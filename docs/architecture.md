@@ -31,9 +31,9 @@ The `Game` class owns the world and the rules. Subsystems are plain modules with
 | Procedural art | `sprite_gen.*` | Signed-distance-field painter for sprites no asset pack covers |
 | City | `city_map.*` | City generation, 3D structures, street furniture, spatial queries, traffic signals, minimap |
 | Vehicles | `vehicle.*`, `vehicle_types.*` | Vehicle classes, engine / brake / tyre model, vehicle drawing |
-| Measurements | `vehicle_tests.*` | Isolated CJ-002 handling and collision fixtures, enabled only by screenshot scenarios |
+| Measurements | `vehicle_tests.*`, `traffic_tests.*`, `traffic_clearance_tests.*` | Isolated CJ-002 handling/collision, frozen CJ-016 recovery scenes and separate nearby-box rejoin API regression, enabled only by screenshot scenarios |
 | Physics | `physics.*` | Vehicle collision detection and the contact solver |
-| Traffic | `traffic.*` | Traffic and police driving AI |
+| Traffic | `traffic.*`, `traffic_recovery.*` | Rail traffic and police AI; shared observations and bounded physical recovery for knocked traffic |
 | Pedestrians | `pedestrian.*` | Pedestrian AI, steering, the pedestrian grid and drawing |
 | Rendering | `render.*`, `lighting.*`, `particles.*` | Camera, render passes, day/night cycle, particles, decals |
 | Audio | `audio.*` | Procedural sound synthesis, positional playback |
@@ -73,12 +73,18 @@ After `Wasted` or `Busted`, the world keeps running in slow motion (35 % speed) 
 
 `Game::UpdateVehicles` is the heart of the simulation. It keeps decision making, physics and consequences strictly separate:
 
-1. **Decide.** The pedestrian grid is rebuilt, and every vehicle records its pose at the start of the frame. Traffic and police AI then run. Traffic that is on its lane (a *rail car*) computes where it will be at the end of the frame; police cars and the player only set their controls. Burning vehicles count down to their explosion.
+1. **Prepare and decide.** Advance vehicle fire, explosions and wreck cleanup before any driver decisions. Then rebuild the pedestrian grid, record frame-start poses and capture one common traffic observation snapshot. This includes any actors or velocity changes produced by an explosion, so later drivers cannot use observations captured before that event. Traffic and police AI then run. Traffic that is on its lane (a *rail car*) computes where it will be at the end of the frame; recovering traffic, police cars and the player only set controls. Recovery first checks safe, progressing lane feedback; otherwise it evaluates at most 20 candidate trajectories using the production forces, swept footprints and a stopping tail. It retains safe committed controls or holds.
 2. **Simulate.** `VehiclePhysics::Step` applies engine, brake and tyre forces, detects and solves all contacts in sub-steps, and moves every vehicle. Rail cars move kinematically along their path. The step produces a list of `ImpactEvent`s but applies no game rules.
 3. **Consequences.** `Game::HandleImpacts` turns impact events into damage, driver injury, motorbike rider ejection, sparks, sounds, camera shake and driver reactions. `VehiclePedCollisions` handles vehicles hitting people and driving over people on the ground.
 4. **Effects.** Skid marks, tyre smoke, dust, engine sound state and damage smoke are updated from the final velocities.
 
 See [Physics](design/physics.md), [Vehicles](design/vehicles.md) and [Traffic](design/traffic.md) for the details.
+
+`DRIVER DECISION CPU` measures vehicle preparation, pedestrian grid construction, the shared snapshot and all traffic/police decisions, including fire, explosions and wreck cleanup. This conservative span is an upper bound for traffic decisions rather than the whole vehicle update; physics, pedestrian AI and rendering have separate spans. Recovery forecasts match the actual force substeps in the 60 Hz/20 Hz fixtures (240 Hz/160 Hz), with a 240 Hz forecast cap at faster frame rates to bound work.
+
+The observation and forecast cache stores each actor's radius, centre speed and initial oriented box. Before constructing a detailed moving-actor forecast, conservative travel/rotation bounds can rule out contact with the candidate sweep. Rail observations include any legacy pose blend; the actual observed body is used at time zero, and blends bypass the path-only bound. Oriented-box radius bounds account for both inflated half-extents (`sqrt(2)` times the margin). Planning can omit a hold rollout only when it cannot change the control outcome; moving-candidate order and hold-first score ties remain unchanged. The controller and configuration are unchanged by these implementation optimizations. The complete corrected recovery and city measurement series is retained in the [result report](design/traffic-recovery-results.md); city CPU acceptance remains open.
+
+Initial contact depth is stored only when the geometry query returns true: `OBBOverlap` can leave a positive output after returning false on a separating axis. A separate clearance fixture reproduces the pre-fix false rejoin veto from separated nearby boxes without changing the frozen recovery scene. The rejoin API may write `RejoinCause` diagnostics but must not move the actual body or change its driver; terminal city output distinguishes actual initial overlap, clearance-only contact, unsafe sweep and an incomplete stopping tail.
 
 ## Rendering pipeline
 
@@ -107,3 +113,5 @@ Oriented boxes (`OBB`) have axis 0 = right and axis 1 = forward, matching how sp
 - `GRng()` is the single gameplay random number generator (xorshift, fixed seed).
 - The city is generated from a fixed seed, so every run has the same map.
 - In test mode (`--shot`) the frame time is fixed at 1/60 s, which makes runs comparable between code versions.
+- Isolated `traffic-recovery` cases retain the 1/60 s render clock while advancing AI and physics at either 1/60 s or 1/20 s. Their fixed seed, geometry and ownership checks are described in [Testing](testing.md#cj-016-recovery-measurements).
+- Recovery decisions read frame-start actor observations rather than another driver's already-updated pose. The first CJ-016 increment stays on one thread; broader vehicle spatial indexing, cooperative reservations and persistent on-foot actor handles remain planned work.

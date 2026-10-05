@@ -47,6 +47,7 @@ void Game::DebugScenario(const char* name) {
 }
 
 void Game::LogTrafficStats() const {
+    RecoveryLogStats();
     int n = 0, stopped = 0, blocked = 0; float speed = 0; int reasons[7] = {};
     for (const Vehicle& v : vehicles) {
         if (!v.active || v.driver != DriverType::Traffic || v.wrecked) continue;
@@ -293,6 +294,26 @@ void Game::LogPhysStats() const {
         TraceLog(LOG_INFO, "  LONG-KNOCKED #%d %s t=%.1f recover=%.1f spd=%.0f vF=%.0f hp=%.0f gear=%.1f jam=%.1f in(t%.1f b%.1f s%.1f h%d) onscreen=%d wrecked=%d burning=%d",
                  (int)i, v.S().name.c_str(), v.ai.dynTimer, v.ai.recover, v.Speed(), v.speedFwd, v.health, v.ai.gearTimer, v.ai.jammed,
                  v.in.throttle, v.in.brake, v.in.steer, (int)v.in.handbrake, (int)OnScreen(v.pos), (int)v.wrecked, (int)v.burning);
+        const RecoveryState& recovery = v.ai.recovery;
+        if (recovery.initialized) {
+            float lateral = fabsf(Dot(v.pos - recovery.origin, Perp(recovery.forward)));
+            float heading = fabsf(WrapAngle(v.angle - AngleOf(recovery.forward)));
+            int ti = v.ai.ti, tj = v.ai.tj;
+            if (lateral <= 4 && heading <= 0.12f) {
+                // Mirror route assessment on a separate body; diagnostics must never
+                // clear the actual driver's path or change its next junction.
+                Vehicle route; route.pos = v.pos; route.angle = v.angle;
+                AIResetPath(route, map); ti = route.ai.ti; tj = route.ai.tj;
+            }
+            float along = Dot(v.pos - map.InterCenter(ti, tj), recovery.forward);
+            float entryLimit = -ROAD_HALF - std::max(v.length, 60.0f) - 10;
+            const char* forecast = !recovery.rejoinForecastTested ? "not_tested"
+                : recovery.rejoinForecastClear ? "clear" : "blocked";
+            TraceLog(LOG_INFO, "  LONG-REJOIN #%d reason=%s tracking=%d lateral_px=%.3f heading_rad=%.4f lateral_speed_px_s=%.3f yaw_rad_s=%.4f forward_px_s=%.3f along_px=%.3f entry_limit_px=%.3f last_forecast=%s cause=%s",
+                     (int)i, RecoveryReasonText(recovery.reason), (int)recovery.tracking, lateral, heading,
+                     Dot(v.vel, Perp(recovery.forward)), v.angVel, Dot(v.vel, v.Fwd()), along, entryLimit, forecast,
+                     recovery.rejoinForecastTested ? RejoinCauseText(recovery.rejoinCause) : "not_tested");
+        }
     }
     if (player.inVehicle && player.vehicle >= 0) {
         const Vehicle& v = vehicles[player.vehicle];
@@ -396,6 +417,7 @@ int Game::SpawnPed(Vector2 pos, int skin, bool fleeing) {
 }
 
 void Game::NewGame() {
+    RecoveryResetStats();
     Rng& r = GRng();
     vehicles.clear(); vehicles.reserve(256);
     deathSpots.clear();
@@ -542,6 +564,7 @@ void Game::DamageVehicle(int idx, float dmg, bool byPlayer, Vector2 at) {
         if (v.S().police() && v.driver == DriverType::Police) Crime(0.25f, v.pos);
     }
     if (v.health <= 0 && !v.burning) {
+        if (v.driver == DriverType::Traffic) v.recoveryTracked = true;
         v.burning = true;
         v.burnTimer = GRng().Range(3.0f, 5.0f);
         v.health = 0;
@@ -1003,7 +1026,23 @@ void Game::UpdatePlayerDriving(float dt) {
 //  Vehicles: AI, physics, fire, wreck clean-up
 // -------------------------------------------------------------------------------------
 void Game::UpdateVehicles(float dt) {
+    double decisionStart = GetTime();
+    // Resolve fire first: blasts and exiting occupants must be visible in the common
+    // snapshot, rather than appearing halfway through another driver's decisions.
+    for (size_t i = 0; i < vehicles.size(); i++) {
+        Vehicle& v = vehicles[i];
+        if (!v.active) continue;
+        if (v.burning) {
+            v.burnTimer -= dt;
+            if (v.burnTimer <= 0) ExplodeVehicle((int)i);
+        }
+        if (v.wrecked) {
+            v.wreckTimer += dt;
+            if (!v.recoveryTracked && v.wreckTimer > 40 && !OnScreen(v.pos, 200) && !(player.inVehicle && player.vehicle == (int)i)) v.active = false;
+        }
+    }
     pedGrid.Build(peds);
+    AIObserveTraffic(*this);
     // ---- drivers decide (rail traffic computes where it will be at the end of the frame) ----
     for (size_t i = 0; i < vehicles.size(); i++) {
         Vehicle& v = vehicles[i];
@@ -1015,15 +1054,10 @@ void Game::UpdateVehicles(float dt) {
         }
         // placed somewhere else (spawn / recycle): no sweep through the city
         if (Len2(v.pos - v.kinFrom) > 40 * 40) { v.kinFrom = v.pos; v.kinFromAng = v.angle; }
-        if (v.burning) {
-            v.burnTimer -= dt;
-            if (v.burnTimer <= 0) ExplodeVehicle((int)i);
-        }
-        if (v.wrecked) {
-            v.wreckTimer += dt;
-            if (v.wreckTimer > 40 && !OnScreen(v.pos, 200) && !(player.inVehicle && player.vehicle == (int)i)) v.active = false;
-        }
     }
+    // Includes vehicle preparation, the pedestrian grid and police decisions: an
+    // upper bound on traffic cost, separate from physics, pedestrian AI and rendering.
+    RecoveryRecordDecisionTime((GetTime() - decisionStart) * 1000.0);
 
     // ---- rigid-body step: forces, contacts, integration ----
     physics.Step(*this, dt);
@@ -1252,7 +1286,7 @@ void Game::UpdateSpawning(float dt) {
         if (v.driver == DriverType::Traffic) {
             traffic++;
             // recycle cars far from the player so the city around you stays busy
-            if (!v.missionTarget && Dist(v.pos, pp) > 3400 && !OnScreen(v.pos, 200)) {
+            if (AIOnRail(v) && !v.recoveryTracked && v.ai.blocked <= 0 && !v.missionTarget && Dist(v.pos, pp) > 3400 && !OnScreen(v.pos, 200)) {
                 int skin = gAssets.RandomTrafficSkin();
                 InitVehicle(v, skin, v.pos, v.angle);
                 v.driver = DriverType::Traffic;
@@ -1260,7 +1294,7 @@ void Game::UpdateSpawning(float dt) {
             }
         }
         if (v.driver == DriverType::Police && heat <= 0 && Dist(v.pos, pp) > 2200 && !OnScreen(v.pos, 200)) v.active = false;
-        if (v.driver == DriverType::None && !v.missionTarget && Dist(v.pos, pp) > 2600 && !OnScreen(v.pos, 200)) v.active = false;
+        if (v.driver == DriverType::None && !v.recoveryTracked && !v.missionTarget && Dist(v.pos, pp) > 2600 && !OnScreen(v.pos, 200)) v.active = false;
     }
     if (traffic < TRAFFIC_CARS) {
         int idx = SpawnVehicle(gAssets.RandomTrafficSkin(), { 0, 0 }, 0, DriverType::Traffic);

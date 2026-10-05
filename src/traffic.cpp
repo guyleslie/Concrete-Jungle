@@ -6,6 +6,9 @@
 
 using namespace cfg;
 
+// Every physical recovery reads the same poses before any driver updates.
+void AIObserveTraffic(Game& g) { RecoveryBeginFrame(g); }
+
 static Vector2 DirVec(int d) { return d == 0 ? V2(0, -1) : d == 1 ? V2(1, 0) : d == 2 ? V2(0, 1) : V2(-1, 0); }
 static Vector2 RightV(int d) { return DirVec((d + 1) & 3); }
 static int DX(int d) { return d == 1 ? 1 : d == 3 ? -1 : 0; }
@@ -124,42 +127,6 @@ void AIResetPath(Vehicle& v, const CityMap& map) {
     ai.ti = std::clamp(ti, 0, INTER_X - 1); ai.tj = std::clamp(tj, 0, INTER_Y - 1);
 }
 
-// Lane point nearest to the vehicle (ai.dir / ti / tj are re-derived from its pose).
-// Fails if the vehicle is too far from / misaligned with a lane, or inside a junction.
-static bool LanePose(Vehicle& v, const CityMap& map, float maxLateral, float maxAngle, Vector2& lanePos) {
-    AIResetPath(v, map);
-    DriverAI& ai = v.ai;
-    int d = ai.dir;
-    Vector2 c = map.InterCenter(ai.ti, ai.tj);
-    float along = Dot(v.pos - c, DirVec(d));                   // negative: before the junction
-    lanePos = c + DirVec(d) * along + RightV(d) * LANE_OFFSET;
-    float lateral = Dist(v.pos, lanePos);
-    float angDiff = fabsf(WrapAngle(v.angle - AngleOf(DirVec(d))));
-    if (lateral > maxLateral || angDiff > maxAngle) return false;
-    return along <= -ROAD_HALF - 10;
-}
-
-// Is the way from our pose onto the lane (half-way and the end pose) free of other
-// vehicles and obstacles? Re-joining is kinematic, so it must not slide through anything.
-static bool RejoinClear(Game& g, int self, Vector2 target, float targetAng) {
-    const Vehicle& v = g.vehicles[self];
-    static std::vector<int> ids;
-    for (float t : { 0.5f, 1.0f }) {
-        Vector2 p = LerpV(v.pos, target, t);
-        OBB box = MakeOBB(p, v.angle + WrapAngle(targetAng - v.angle) * t, v.width * 0.5f + 3, v.length * 0.5f + 3);
-        for (int k = 0; k < (int)g.vehicles.size(); k++) {
-            const Vehicle& o = g.vehicles[k];
-            if (k == self || !o.active || Len2(o.pos - p) > 200 * 200) continue;
-            Vector2 n; float depth;
-            if (OBBOverlap(box, o.Box(2), n, depth)) return false;
-        }
-        g.map.QueryObjects({ p.x - 60, p.y - 60, 120, 120 }, ids);
-        for (int k : ids) { Vector2 n; float depth; if (!g.map.objects[k].soft && CircleOBB(g.map.objects[k].pos, g.map.objects[k].radius, box, n, depth)) return false; }
-        if (g.map.PointInBuilding(p, v.width * 0.5f)) return false;
-    }
-    return true;
-}
-
 // U-turn in the middle of a block: swing across into the opposite lane.
 static bool PlanUTurn(Game& g, Vehicle& v) {
     const CityMap& map = g.map;
@@ -194,6 +161,8 @@ void AIKnock(Vehicle& v) {
     if (!v.ai.rail) return;
     DriverAI& ai = v.ai;
     ai.rail = false;
+    v.recoveryTracked = true;
+    RecoveryReset(ai.recovery);
     ai.dynTimer = 0;
     ai.blend = 0;
     ai.shove = ai.recover = ai.gearTimer = ai.jammed = ai.retry = 0;
@@ -273,7 +242,6 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
         for (int k : cands) {
             const Vehicle& o = g.vehicles[k];
             if (!PointInOBB(o.Box(), p, halfW)) continue;
-            if (AIOnRail(o) && o.ai.blocker == self && self < k && d > 6) continue;   // right of way tie breaker
             if (d < best.gap) {
                 bool isPlayer = g.player.inVehicle && g.player.vehicle == k;
                 best = Obstacle{};
@@ -331,76 +299,74 @@ static bool SideClear(Game& g, int self, float shift, float len, bool sidewalk) 
 // -------------------------------------------------------------------------------------
 //  Traffic update
 // -------------------------------------------------------------------------------------
-// A traffic car knocked off its rail is a normal physics car. The driver:
-//   1. brakes to a stop after the hit,
-//   2. re-joins the lane when close to it and the spot is actually free (waits otherwise),
-//   3. else drives back towards the lane - backing out and turning when wedged,
-//   4. gives up (gets out and walks off) when the car is badly damaged or it takes too long.
+//  Physical recovery: stabilise, plan a checked manoeuvre, or hold indefinitely.
+//  A recovery deadline is never a reason to remove the driver or relocate the car.
+// -------------------------------------------------------------------------------------
 static void UpdateKnocked(Game& g, int idx, float dt) {
     Vehicle& v = g.vehicles[idx];
     DriverAI& ai = v.ai;
+    v.recoveryTracked = true;
     ai.dynTimer += dt;
     v.in = VehicleInput{};
+    float speed = Dot(v.vel, v.Fwd());
     if (ai.recover <= 0 && (ai.dynTimer < 0.7f || (v.Speed() > 18 && ai.dynTimer < 3.0f))) {
-        // brake pedal only while clearly moving (at a crawl it would engage reverse and the
-        // car would rock back and forth); the handbrake holds it still
-        v.in.brake = v.speedFwd > 40 ? 1.0f : 0.0f;
-        v.in.throttle = v.speedFwd < -40 ? 1.0f : 0.0f;       // rolling backwards: brake that too
-        v.in.handbrake = fabsf(v.speedFwd) < 60;
-        return;
-    }
-    if (v.health < v.S().health * 0.35f || ai.recover > 12.0f) {
-        g.statAbandons++;
-        if (!g.OnScreen(v.pos, 150) && !v.missionTarget) { AIPlaceOnRoad(g, v, g.PlayerPos(), 900, 2600, true); return; }
-        g.SpawnPed(v.pos - RightOf(v.angle) * (v.width * 0.5f + 12), v.driverSkin, v.health < v.S().health * 0.6f);
-        v.driver = DriverType::None;
+        // At low speed the arcade pedals engage the opposite gear; hold instead.
+        v.in.brake = speed > 40 ? 1.0f : 0.0f;
+        v.in.throttle = speed < -40 ? 1.0f : 0.0f;
+        v.in.handbrake = fabsf(speed) < 60;
         return;
     }
     ai.recover += dt;
+    if (!ai.recovery.initialized) AIResetPath(v, g.map);
+    Vector2 forward = ai.recovery.initialized ? ai.recovery.forward : DirVec(ai.dir);
+    Vector2 origin = ai.recovery.initialized ? ai.recovery.origin
+        : g.map.InterCenter(ai.ti, ai.tj) + RightV(ai.dir) * LANE_OFFSET;
 
-    // ---- back onto the lane ----
+    // Reattachment is permitted only after actual controls align the body. Start the
+    // rail at the actual pose with a straight tail/front segment, so both axle samples
+    // reproduce that pose exactly. There is no blend or correction to a lane pose.
     ai.retry -= dt;
     if (ai.retry <= 0) {
         ai.retry = 0.25f;
-        Vector2 lanePos;
-        if (LanePose(v, g.map, 64, 0.95f, lanePos) && RejoinClear(g, idx, lanePos, AngleOf(DirVec(ai.dir)))) {
-            StartPath(v, lanePos, DirVec(ai.dir));
+        float lateral = fabsf(Dot(v.pos - origin, Perp(forward)));
+        float heading = fabsf(WrapAngle(v.angle - AngleOf(forward)));
+        bool aligned = lateral <= 4 && heading <= 0.12f;
+        // Recovering past a junction must use the next junction on the current block.
+        // The frozen corridor still guides recovery; only route construction changes.
+        if (aligned) AIResetPath(v, g.map);
+        Vector2 centre = g.map.InterCenter(ai.ti, ai.tj);
+        float along = Dot(v.pos - centre, forward);
+        float lead = std::max(v.length, 60.0f);
+        bool ready = aligned && along <= -ROAD_HALF - lead - 10 &&
+            speed >= -2 && fabsf(Dot(v.vel, Perp(forward))) <= 6 && fabsf(v.angVel) <= 0.2f;
+        ai.recovery.rejoinForecastTested = ready;
+        ai.recovery.rejoinForecastClear = ready && RecoveryCanRejoin(g, idx, dt);
+        if (ai.recovery.rejoinForecastClear) {
+            StartPath(v, v.pos, v.Fwd());
+            Waypoint ahead; ahead.p = v.pos + v.Fwd() * lead; Push(ai, ahead);
             PlanNext(v, g.map, nullptr);
             ai.rail = true;
-            ai.speed = std::max(0.0f, v.speedFwd);
-            ai.blend = 1.0f;
-            ai.blendPos = v.pos; ai.blendAng = v.angle;
+            ai.speed = std::max(0.0f, speed);
+            ai.blend = 0;
             ai.laneShift = ai.laneShiftTarget = 0;
             ai.recover = ai.gearTimer = ai.jammed = 0;
+            RecoveryReset(ai.recovery);
+            v.recoveryTracked = false;
+            v.in = VehicleInput{};
             g.statRejoins++;
-            if (GRng().Chance(0.5f)) g.audio.Play(Sfx::Horn, v.pos, 0.5f);
+            if (g.debugContacts) TraceLog(LOG_INFO, "RECOVERY #%d rejoined at actual pose t=%.2f", idx, g.time);
             return;
         }
     }
-
-    // ---- drive towards a point on our lane a few car lengths ahead ----
-    AIResetPath(v, g.map);
-    int d = ai.dir;
-    Vector2 c = g.map.InterCenter(ai.ti, ai.tj);
-    float along = Dot(v.pos - c, DirVec(d));
-    float ahead = along > -ROAD_HALF - 10 ? ROAD_HALF + v.length * 2.0f                    // in a junction: out the far side
-                                          : std::min(along + v.length * 2.5f, -ROAD_HALF - v.length);
-    Vector2 aim = c + DirVec(d) * ahead + RightV(d) * LANE_OFFSET;
-    float err = WrapAngle(AngleOf(aim - v.pos) - v.angle);
-    if (ai.gearTimer > 0) {                                     // backing out, nose swinging to the aim
-        ai.gearTimer -= dt;
-        if (v.speedFwd > -90) v.in.brake = 0.7f;
-        v.in.steer = -Clampf(err * 2.0f, -1, 1);
-    } else {
-        v.in.steer = Clampf(err * 2.0f, -1, 1);
-        float want = fabsf(err) > 1.2f ? 45.0f : 110.0f;
-        if (v.speedFwd < want) v.in.throttle = 0.55f; else if (v.speedFwd > want + 30) v.in.brake = 0.5f;
-        if (fabsf(err) > 2.3f) ai.gearTimer = 1.0f;             // aim is behind us: three-point turn
-    }
-    // wedged against something: pressing on without moving -> swap gear
-    bool pressing = v.in.throttle > 0.3f || v.in.brake > 0.3f;
-    ai.jammed = pressing && v.Speed() < 12 ? ai.jammed + dt : 0.0f;
-    if (ai.jammed > 0.8f) { ai.jammed = 0; ai.gearTimer = ai.gearTimer > 0 ? 0.0f : 1.2f; }
+    RecoveryReason previous = ai.recovery.reason;
+    int previousGear = ai.recovery.gear;
+    RecoveryDrive(g, idx, origin, forward, dt);
+    ai.gearTimer = ai.recovery.gear < 0 ? 1.0f : 0.0f;
+    ai.reason = ai.recovery.gear == 0 ? 3 : 0;
+    if (g.debugContacts && (previous != ai.recovery.reason || previousGear != ai.recovery.gear))
+        TraceLog(LOG_INFO, "RECOVERY #%d %s reason=%s gear=%d steer=%.2f plans=%d rejected=%d t=%.2f",
+                 idx, v.S().name.c_str(), RecoveryReasonText(ai.recovery.reason), ai.recovery.gear,
+                 v.in.steer, ai.recovery.plans, ai.recovery.rejected, g.time);
 }
 
 void AIUpdateTraffic(Game& g, int idx, float dt) {

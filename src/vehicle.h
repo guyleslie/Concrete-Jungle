@@ -15,6 +15,7 @@
 #include "raylib.h"
 #include "math_utils.h"
 #include "vehicle_types.h"
+#include "traffic_recovery.h"
 #include <deque>
 
 class CityMap;
@@ -51,15 +52,16 @@ struct DriverAI {
     float speed = 0;
     float laneShift = 0, laneShiftTarget = 0;    // sideways offset for passing obstacles
     int   curTurn = 0;       // manoeuvre inside the current junction (for yielding)
-    float blend = 0;         // > 0 while easing back onto the rail after a knock
+    float blend = 0;         // legacy rail U-turn easing; physical recovery never blends
     Vector2 blendPos{};  float blendAng = 0;
     float dynTimer = 0;      // time spent knocked off the rail
     float shove = 0;         // time spent pushing on something while on the rail
     // --- recovery after a knock: drive back onto the lane ---
     float recover = 0;       // time spent trying to get back on the lane
-    float gearTimer = 0;     // > 0: reversing out of a jam
-    float jammed = 0;        // pressing on but not moving
+    float gearTimer = 0;     // recovery diagnostics: > 0 when reverse is selected
+    float jammed = 0;        // retained legacy diagnostic field
     float retry = 0;         // next attempt to re-join the lane
+    RecoveryState recovery; // bounded physical manoeuvre / persistent hold
 
     // --- misc ---
     float stuck = 0, reverse = 0, honk = 0, panic = 0;
@@ -87,6 +89,7 @@ struct Vehicle {
     bool    wrecked = false;   float wreckTimer = 0;
     float   damageFlash = 0;
     bool    hitByPlayer = false;
+    bool    recoveryTracked = false; // protect an unresolved recovery / disabled car from population recycling
 
     Vector2 kinFrom{};  float kinFromAng = 0;     // rail cars: pose at the start of the frame
 

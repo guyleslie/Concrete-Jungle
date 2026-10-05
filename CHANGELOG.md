@@ -8,7 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- CJ-016 proposal for human-like traffic: persistent recovery instead of timeout-based abandonment/relocation, cooperative manoeuvres, driver identities and incidents, with test and CPU targets. Proposed ADR-0008 records the replacement constraints for rail traffic. Gameplay is unchanged pending specification agreement.
+- Approved CJ-016 specification for human-like traffic: persistent recovery, cooperative manoeuvres, driver identities and incidents, with test and CPU targets. Proposed ADR-0008 records the replacement constraints for rail traffic; ordinary traffic remains on rails in the first recovery increment.
+- Isolated `traffic-recovery --vehicle Taxi|Bus|BoxTruck` fixtures: enclosed holding, open-road recovery and reverse garage escape at 60 Hz and 20 Hz, with 52 checks per class, rendered checkpoints and separate decision/physics timings. The sequential CJ-016 runner retains before/after manifests and failed baseline evidence. The [result report](docs/design/traffic-recovery-results.md) records 14 failed checks per class before the change and all 156 checks passing on a physical recovery build, with exact hashes and preserved intermediate attempts. Its pre-fix city suite exceeded CPU targets; the corrected build passed all 156 recovery checks and 26 separate clearance checks. Six city regressions completed with observed rejoins and zero recovery give-ups, while their remaining CPU failures stay open.
+- Terminal `LONG-REJOIN` diagnostics for persistent recovery, including alignment/velocity/block-position guards, the most recent rejoin forecast status and `RejoinCause` for actual contact, clearance-only contact, unsafe sweep or incomplete stop.
+- Separate `traffic-clearance` regression and evidence runner: nearby separated building/parked-car boxes must allow an API check and real rejoin, while actual overlap, clearance-only contact and forward blockage remain rejected. Its pre-fix run completed 26 checks across eight cases with four failures, exactly clear API/rejoin at both rates; all obstacle guards passed. The corrected build passed all 26 checks; both clear cases rejoined at 0.700 s and all obstacle guards remained rejected. The original recovery fixture remains frozen.
+- Validated recovery tuning in `assets/data/traffic.cfg`.
 - Approved CJ-002 specification and proposed ADR-0007: researched handling references, calibration targets for all 17 vehicle classes, collision acceptance and a before/after measurement plan.
 - Isolated `handling --vehicle <Class>` and `crash-handling` measurements, sequential evidence runner and a baseline report covering all 17 classes and 122 collision phases. Named runs preserve earlier evidence; the report distinguishes failed acceptance checks from incomplete execution and documents unavailable arcade tyre telemetry. Production handling is unchanged.
 - Follow-up playtest notes for CJ-010/CJ-013, including the request to match GTA 1/2's approach to the crosshair.
@@ -26,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Knocked traffic plans bounded physical forward, reverse or hold moves from a shared actor snapshot, checking swept vehicle footprints and stopping room. Safe lane feedback avoids unnecessary escape searches; full planning evaluates at most 20 candidates. No safe local candidate retains the driver and car; elapsed recovery time and low health no longer trigger abandonment or relocation. Lane rejoin requires physical alignment without a pose blend. All 182 isolated checks pass and six city regressions are recorded; city CPU acceptance and the user recovery playtest remain pending. Mutual yielding/reservations and on-foot incidents follow in later CJ-016 increments.
+- Recovery geometry caches actor radius, speed and initial oriented boxes, uses conservative travel/rotation bounds before detailed forecasts, and omits hold prediction when it cannot change the selected controls. Controller, tuning and candidate tie order are preserved; complete corrected measurements are recorded in the result report, with simultaneous-recovery CPU failures retained.
 - 300 pedestrians live within 110 m of the player instead of 220 spread over the island.
 - Injuries from vehicles grow with the impact energy: about half of the people hit at 36 km/h die, nearly everyone above 45 km/h.
 - Fleeing people choose a direction along the sidewalk, away from walls and out of the path of moving vehicles; panic spreads to bystanders, but only one step.
@@ -35,6 +41,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Traffic path scanning no longer ignores an occupied vehicle because both drivers block each other; junction right-of-way rules still apply.
+- Recovery forecasts retain legacy rail pose blends and use the actual observed body at time zero. Distance culls include the `sqrt(2)` corner-radius growth of inflated oriented boxes.
+- Recovery records initial penetration only when the overlap query returns true. Previously a positive output left by a false box-overlap result made separated nearby boxes veto rejoin. The regression reproduced this before the fix; all 182 isolated checks pass after it, and matching city measurements are preserved.
 - Pedestrians fled from normal passing traffic and ran into the road, where they were hit.
 - Knocked-down pedestrians never got up.
 - Pedestrians slid sideways and did not turn their bodies properly.

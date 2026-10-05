@@ -9,6 +9,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Metrics](#metrics)
 - [Baseline](#baseline)
 - [CJ-002 measurements](#cj-002-measurements)
+- [CJ-016 recovery measurements](#cj-016-recovery-measurements)
 - [Workflow](#workflow)
 
 ## Running a scenario
@@ -23,7 +24,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 | `--frames <n>` | Number of frames to run (default 180); the frame time is fixed at 1/60 s |
 | `--every <n>` | Also saves `<file>_<frame>.png` every *n* frames |
 | `--scenario <name>` | The scenario to set up (default `foot`) |
-| `--vehicle <Class>` | Selects a class for the isolated `handling` scenario (default `Taxi`) |
+| `--vehicle <Class>` | Selects a class for the isolated `handling` or `traffic-recovery` scenario (default `Taxi`; recovery supports `Taxi`, `Bus`, `BoxTruck`) |
 | `--uncapped` | Disables vsync in screenshot mode; simulation still advances exactly 1/60 s per rendered frame |
 
 Screenshot paths must be **relative** to the working directory: raylib prefixes the working directory to the file name. The window opens while the test runs. Keep test output in `build/`, which is not version-controlled.
@@ -44,6 +45,8 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `brawl` | At 13:00, on foot with fists: runs up to the nearest person standing (preferring anyone fighting back, not chasing runners) and punches them |
 | `handling` | Isolated acceleration, braking, top-speed, skidpad, rear-brake, reverse and surface measurements for the selected class; 14,400 frames |
 | `crash-handling` | Prescribed-speed contacts with isolated forces and production consequences measured separately, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
+| `traffic-recovery` | Isolated enclosed hold, free lane recovery and front-blocked garage escape for Taxi, Bus or BoxTruck, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
+| `traffic-clearance` | Taxi rejoin with separated nearby building/parked-car boxes, plus actual-overlap, clearance-only-contact and forward-blockage API guards at 60 Hz and 20 Hz; 420 frames |
 
 ## Metrics
 
@@ -58,7 +61,7 @@ The run ends by logging:
 | `PHYS` jitter | Frames where a physics body's position or heading reverses direction frame after frame | Close to 0 per body-second |
 | `PHYS` penetration | Deepest overlap with buildings or solid furniture, and frames deeper than 3 px | Under 3 px; no deep frames |
 | `PHYS` stuck | Times the player pressed on without moving for 2.5 s | Expected in `crash` (pushing into walls on purpose) |
-| `PHYS` traffic | Knocked off the lane / re-joined / drivers gave up; any car knocked for more than 12 s is listed as `LONG-KNOCKED` | Most knocked cars re-join; no long-knocked cars |
+| `PHYS` traffic | Knocked off the lane / re-joined / drivers gave up; a prolonged recovery is logged with its cause | Feasible fixture recoveries rejoin; no safe local candidate holds with its driver; zero timeout abandonments |
 | `IMPACT` (`crash`) | Contact kind, object, closing speed, delta-V of both bodies, whether an object broke | Plausible delta-V; breakaway objects break |
 | `DEEP` | A body deeper than 3 px in the static world (logged while it happens) | None |
 | `PEDS` fleeing, dodging | Average number of people in the `Flee` and `Dodge` states | Below 1 in `foot` and `day` (nothing is happening) |
@@ -72,6 +75,9 @@ The run ends by logging:
 | `PEDS at the end` | People per state and within 30, 60 and 110 m of the player | Most people walking; everyone within 110 m |
 | `PEDS` fights | People who fought back and punches they landed (`brawl`) | Some in `brawl` |
 | `TIMING` | CPU time per frame of the vehicle update, the pedestrian update and the world drawing (CPU side only) | Pedestrians at most 0.5 ms |
+| `RECOVERY CPU` | Recovery snapshot/planning average, 95th percentile, worst time, plans, rejected candidates and holds | Bounded candidate work; assess together with full driver decisions |
+| `DRIVER DECISION CPU` | Vehicle preparation/fire/explosions/wreck cleanup, pedestrian grid build, shared snapshot and traffic/police AI; an upper bound on traffic decisions, excluding physics, pedestrian AI and drawing | CJ-016 target: average at most 0.5 ms/frame, 95th percentile at most 1.0 ms/frame |
+| `LONG-REJOIN` | Terminal readiness diagnostics for initialized traffic recovery lasting at least 12 s: tracking mode, lane/heading errors, lateral/forward velocity, angular velocity, upcoming-junction distance/entry limit, last forecast status and `RejoinCause` | Diagnose unresolved recovery; speed alone does not establish a safe rejoin |
 
 ## Baseline
 
@@ -124,6 +130,74 @@ Run `python tools/run_cj002.py --phase before --suite all` after building, then 
 Fixture `cj002-v1` reports each scheduled phase and fails missing measurements, incomplete execution, non-finite state or penetration above 3 px, including vehicle pairs. A skidpad trial needs exactly 180 measurement samples, radius error at most 5 %, speed error at most 2 % and measured lateral acceleration within 0.03 g of the requested value. The maximum is bracketed by both successful and unsuccessful trials; slowing down cannot count as meeting a higher-speed target. Axle-slip telemetry is unavailable on the baseline arcade model and is reported explicitly. Rear-brake yaw travel uses the first 3 s, and recovery requires 0.25 s continuously below the specified lateral/yaw limits.
 
 Keep the existing `crash`, `derby` and `chase` scripts; their run-up speeds depend on the handling, so prescribed-speed collision fixtures are also required. Contact-only momentum/energy checks exclude tyre-ground and damage effects. Inspect screenshot series and phase-labelled captures as well as numeric results. See the specification for per-class bands and collision acceptance criteria.
+
+## CJ-016 recovery measurements
+
+The first increment of the [approved traffic specification](design/traffic-behaviour-proposal.md) replaces knocked-vehicle timeout abandonment with physical recovery or a persistent hold. It does not establish acceptance for ordinary passing, mutual yielding, driver identities on foot or confrontations. The frozen `cj016-recovery-v1` scene calls production traffic AI and `VehiclePhysics::Step` on uniform road, with world-edge contacts disabled. Damage consequences, pedestrian AI and population spawning do not run. The original driver, skin, class and active vehicle are checked on every physics step.
+
+```bash
+python tools/run_cj016.py --phase before --run-name baseline-20261005
+python tools/run_cj016.py --phase after --run-name recovery-20261005
+python tools/run_cj016.py --phase after --vehicle Taxi --run-name review-20261005
+```
+
+Build separately before running. The runner opens one visible window at a time, uses `--uncapped --every 120`, and retains logs, screenshots and timestamped JSON manifests under `build/shots/cj016/<phase>/<run-name>/`. It records the exact command, revision and dirty state, input SHA-256 hashes, exit status and screenshot presence. Existing evidence requires an explicit `--replace`; `--dry-run` previews the schedule without writing or launching. A complete fixture with failed acceptance exits 1 and remains complete evidence in the manifest. Missing phases, malformed records and absent final screenshots do not count as completed measurements.
+
+Each selected class runs these six phases, in this order:
+
+| Phase | Simulated duration | Physics interval | Fixture |
+|---|---|---|---|
+| `enclosed-60hz` | 60 s | 1/60 s | Four walls, each 5 px clear of the initial car; no reachable lane |
+| `free-60hz` | 30 s | 1/60 s | Initial pose 120 px laterally from the lane on open road |
+| `garage-60hz` | 30 s | 1/60 s | Front and side walls 5 px clear; an open rear requires reversing beyond the side walls before turning |
+| `enclosed-20hz` | 60 s | 1/20 s | Same enclosed geometry |
+| `free-20hz` | 30 s | 1/20 s | Same open-road geometry |
+| `garage-20hz` | 30 s | 1/20 s | Same reverse-escape geometry |
+
+All phases use seed `0x000c0016`, an initial north-facing car, and a target lane at `InterCenter(3, 3) + (LANE_OFFSET, 350 px)`. The render clock stays at 60 Hz: each class completes 14,400 rendered frames, 9,600 physics steps and 240 s. At 20 Hz, physics and decisions advance once per three rendered frames. Fixture resets happen between observed cases. Phase-end captures show the completed phase, with enclosed checkpoints at 12 s and 30 s; the scene renders production sprites, obstacles, the target lane and the driven trail on a 10 m grid.
+
+There are 52 acceptance checks per class. Every phase checks unchanged driver/vehicle ownership, finite state, no discontinuous pose jump, static penetration at most 3 px, no deep-overlap steps and no lane-rejoin blend. Enclosed phases additionally require presence after 60 s, at most 5 px displacement, final speed at most 2 px/s, no lane rejoin and at most 0.25 s of pressing after the first 1 s. Feasible phases require a completed rejoin within 30 s; garage phases also require reverse travel of at least 1.5 vehicle lengths. A pose jump is a step above the greater of 8 px and velocity-predicted travel plus 4 px. These tolerances detect relocation; they are not permission for a recovery controller to set a physical body's pose.
+
+`CJ016 metric`, `result`, `diagnostics`, `timing` and `summary` lines retain per-phase acceptance, contact counts, reverse distance, rejoin time, ownership losses, pose corrections and AI/physics CPU costs. Timing includes the shared observation snapshot and driver decision work; rendering and screenshot capture are outside that span. The runner requires all six results and all 52 metric records rather than interpreting process completion as acceptance.
+
+The production recovery forecast uses the same force model and the actual fixture substeps: 240 Hz forces at 60 Hz decisions and 160 Hz forces at 20 Hz decisions. For faster normal game frame rates it caps forecast work at 240 Hz, with controls refreshed at the elapsed actual frame interval rounded to the next forecast sample. This is a bounded forecast, not a promise of identical production discretization at every frame rate. Full planning considers at most 20 candidates; safe lane feedback that improves alignment can skip that search while retaining the complete swept-path and stopping checks.
+
+The CPU optimization caches actor radius/speed/initial oriented box, uses conservative travel/rotation bounds before detailed actor forecasts, and skips a hold rollout when it cannot affect the selected controls. It preserves candidate scores, tie order, the controller and configuration. Safety bounds include legacy rail pose blends, the actual observed body at time zero and `sqrt(2)` corner-radius growth when both box half-extents are inflated. Pilot runs do not replace the required new 156-check recovery series and six city scenarios, with new executable/source hashes and preserved earlier attempts.
+
+Read terminal `LONG-REJOIN` values against the readiness limits: lateral error at most 4 px, heading error at most 0.12 rad, forward velocity at least -2 px/s, lateral speed magnitude at most 6 px/s, yaw magnitude at most 0.2 rad/s and `along_px <= entry_limit_px`. `last_forecast` records the most recent periodic check, not a fresh terminal forecast: `not_tested` means readiness failed, `blocked` means readiness passed but the contact/forward-stop forecast failed, and `clear` means it passed. Current terminal values can differ from that earlier check. `cause` adds the following stage diagnosis without naming the blocking actor; it is not a proof that no global escape exists.
+
+| `cause` | Meaning |
+|---|---|
+| `not_tested` | The last periodic alignment/velocity/block-position gate was not ready |
+| `unavailable` | Invalid index/interval or an inactive, undrivable or non-traffic vehicle |
+| `missing_snapshot` | Missing/inconsistent common observations or vehicle forecast storage |
+| `capacity` | The bounded nearby-actor storage could not retain the complete neighbourhood |
+| `initial_contact` | Actual uninflated initial footprint overlap; preferred over clearance-only contact elsewhere |
+| `initial_clearance` | No actual initial overlap, but the configured clearance margin overlaps |
+| `unsafe_sweep` | The forward rollout fails a swept-footprint/world-boundary or finite-state check |
+| `incomplete_stop` | The checked stopping tail ends above 2 px/s |
+| `clear` | The forward and stopping forecast passed |
+
+The initial pre-change run on 2026-10-05 completed all three classes with **14 failed checks per class**. It exposed the legacy abandonment and blend behaviour. Its long result messages truncated timing fields, so the original evidence is retained. The `before/complete-timing` rerun preserved the geometry and checks and reproduced those failures. The pre-fix physical `after/final-recovery` run completed all three classes and **passed all 156 checks**. Its pre-fix first city run completed all six scenarios but exceeded CPU targets in crash, chase and rampage and recorded no completed rejoins. The [result report](design/traffic-recovery-results.md) retains both attempts, all 18 phase comparisons, exact manifest paths and hashes, complete timings and their limits: one seed, three classes, mostly static geometry and no dedicated world-edge fixture. Those runs preceded the false-depth contact fix. The complete corrected `after/final-fixed-recovery` series also passed all 156 checks, with garage rejoins at 10.833/10.600 s for Taxi, 20.967/21.100 s for Bus and 13.767/13.900 s for BoxTruck (60/20 Hz). The matching six-city series is complete; its CPU failures remain explicit in the result report.
+
+Before CPU costs are artificially low once a driver abandons the car, so they do not represent equal completed work. Evaluate the explicit after cost and measured planner optimization attempts. The user recovery playtest and full 50-car/300-pedestrian CPU acceptance remain pending; isolated fixture acceptance does not close CJ-016.
+
+### Nearby-box clearance regression
+
+`cj016-clearance-v1` is a separate regression for the city rejoin diagnosis; the original recovery fixture remains frozen. `OBBOverlap` initializes depth to a large sentinel and can return false at a separating axis without resetting it. `AddNearby` previously ignored that boolean and stored the positive depth, so a separated nearby building or vehicle could veto rejoin. The fix stores zero unless overlap is true; the overlap function's contract is unchanged. The new scene calls production `RecoveryCanRejoin` after a common actor snapshot and checks its contract independently of the ordinary recovery planner.
+
+```bash
+python tools/run_cj016_clearance.py --phase before --run-name depth-contract
+python tools/run_cj016_clearance.py --phase after --run-name depth-contract
+```
+
+Build separately and run one visible test window at a time. The runner preserves logs, eight labelled case-end captures, the final screenshot and timestamped input hashes under `build/shots/cj016-clearance/<phase>/<run-name>/`. Failed acceptance with a complete fixture and exit status 1 remains complete evidence; absent results, checks or captures do not. `--dry-run` previews without launching or writing, and replacing evidence requires explicit `--replace`.
+
+Each rate runs four Taxi cases, in order: `clear-nearby-boxes`, `actual-overlap`, `clearance-margin-only`, `forward-blocker`, suffixed `-60hz` or `-20hz`. Seed `0x000c0016` and uniform road are fixed. The clear case lasts 2 s with a side-separated building and a parked Taxi 200 px beside the ego throughout the interval. Its API must return true, and production traffic AI plus physics must actually rejoin within 2 s. The three 0.5 s guards keep the scene static: 2 px actual building overlap, a 0.5 px gap inside the 1 px clearance margin, and a wall 35 px ahead must each return false. They call the API without AI or physics and do not measure driving or CPU performance.
+
+Every case checks the expected API result, unchanged ego position/angle/linear/angular velocity across explicit API calls and preserved active vehicle/driver/driver skin/vehicle skin/class. Changes to planner diagnostics are allowed. The two clear cases additionally check actual rejoin time, giving **26 checks across eight cases**. The 60 Hz render clock totals 420 frames and 7 s elapsed fixture time, with 280 explicit API calls and 160 actual physics steps over the clear cases' 4 s. At 20 Hz, API/AI/physics advance once per three rendered frames. Actors reset only between cases; frame-start kinematic poses are recorded before clear-case AI/physics to measure a real rail handoff. `CJ016C` records and captures must cover every scheduled case.
+
+The pre-fix `before/depth-contract/manifest-20261005T170722846100Z-35064.json` completed every case, count and capture with **four failed checks**: clear API expectation and actual rejoin at both rates. All six obstacle guard cases and all body/ownership checks passed. Exit status 1 is retained as failed acceptance with complete evidence. The after `depth-contract` manifest completed all 26 checks with zero failures; both clear cases rejoined at 0.700 s and all six obstacle guards still rejected handoff. It matches the corrected full recovery/city executable. See the [result report](design/traffic-recovery-results.md#corrected-build-verification) for the exact manifests, fingerprints and retained city CPU failures.
 
 ## Workflow
 

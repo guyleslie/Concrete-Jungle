@@ -21,6 +21,8 @@
 #include "assets.h"
 #include "game.h"
 #include "vehicle_tests.h"
+#include "traffic_tests.h"
+#include "traffic_clearance_tests.h"
 #include "rlgl.h"
 
 static void LoadingScreen(const char* msg) {
@@ -71,25 +73,40 @@ int main(int argc, char** argv) {
     static Game game;                     // large object: keep it off the stack
     game.Init();
     VehicleTests tests;
-    bool fixture = shot && (TextIsEqual(scenario, "handling") || TextIsEqual(scenario, "crash-handling"));
-    if (fixture && !tests.Init(game, scenario, testVehicle)) {
+    TrafficTests trafficTests;
+    TrafficClearanceTests clearanceTests;
+    bool vehicleFixture = shot && (TextIsEqual(scenario, "handling") || TextIsEqual(scenario, "crash-handling"));
+    bool trafficFixture = shot && TextIsEqual(scenario, "traffic-recovery");
+    bool clearanceFixture = shot && TextIsEqual(scenario, "traffic-clearance");
+    bool fixture = vehicleFixture || trafficFixture || clearanceFixture;
+    if ((vehicleFixture && !tests.Init(game, scenario, testVehicle)) || (trafficFixture && !trafficTests.Init(game, testVehicle)) ||
+        (clearanceFixture && !clearanceTests.Init(game))) {
         game.Unload(); gAssets.Unload(); CloseWindow(); return 2;
     }
     if (shot && !fixture) { game.DebugScenario(scenario); game.debugContacts = true; }
+    if (trafficFixture || clearanceFixture) game.debugContacts = true;
     int frame = 0;
 
     while (!WindowShouldClose() && !game.quit) {
         float dt = GetFrameTime();
         if (dt > 1.0f / 20.0f) dt = 1.0f / 20.0f;    // avoid huge steps after a stall
         if (shot) dt = 1.0f / 60.0f;
-        if (fixture) tests.Update(game, dt); else game.Update(dt);
+        if (vehicleFixture) tests.Update(game, dt);
+        else if (trafficFixture) trafficTests.Update(game, dt);
+        else if (clearanceFixture) clearanceTests.Update(game, dt);
+        else game.Update(dt);
         BeginDrawing();
         ClearBackground(BLACK);
-        if (fixture) tests.Draw(game); else game.Draw();
+        if (vehicleFixture) tests.Draw(game);
+        else if (trafficFixture) trafficTests.Draw(game);
+        else if (clearanceFixture) clearanceTests.Draw(game);
+        else game.Draw();
         bool lastShot = shot && ++frame >= shotFrames;
         if (lastShot) {
             rlDrawRenderBatchActive(); TakeScreenshot(shot);
-            if (fixture) tests.Log();
+            if (vehicleFixture) tests.Log();
+            else if (trafficFixture) trafficTests.Log();
+            else if (clearanceFixture) clearanceTests.Log();
             else { game.LogTrafficStats(); game.LogPhysStats(); game.LogPedStats(); }
         }
         else if (shot && every > 0 && frame % every == 0) {
@@ -98,12 +115,16 @@ int main(int argc, char** argv) {
             int stem = ext ? (int)(ext - shot) : (int)TextLength(shot);
             TakeScreenshot(TextFormat("%.*s_%04d.png", stem, shot, frame));
         }
-        if (fixture && tests.CaptureLabel()) {
+        const char* captureLabel = vehicleFixture ? tests.CaptureLabel() : trafficFixture ? trafficTests.CaptureLabel()
+            : clearanceFixture ? clearanceTests.CaptureLabel() : nullptr;
+        if (captureLabel) {
             rlDrawRenderBatchActive();
             const char* ext = GetFileExtension(shot);
             int stem = ext ? (int)(ext - shot) : (int)TextLength(shot);
-            TakeScreenshot(TextFormat("%.*s_%s.png", stem, shot, tests.CaptureLabel()));
-            tests.ClearCaptureRequest();
+            TakeScreenshot(TextFormat("%.*s_%s.png", stem, shot, captureLabel));
+            if (vehicleFixture) tests.ClearCaptureRequest();
+            else if (trafficFixture) trafficTests.ClearCaptureRequest();
+            else clearanceTests.ClearCaptureRequest();
         }
         EndDrawing();
         if (lastShot) break;
@@ -113,5 +134,8 @@ int main(int argc, char** argv) {
     game.Unload();
     gAssets.Unload();
     CloseWindow();
-    return fixture && (!tests.Finished() || tests.Failed()) ? 1 : 0;
+    if (vehicleFixture) return (!tests.Finished() || tests.Failed()) ? 1 : 0;
+    if (trafficFixture) return (!trafficTests.Finished() || trafficTests.Failed()) ? 1 : 0;
+    if (clearanceFixture) return (!clearanceTests.Finished() || clearanceTests.Failed()) ? 1 : 0;
+    return 0;
 }

@@ -17,9 +17,9 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated by the user's traffic feedback on 2026-10-03:
+Recommended order, updated after the user's traffic specification approval on 2026-10-05:
 
-1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — agree the [behaviour and recovery proposal](design/traffic-behaviour-proposal.md), then measure persistent recovery and conflict resolution before implementation. The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
+1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — continue the measured recovery foundation: resolve retained city CPU failures with safe bounded scheduling, add moving/edge/multi-seed fixtures and playtest; then implement mutual yielding and persistent driver incidents under the [approved specification](design/traffic-behaviour-proposal.md). The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
 2. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities needed by CJ-016 deliberately rather than changing traffic behaviour incidentally.
 3. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 4. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
@@ -43,7 +43,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-018](#cj-018-police-drivers-avoid-pedestrians) | Police drivers avoid pedestrians | Medium | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
-| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | Specification proposed |
+| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | In progress; specification approved |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
@@ -222,15 +222,17 @@ Remaining: the playtest.
 ### CJ-016 Road rage and traffic incidents
 
 - **Priority:** High
-- **Status:** Specification proposed on 2026-10-03, awaiting agreement
+- **Status:** In progress; specification approved on 2026-10-05, first recovery foundation measured; CPU/conflict work and playtest pending
 
 **User direction (2026-10-03).** Drivers should behave like people: follow, yield, avoid, reverse, honk, sometimes misjudge and collide, and occasionally get out to confront or fight another driver. A blocked situation must not be solved by deleting a driver, forcing them to walk away after a timer, or relocating an involved vehicle. This is the current priority; CJ-002 supplies the necessary vehicle capabilities.
 
-**Current problem.** `UpdateKnocked` gives up after 12 s or below 35 % vehicle health; it spawns an unrelated pedestrian on-screen or relocates the vehicle off-screen. Recovery alternates controls towards one target without validating a full escape path. Pedestrian fighting currently targets the player, so a driver-versus-driver incident also needs persistent ownership and explicit actor targeting.
+**Pre-change problem.** `UpdateKnocked` gave up after 12 s or below 35 % vehicle health; it spawned an unrelated pedestrian on-screen or relocated the vehicle off-screen. Recovery alternated controls towards one target without validating a full escape path. Pedestrian fighting still targets the player, so a driver-versus-driver incident also needs persistent ownership and explicit actor targeting.
 
-**Proposed specification.** [Human-like traffic and incident proposal](design/traffic-behaviour-proposal.md): predicted occupancy, feasible swept-footprint manoeuvres, stable yielding roles, impossible-blockage handling, persistent drivers, cause-based incidents, reusable spatial queries and measured CPU budgets. [ADR-0008](adr/0008-human-like-traffic.md) is Proposed; the accepted rail decision remains in force until a tested replacement addresses its original jitter/deadlock concerns.
+**Approved specification.** [Human-like traffic and incident proposal](design/traffic-behaviour-proposal.md): predicted occupancy, feasible swept-footprint manoeuvres, stable yielding roles, impossible-blockage handling, persistent drivers, cause-based incidents, reusable spatial queries and measured CPU budgets. [ADR-0008](adr/0008-human-like-traffic.md) is Proposed; the accepted rail decision remains in force until a tested replacement addresses its original jitter/deadlock concerns.
 
-**Acceptance criteria.** Agree the proposal's scenario table before implementation. Feasible blockages resolve physically; impossible ones remain stable and observable; timeout-based disappearance/relocation is zero; incident participants retain identity and car ownership; exiting, approaching, fighting and returning are visible actions with interruption rules. Validate with fixed seeds, 60 Hz/20 Hz scenarios, class-specific recovery tests, regression runs, separate traffic CPU timings and a user playtest. First deliver reliable manoeuvring, then incidents and combat; visible towing follows the accepted core.
+**First increment (2026-10-05).** Frozen `traffic-recovery` fixtures measure Taxi, Bus and BoxTruck in enclosed, free and reverse-escape geometry at 60 Hz and 20 Hz: 52 checks, 14,400 rendered frames and 240 s per class. The complete baseline had 14 failed checks per class; the corrected build passed all 156 recovery checks. A separate 26-check clearance regression reproduced four pre-fix failures caused by separated nearby boxes being falsely classified as initial contact, then passed every check after the fix. The [result report](design/traffic-recovery-results.md) preserves exact manifests/hashes, timings and failed intermediate attempts. Corrected garage recovery took 10.833/10.600 s for Taxi, 20.967/21.100 s for Bus and 13.767/13.900 s for BoxTruck at 60/20 Hz; enclosed cars stayed with their drivers for 60 s with no movement, overlap, blend or ownership loss. All six matching city runs completed and recorded zero recovery give-ups; crash/chase each recorded one rejoin and rampage recorded eleven. The crash/rampage CPU failures remain open in the report. The controller uses a shared snapshot and at most 20 physical forward/reverse/hold candidates, with safe progressing lane feedback skipping escape search. Path scanning no longer ignores a mutually blocking vehicle; ordinary rail passing and junction right-of-way rules remain. Full-population CPU acceptance, city-edge/moving/multi-seed fixtures and user playtest remain pending. Cooperative conflict roles/reservations, persistent on-foot ownership and fights remain to be implemented; CJ-002 remains an explicit handling dependency.
+
+**Acceptance criteria.** Follow the approved proposal's scenario table. Feasible blockages resolve physically; impossible ones remain stable and observable; timeout-based disappearance/relocation is zero; incident participants retain identity and car ownership; exiting, approaching, fighting and returning are visible actions with interruption rules. Validate with fixed seeds, 60 Hz/20 Hz scenarios, class-specific recovery tests, regression runs, separate traffic CPU timings and a user playtest. First deliver reliable manoeuvring, then incidents and combat; visible towing follows the accepted core.
 
 ### CJ-017 Pedestrian life
 
@@ -284,7 +286,7 @@ Smaller improvements left after the collision rewrite:
 - **Priority:** Low
 - **Status:** Open
 
-**Problem.** A 12 m bus knocked off its lane often cannot manoeuvre back and gives up after 12 s.
+**Problem.** Before CJ-016, a 12 m bus knocked off its lane often failed to manoeuvre back and gave up after 12 s. CJ-016's first increment covers Bus/BoxTruck recovery fixtures; broader heavy-vehicle city recovery and playtest acceptance remain open.
 
 **Acceptance criteria.** Buses and trucks recover to their lane in most knock-offs in the `chase` and `derby` scenarios, without teleporting on-screen.
 

@@ -1,10 +1,10 @@
 # CJ-016: Human-like traffic and incident proposal
 
-Proposed specification following the user's feedback on 2026-10-03: drivers resolve traffic situations through believable decisions and physical manoeuvres, retain their identity during incidents, and never disappear merely because a recovery timer expires. This is a design proposal awaiting agreement; production behaviour remains described in [Traffic](traffic.md).
+Specification approved by the user on 2026-10-05 following their feedback on 2026-10-03: drivers resolve traffic situations through believable decisions and physical manoeuvres, retain their identity during incidents, and never disappear merely because a recovery timer expires. Implementation proceeds through the delivery increments below; production behaviour remains described in [Traffic](traffic.md).
 
 ## Contents
 
-- [Current findings](#current-findings)
+- [Pre-implementation findings](#pre-implementation-findings)
 - [Behaviour contract](#behaviour-contract)
 - [Architecture](#architecture)
 - [Efficient execution](#efficient-execution)
@@ -12,9 +12,11 @@ Proposed specification following the user's feedback on 2026-10-03: drivers reso
 - [Delivery order](#delivery-order)
 - [Research and licence boundaries](#research-and-licence-boundaries)
 
-## Current findings
+## Pre-implementation findings
 
-`UpdateKnocked` in `src/traffic.cpp` abandons recovery after 12 s or below 35 % vehicle health. On-screen it spawns a pedestrian and clears the vehicle's driver; off-screen it calls `AIPlaceOnRoad`. Recovery steers towards one lane target and alternates forward/reverse without checking a complete escape manoeuvre. `SideClear` samples positions along a shifted path rather than reserving the vehicle's future swept footprint against other moving traffic. The mutual-blocker tie-breaker can ignore an obstacle instead of negotiating an actual manoeuvre.
+These findings describe the implementation reviewed on 2026-10-03, before the first CJ-016 increment. The implementation and verification status is tracked in [Traffic](traffic.md#knocked-off-the-lane), [Testing](../testing.md#cj-016-recovery-measurements) and the [backlog](../backlog.md#cj-016-road-rage-and-traffic-incidents).
+
+`UpdateKnocked` in `src/traffic.cpp` abandoned recovery after 12 s or below 35 % vehicle health. On-screen it spawned a pedestrian and cleared the vehicle's driver; off-screen it called `AIPlaceOnRoad`. Recovery steered towards one lane target and alternated forward/reverse without checking a complete escape manoeuvre. `SideClear` sampled positions along a shifted path rather than reserving the vehicle's future swept footprint against other moving traffic. The mutual-blocker tie-breaker could ignore an obstacle instead of negotiating an actual manoeuvre. The first increment addresses knocked recovery; ordinary rail passing and shared conflicts remain later work.
 
 The existing pedestrian `Fight` state targets the player. Driver-versus-driver incidents need explicit actor targets, persistent ownership and safe vehicle exits, rather than simply invoking that state twice. The [CJ-002 baseline](vehicle-handling-baseline.md) remains useful: its matching city runs record 11/9/1 knocks/rejoins/give-ups in `crash`, 1/1/0 in `derby`, and 5/5/0 in `chase`. End-of-run abandoned-car counts include other causes and must not be mistaken for timeout abandonments.
 
