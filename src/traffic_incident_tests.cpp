@@ -336,6 +336,7 @@ void TrafficIncidentTests::Update(Game& g, float dt) {
         s.Script(g);
         g.pedGrid.Build(g.peds);
         AIObserveTraffic(g);
+        AIResolveWaitCycles(g, c.step);
         for (size_t i = 0; i < g.vehicles.size(); i++) {
             Vehicle& v = g.vehicles[i];
             v.kinFrom = v.pos; v.kinFromAng = v.angle;

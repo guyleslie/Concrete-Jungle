@@ -47,6 +47,9 @@ void Game::DebugScenario(const char* name) {
     cam.Snap(PlayerPos(), player.inVehicle ? CAM_VIEW_IDLE : CAM_VIEW_FOOT);
 }
 
+static int FindWaitCycles(const Game& g, std::vector<int>& cycleOf);
+static void LogWaitCycle(const Game& g, const std::vector<int>& cycleOf, int cycle, const char* label);
+
 void Game::LogTrafficStats() const {
     RecoveryLogStats();
     IncidentLogStats();
@@ -73,21 +76,18 @@ void Game::LogTrafficStats() const {
     }
     TraceLog(LOG_INFO, "TRAFFIC stopped because: moving %d, red light %d, queue %d, person/held %d, yield %d, static %d, junction box %d, giving way %d",
              reasons[0], reasons[1], reasons[2], reasons[3], reasons[4], reasons[5], reasons[6], reasons[7]);
-    // Mutual pairs still stopped behind each other at the end are unresolved conflicts.
-    int mutualPairs = 0, yielding = 0;
-    for (size_t i = 0; i < vehicles.size(); i++) {
-        const Vehicle& v = vehicles[i];
-        if (!v.active || v.driver != DriverType::Traffic || v.wrecked) continue;
-        if (v.ai.yieldTo >= 0) yielding++;
-        int b = v.ai.rail ? v.ai.waitingOn : v.ai.recovery.gear == 0 ? v.ai.recovery.blockedBy : -1;
-        if (b > (int)i && b < (int)vehicles.size()) {
-            const Vehicle& o = vehicles[b];
-            int back = o.ai.rail ? o.ai.waitingOn : o.ai.recovery.gear == 0 ? o.ai.recovery.blockedBy : -1;
-            if (back == (int)i && v.ai.yieldTo < 0 && o.ai.yieldTo < 0) mutualPairs++;
-        }
-    }
-    TraceLog(LOG_INFO, "TRAFFIC yielding: roles taken %d (chain %d), yielding at end %d, unresolved mutual pairs at end %d",
-             statYields, statChainYields, yielding, mutualPairs);
+    // Drivers still waiting on each other in a closed loop at the end are unresolved
+    // conflicts: a mutual pair, or a larger cycle (junction gridlock).
+    int yielding = 0;
+    for (const Vehicle& v : vehicles)
+        if (v.active && v.driver == DriverType::Traffic && !v.wrecked && v.ai.yieldTo >= 0) yielding++;
+    std::vector<int> cycleOf;
+    int cycles = FindWaitCycles(*this, cycleOf), mutualPairs = 0;
+    for (int c = 0; c < cycles; c++) if (std::count(cycleOf.begin(), cycleOf.end(), c) == 2) mutualPairs++;
+    TraceLog(LOG_INFO, "TRAFFIC yielding: roles taken %d (chain %d), yielding at end %d, unresolved mutual pairs at end %d, larger wait cycles at end %d",
+             statYields, statChainYields, yielding, mutualPairs, cycles - mutualPairs);
+    TraceLog(LOG_INFO, "TRAFFIC wait cycles: formed %d, lasting over 10 s %d, longest %.1f s", diagCycles, diagLongCycles, diagLongestCycle);
+    for (int c = 0; c < cycles; c++) LogWaitCycle(*this, cycleOf, c, "UNRESOLVED");
 }
 
 // Scripted driving for the --shot physics tests.
@@ -290,6 +290,57 @@ void Game::PhysDiagnostics(float dt) {
         diagPlayerSlow = pushing && v.Speed() < 10 ? diagPlayerSlow + dt : 0;
         if (diagPlayerSlow > 2.5f) { diagStuck++; diagPlayerSlow = 0; }
     }
+}
+
+// Wait-for cycles: every traffic driver has at most one wait-for edge (AIWaitTarget), so
+// following the edges from each car finds every closed loop. A cycle is counted when it
+// forms and again if it lasts over 10 s; members are logged once it lasts 5 s.
+static int FindWaitCycles(const Game& g, std::vector<int>& cycleOf) {
+    int n = (int)g.vehicles.size(), cycles = 0;
+    cycleOf.assign(n, -1);
+    std::vector<int> walk(n, -1);
+    for (int start = 0; start < n; start++) {
+        int k = start;
+        while (k >= 0 && walk[k] < 0 && cycleOf[k] < 0) { walk[k] = start; k = AIWaitTarget(g, k); }
+        if (k >= 0 && walk[k] == start && cycleOf[k] < 0) {
+            for (int m = k; cycleOf[m] < 0; m = AIWaitTarget(g, m)) cycleOf[m] = cycles;
+            cycles++;
+        }
+    }
+    return cycles;
+}
+
+static void LogWaitCycle(const Game& g, const std::vector<int>& cycleOf, int cycle, const char* label) {
+    for (size_t i = 0; i < g.vehicles.size(); i++) {
+        if (cycleOf[i] != cycle) continue;
+        const Vehicle& v = g.vehicles[i];
+        int to = AIWaitTarget(g, (int)i);
+        TraceLog(LOG_INFO, "  %s #%d %s %s reason=%d recovery=%s pos=(%.0f,%.0f) ang=%.0f spd=%.0f shift=%.0f waits_on=#%d %s dist=%.0f",
+                 label, (int)i, v.S().name.c_str(), v.ai.rail ? "rail" : "knocked", v.ai.reason,
+                 v.ai.rail ? "-" : RecoveryReasonText(v.ai.recovery.reason), v.pos.x, v.pos.y, v.angle * RAD2DEG, v.Speed(),
+                 v.ai.laneShift, to, to >= 0 ? (g.vehicles[to].ai.rail ? "rail" : "knocked") : "-",
+                 to >= 0 ? Dist(v.pos, g.vehicles[to].pos) : 0.0f);
+    }
+}
+
+void Game::WaitDiagnostics(float dt) {
+    static std::vector<int> cycleOf;
+    if (waitCycleTime.size() < vehicles.size()) waitCycleTime.resize(vehicles.size(), 0);
+    int cycles = FindWaitCycles(*this, cycleOf);
+    for (int c = 0; c < cycles; c++) {
+        float longest = 0; int first = -1;
+        for (size_t i = 0; i < vehicles.size(); i++)
+            if (cycleOf[i] == c) { longest = std::max(longest, waitCycleTime[i]); if (first < 0) first = (int)i; }
+        float now = longest + dt;
+        if (longest == 0) diagCycles++;
+        if (longest < 10 && now >= 10) diagLongCycles++;
+        if (longest < 5 && now >= 5) {
+            TraceLog(LOG_INFO, "WAIT-CYCLE t=%.2f lasting 5 s, from #%d:", time, first);
+            LogWaitCycle(*this, cycleOf, c, "CYCLE");
+        }
+        diagLongestCycle = std::max(diagLongestCycle, now);
+    }
+    for (size_t i = 0; i < vehicles.size(); i++) waitCycleTime[i] = cycleOf[i] >= 0 ? waitCycleTime[i] + dt : 0;
 }
 
 void Game::LogPhysStats() const {
@@ -711,7 +762,7 @@ void Game::UpdatePlaying(float dt) {
     double t0 = GetTime();
     UpdateVehicles(dt);
     double t1 = GetTime();
-    if (debugContacts) PhysDiagnostics(dt);
+    if (debugContacts) { PhysDiagnostics(dt); WaitDiagnostics(dt); }
     IncidentsUpdate(*this, dt);                    // drivers stopping, getting out and back in
     double t2 = GetTime();
     UpdatePeds(dt);
@@ -1070,6 +1121,7 @@ void Game::UpdateVehicles(float dt) {
     pedGrid.Build(peds);
     stage(DecisionStage::Grid);
     AIObserveTraffic(*this);
+    AIResolveWaitCycles(*this, dt);
     stage(DecisionStage::Snapshot);
     // ---- drivers decide (rail traffic computes where it will be at the end of the frame) ----
     // The clock is read only where the kind of driver changes from one car to the next.

@@ -5,7 +5,11 @@
 //    passing-head-on   a passing car meets an oncoming car beside a parked car;
 //    knocked-needs-room a knocked car can only escape backwards into the rail car
 //                      stopped behind it;
-//    knocked-queue     the same, with a second rail car queued behind (a chain).
+//    knocked-queue     the same, with a second rail car queued behind (a chain);
+//    knocked-pair      the car behind is knocked too and has too little room behind
+//                      for a full manoeuvre: only a short creep back frees the other;
+//    junction-gridlock four cars in a junction box, each nose against the next car's
+//                      side: a wait-for cycle of four that no pair rule resolves.
 //  Ten seeds vary the poses, gaps, speeds and classes; every case runs at 60 Hz and
 //  20 Hz physics. Drivers must keep their cars; nothing may be moved by the fixture.
 // =====================================================================================
@@ -17,7 +21,7 @@
 #include <vector>
 
 namespace {
-constexpr const char* FIXTURE_ID = "cj016-conflict-v1";
+constexpr const char* FIXTURE_ID = "cj016-conflict-v2";
 constexpr uint32_t SEED = 0x000c0016u;
 constexpr float RENDER_DT = 1.0f / 60.0f;
 constexpr int SEEDS = 10;
@@ -25,9 +29,10 @@ constexpr float MAX_CASE_S = 30.0f;
 constexpr float SETTLE_S = 2.0f;           // keep observing after success
 constexpr float RAIL_TAIL = 400.0f;        // already-driven path behind each rail car
 
-enum class Kind { HeadOn, KnockedRoom, KnockedQueue };
+enum class Kind { HeadOn, KnockedRoom, KnockedQueue, KnockedPair, Gridlock };
 const char* KindName(Kind k) {
-    return k == Kind::HeadOn ? "passing-head-on" : k == Kind::KnockedRoom ? "knocked-needs-room" : "knocked-queue";
+    return k == Kind::HeadOn ? "passing-head-on" : k == Kind::KnockedRoom ? "knocked-needs-room"
+         : k == Kind::KnockedQueue ? "knocked-queue" : k == Kind::KnockedPair ? "knocked-pair" : "junction-gridlock";
 }
 struct Case { Kind kind; int seed; float step; std::string name; };
 
@@ -36,7 +41,7 @@ std::vector<Case> Schedule() {
     // CJ_TEST_CASE=<substring> narrows a diagnostic run; evidence runs use all cases.
     const char* only = std::getenv("CJ_TEST_CASE");
     for (float step : { RENDER_DT, 1.0f / 20.0f })
-        for (Kind kind : { Kind::HeadOn, Kind::KnockedRoom, Kind::KnockedQueue })
+        for (Kind kind : { Kind::HeadOn, Kind::KnockedRoom, Kind::KnockedQueue, Kind::KnockedPair, Kind::Gridlock })
             for (int seed = 0; seed < SEEDS; seed++)
                 cases.push_back({ kind, seed, step, std::string(KindName(kind)) + (step > 0.03f ? "-20hz" : "-60hz") +
                                   "-s" + std::to_string(seed) });
@@ -80,6 +85,8 @@ struct TrafficConflictTests::State {
     bool invalid = false, finished = false, nextCase = false;
     float phaseTime = 0, maxOverlap = 0, maxPen = 0, resolved = -1, secondary = -1, successAt = -1;
     float priorityStart = 0, yielderStart = 0, parkedY = 0;
+    std::vector<Vector2> startPos;           // gridlock: each car must drive clear of the box
+    std::vector<int> gridlock;
     int yielder = -1, priority = -1, parked = -1, queued = -1, overlapA = -1, overlapB = -1;
     Vector2 centre{};
     std::string capture, lastResult;
@@ -101,9 +108,9 @@ struct TrafficConflictTests::State {
         actors.push_back(a);
         return (int)g.vehicles.size() - 1;
     }
-    void Rail(Game& g, int idx, float speed, float temper) {
+    void Rail(Game& g, int idx, float speed, float temper, bool insideJunction = false) {
         Vehicle& v = g.vehicles[idx];
-        AIStartRail(g, v, RAIL_TAIL);
+        AIStartRail(g, v, RAIL_TAIL, insideJunction);
         v.ai.speed = speed; v.ai.cruise = std::max(speed, 200.0f); v.ai.temper = temper;
         actors[idx].startedRail = true;
     }
@@ -113,7 +120,7 @@ struct TrafficConflictTests::State {
     }
     void Start(Game& g) {
         const Case& c = Current();
-        g.vehicles.clear(); g.peds.clear(); g.pickups.clear();
+        g.vehicles.clear(); g.peds.clear(); g.pickups.clear(); gridlock.clear();
         g.map.ResetTestGround(Tile::Road); g.pedGrid.Build(g.peds);
         g.physics = VehiclePhysics{};
         GRng().s = SEED + (uint32_t)c.seed * 7919u + (uint32_t)c.kind * 104729u;
@@ -126,7 +133,30 @@ struct TrafficConflictTests::State {
         float north = ic.x + cfg::LANE_OFFSET, south = ic.x - cfg::LANE_OFFSET;
         parkedY = ic.y + 520;
         bool bus = c.seed >= SEEDS / 2;
-        if (c.kind == Kind::HeadOn) {
+        if (c.kind == Kind::Gridlock) {
+            // Each car's nose stops 'gap' short of the side of the car crossing ahead of it:
+            // north waits on west, west on south, south on east, east on north.
+            float gap = rng.Range(8.0f, 14.0f);
+            const char* roles[4] = { "NORTH", "WEST", "SOUTH", "EAST" };
+            const float angles[4] = { 0, -PI * 0.5f, PI, PI * 0.5f };
+            for (int k = 0; k < 4; k++) {
+                const char* cls = bus && k == 0 ? "Bus" : "Taxi";
+                const char* crossed = bus && k == 3 ? "Bus" : "Taxi";     // the car ahead, crossing
+                float half = Spec(FindVehicleClass(cls)).length * 0.5f;
+                Vehicle probe; InitVehicle(probe, SkinOf(crossed), V2(0, 0), 0);
+                // Along the travel direction, the crossing car's near side lies 'edge' past
+                // the junction centre; the nose stops 'gap' short of it.
+                float edge = cfg::LANE_OFFSET - probe.width * 0.5f;
+                Vector2 dir = Forward(angles[k]);
+                Vector2 lane = V2(ic.x, ic.y) + RightOf(angles[k]) * cfg::LANE_OFFSET;
+                Vector2 pos = lane + dir * (edge - gap - half);
+                int idx = Add(g, cls, pos, angles[k], DriverType::Traffic, roles[k]);
+                Rail(g, idx, 0, 1.0f, true);
+                gridlock.push_back(idx);
+            }
+            parkedY = ic.y;
+            yielder = gridlock[0]; priority = gridlock[1];
+        } else if (c.kind == Kind::HeadOn) {
             // The passing Taxi is already in the oncoming lane beside a parked car.
             float shift = -cfg::LANE_OFFSET * 1.9f;
             parked = Add(g, "Taxi", V2(north, parkedY), 0, DriverType::None, "PARKED");
@@ -160,8 +190,25 @@ struct TrafficConflictTests::State {
             const char* cls = bus ? "Bus" : "Taxi";
             float length = Spec(FindVehicleClass(cls)).length;
             float ry = kp.y + maxY + rng.Range(6.0f, 10.0f) + length * 0.5f;
-            yielder = Add(g, cls, V2(north, ry), 0, DriverType::Traffic, "BEHIND");
-            Rail(g, yielder, 0, 1.0f);
+            if (c.kind == Kind::KnockedPair) {
+                // The car behind was knocked too: turned towards the kerb, it cannot simply
+                // queue, and a wall close behind leaves less room than a full reversing
+                // manoeuvre needs; only a short creep back gives the front car room.
+                float tilt = rng.Range(0.12f, 0.22f);
+                Vehicle shape; InitVehicle(shape, SkinOf(cls), V2(0, 0), tilt);
+                // The front corner nearest the kerb stays 4-8 px clear of the wall.
+                float reach = cosf(tilt) * shape.width * 0.5f + sinf(tilt) * length * 0.5f;
+                float behindX = std::min(north - rng.Range(2.0f, 6.0f), wallX - rng.Range(4.0f, 8.0f) - reach);
+                yielder = Add(g, cls, V2(behindX, ry + 6), tilt, DriverType::Traffic, "BEHIND");
+                Vehicle& b = g.vehicles[yielder];
+                b.ai.rail = false; b.ai.dynTimer = 5; b.recoveryTracked = true;
+                AIResetPath(b, g.map);
+                float rear = ry + 6 + length * 0.5f + rng.Range(70.0f, 85.0f);
+                Wall(g, { north - 60, rear, 120, 24 });
+            } else {
+                yielder = Add(g, cls, V2(north, ry), 0, DriverType::Traffic, "BEHIND");
+                Rail(g, yielder, 0, 1.0f);
+            }
             yielderStart = ry;
             if (c.kind == Kind::KnockedQueue) {
                 float qy = ry + length * 0.5f + rng.Range(10.0f, 16.0f) + Spec(FindVehicleClass("Taxi")).length * 0.5f;
@@ -171,8 +218,8 @@ struct TrafficConflictTests::State {
         }
         g.map.RebuildTestIndex();
         roles.assign(g.vehicles.size(), 0); lastYield.assign(g.vehicles.size(), -1);
-        lastPos.clear();
-        for (const Vehicle& v : g.vehicles) lastPos.push_back(v.pos);
+        lastPos.clear(); startPos.clear();
+        for (const Vehicle& v : g.vehicles) { lastPos.push_back(v.pos); startPos.push_back(v.pos); }
         centre = V2(ic.x, parkedY);
         g.player.inVehicle = false; g.player.vehicle = -1;
         g.player.pos = centre + V2(-3000, 0); g.player.vel = {};
@@ -214,14 +261,32 @@ struct TrafficConflictTests::State {
         if ((int)(phaseTime / 0.5f) != (int)((phaseTime - step) / 0.5f))
             for (size_t i = 0; i < g.vehicles.size(); i++) {
                 const Vehicle& v = g.vehicles[i];
-                TraceLog(LOG_INFO, "CJ016Y state case=%s t=%.2f #%d %s x=%.1f y=%.1f ang=%.3f spd=%.1f rail=%d s=%.1f shift=%.1f wait=%d yield=%d retreat=%.1f rec_gear=%d rec_reason=%s blocked_by=%d",
-                         Current().name.c_str(), phaseTime, (int)i, actors[i].role, v.pos.x, v.pos.y, v.angle, v.Speed(), (int)v.ai.rail,
+                TraceLog(LOG_INFO, "CJ016Y state case=%s t=%.2f #%d %s x=%.1f y=%.1f ang=%.3f spd=%.1f rail=%d reason=%d s=%.1f shift=%.1f wait=%d yield=%d retreat=%.1f rec_gear=%d rec_reason=%s blocked_by=%d",
+                         Current().name.c_str(), phaseTime, (int)i, actors[i].role, v.pos.x, v.pos.y, v.angle, v.Speed(), (int)v.ai.rail, v.ai.reason,
                          v.ai.s, v.ai.laneShift, v.ai.waitingOn, v.ai.yieldTo, v.ai.retreatLeft, v.ai.recovery.gear,
                          RecoveryReasonText(v.ai.recovery.reason), v.ai.recovery.blockedBy);
             }
         const Vehicle& y = g.vehicles[yielder];
         const Vehicle& p = g.vehicles[priority];
-        if (c_kind() == Kind::HeadOn) {
+        if (c_kind() == Kind::Gridlock) {
+            // Resolved: every car has driven clear of the box (two car lengths on).
+            bool all = true;
+            for (int k : gridlock) {
+                const Vehicle& v = g.vehicles[k];
+                if (Dot(v.pos - startPos[k], v.Fwd()) < v.length * 2) all = false;
+            }
+            int moved = 0;
+            for (int k : gridlock) if (Dot(g.vehicles[k].pos - startPos[k], g.vehicles[k].Fwd()) > 40) moved++;
+            if (resolved < 0 && moved >= 1 && !g.vehicles[yielder].ai.rail) resolved = -1;
+            if (resolved < 0 && moved >= 2) resolved = phaseTime;
+            if (secondary < 0 && all) secondary = phaseTime;
+            if (successAt < 0 && resolved >= 0 && secondary >= 0) successAt = phaseTime;
+        } else if (c_kind() == Kind::KnockedPair) {
+            // Resolved: the knocked car in front is back on its lane; then the car behind too.
+            if (resolved < 0 && p.ai.rail) resolved = phaseTime;
+            if (secondary < 0 && resolved >= 0 && y.ai.rail) secondary = phaseTime;
+            if (successAt < 0 && resolved >= 0 && secondary >= 0) successAt = phaseTime;
+        } else if (c_kind() == Kind::HeadOn) {
             // The oncoming car has passed the passing car's starting point...
             if (resolved < 0 && p.pos.y > yielderStart + p.length * 0.5f) resolved = phaseTime;
             // ...and the passing car has then passed the parked car, back in its lane.
@@ -246,18 +311,25 @@ struct TrafficConflictTests::State {
         Check("vehicle_overlap_px", maxOverlap, 0, 3);
         Check("rail_cars_knocked", (float)knocks, 0, 0);
         Check("role_flips", (float)flips, 0, 0);
-        // A knocked car may still find its own way out in some seeded poses; it
-        // must then not provoke a role. Head-on passing always needs one.
-        Check("yielder_roles", (float)roles[yielder], c.kind == Kind::HeadOn ? 1.0f : 0.0f, 1);
-        Check("priority_roles", (float)roles[priority], 0, 0);
+        int totalRoles = 0;
+        for (int r : roles) totalRoles += r;
+        if (c.kind == Kind::Gridlock || c.kind == Kind::KnockedPair) {
+            // Somebody has to give way; at most one driver per car in the loop.
+            Check("roles", (float)totalRoles, 1, c.kind == Kind::Gridlock ? 4.0f : 2.0f);
+        } else {
+            // A knocked car may still find its own way out in some seeded poses; it
+            // must then not provoke a role. Head-on passing always needs one.
+            Check("yielder_roles", (float)roles[yielder], c.kind == Kind::HeadOn ? 1.0f : 0.0f, 1);
+            Check("priority_roles", (float)roles[priority], 0, 0);
+        }
         Check("resolved_s", resolved, 0, c.kind == Kind::HeadOn ? 20.0f : MAX_CASE_S);
         Check("completed_s", secondary, 0, MAX_CASE_S);
         // The queued car stands too close behind: a role always needs the chain.
         if (c.kind == Kind::KnockedQueue && roles[yielder] > 0) Check("chain_roles", (float)chainRoles, 1, 3);
         bool pass = failures == before;
         if (pass) passedCases++;
-        TraceLog(LOG_INFO, "CJ016Y result fixture=%s case=%s duration_s=%.3f resolved_s=%.3f completed_s=%.3f yielder_roles=%d chain_roles=%d flips=%d vehicle_overlap_px=%.3f overlap_pair=%d,%d static_pen_px=%.3f contacts=%d knocks=%d teleports=%d result=%s",
-                 FIXTURE_ID, c.name.c_str(), phaseTime, resolved, secondary, roles[yielder], chainRoles, flips,
+        TraceLog(LOG_INFO, "CJ016Y result fixture=%s case=%s duration_s=%.3f resolved_s=%.3f completed_s=%.3f yielder_roles=%d all_roles=%d chain_roles=%d flips=%d vehicle_overlap_px=%.3f overlap_pair=%d,%d static_pen_px=%.3f contacts=%d knocks=%d teleports=%d result=%s",
+                 FIXTURE_ID, c.name.c_str(), phaseTime, resolved, secondary, roles[yielder], totalRoles, chainRoles, flips,
                  maxOverlap, overlapA, overlapB, maxPen, vehicleContacts, knocks, teleports, pass ? "PASS" : "FAIL");
         completed++;
         capture = c.name;
@@ -294,7 +366,11 @@ void TrafficConflictTests::Update(Game& g, float dt) {
     int divisor = c.step > 0.03f ? 3 : 1;
     if ((s.phaseFrame + 1) % divisor == 0) {
         g.time += c.step;
+        // In the junction the lights run as in the city: a car that backed out behind
+        // the stop line waits for green. Elsewhere the fixed phase keeps v1 unchanged.
+        if (c.kind == Kind::Gridlock) g.map.time += c.step;
         AIObserveTraffic(g);
+        AIResolveWaitCycles(g, c.step);
         for (size_t i = 0; i < g.vehicles.size(); i++) {
             Vehicle& v = g.vehicles[i];
             v.kinFrom = v.pos; v.kinFromAng = v.angle;
@@ -349,7 +425,8 @@ void TrafficConflictTests::Draw(const Game& g) const {
         Color c = v.ai.yieldTo >= 0 ? Color{ 255, 200, 70, 255 } : (int)i == s.priority ? Color{ 110, 220, 160, 255 } : Color{ 170, 180, 190, 255 };
         Vector2 corners[4]; OBBCorners(v.Box(), corners);
         for (int k = 0; k < 4; k++) DrawLineEx(corners[k], corners[(k + 1) % 4], 1.5f, c);
-        const char* label = v.ai.yieldTo >= 0 ? (v.ai.retreatLeft > 0 ? "GIVING WAY: REVERSING" : "GIVING WAY: HOLDING")
+        const char* label = v.ai.yieldTo >= 0 && !v.ai.rail ? "GIVING WAY: MAKING ROOM"
+            : v.ai.yieldTo >= 0 ? (v.ai.retreatLeft > 0 ? "GIVING WAY: REVERSING" : "GIVING WAY: HOLDING")
             : v.driver == DriverType::Traffic && !v.ai.rail ? "KNOCKED: RECOVERING" : s.actors[i].role;
         DrawText(label, (int)(v.pos.x + v.width * 0.5f + 10), (int)v.pos.y - 8, 16, c);
     }

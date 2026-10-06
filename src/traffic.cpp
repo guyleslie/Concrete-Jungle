@@ -225,8 +225,10 @@ static bool InBox(Vector2 p, Vector2 c, float grow = 6) {
     return fabsf(p.x - c.x) < ROAD_HALF + grow && fabsf(p.y - c.y) < ROAD_HALF + grow;
 }
 
-// May vehicle 'self' enter the junction of stop waypoint w now?
-static bool JunctionClear(Game& g, int self, const Waypoint& w) {
+// May vehicle 'self' enter the junction of stop waypoint w now? 'blocker' receives the
+// vehicle that keeps it out (a wait-for edge for gridlock detection).
+static bool JunctionClear(Game& g, int self, const Waypoint& w, int* blocker) {
+    *blocker = -1;
     const Vehicle& v = g.vehicles[self];
     Vector2 c = g.map.InterCenter(w.si, w.sj);
     float myDir = AngleOf(DirVec(w.d));
@@ -243,12 +245,13 @@ static bool JunctionClear(Game& g, int self, const Waypoint& w) {
             bool opposite = diff > PI - 0.6f;
             int theirTurn = AIOnRail(o) ? o.ai.curTurn : 0;
             if (opposite && w.turnType != 2 && theirTurn != 2) continue;       // straight/right vs straight/right
+            *blocker = k;
             return false;
         }
         // left turns yield to oncoming cars that are about to come through
         if (w.turnType == 2 && AIOnRail(o) && o.ai.dir == ((w.d + 2) & 3) && o.ai.ti == w.si && o.ai.tj == w.sj) {
             bool coming = g.map.SignalState(w.si, w.sj, w.axis) != SIG_RED && o.ai.speed > 30;
-            if (coming && Dist(o.pos, c) < 260) return false;
+            if (coming && Dist(o.pos, c) < 260) { *blocker = k; return false; }
         }
     }
     // don't block the box: is there room on the exit lane?
@@ -259,7 +262,7 @@ static bool JunctionClear(Game& g, int self, const Waypoint& w) {
         if (!o.active) continue;
         Vector2 rel = o.pos - X;
         float along = Dot(rel, DirVec(w.d2)), lat = fabsf(Dot(rel, RightV(w.d2)));
-        if (along > -10 && along < v.length + 40 && lat < 26 && o.Speed() < 40) return false;
+        if (along > -10 && along < v.length + 40 && lat < 26 && o.Speed() < 40) { *blocker = k; return false; }
     }
     return true;
 }
@@ -393,6 +396,8 @@ struct YieldSettings {
     float accel = 120;            // px/s^2 reversing acceleration
     float extra = 40;             // px beyond a knocked car's length to retreat
     float chain = 3;              // longest chain of drivers backing up together
+    float cycles = 1;             // 0: no roles for two knocked cars or longer wait-for cycles
+    float minRoom = 6;            // px a knocked car must be able to move to make room
 };
 
 const YieldSettings& YieldTuning() {
@@ -407,7 +412,9 @@ const YieldSettings& YieldTuning() {
         { "retreat_speed", &s.speed, 20, 120 },
         { "retreat_accel", &s.accel, 40, 400 },
         { "retreat_extra", &s.extra, 0, 200 },
-        { "max_chain", &s.chain, 1, 6 }
+        { "max_chain", &s.chain, 1, 6 },
+        { "cycles", &s.cycles, 0, 1 },
+        { "min_room", &s.minRoom, 2, 60 }
     };
     LoadTrafficRecords("YIELD", fields, (int)(sizeof(fields) / sizeof(fields[0])));
     return s;
@@ -428,6 +435,13 @@ static bool WaitsOn(const Vehicle& o, int idx) {
     for (size_t k = 0; k < r.blockIds.size(); k++)
         if (r.blockIds[k] == idx + 1 && r.blockVotes[k] >= 2) return true;
     return false;
+}
+
+int AIWaitTarget(const Game& g, int idx) {
+    const Vehicle& v = g.vehicles[idx];
+    if (!v.active || v.driver != DriverType::Traffic || v.wrecked || v.burning || v.ai.yieldTo >= 0) return -1;
+    int target = v.ai.rail ? v.ai.waitingOn : v.ai.recovery.gear == 0 ? v.ai.recovery.blockedBy : -1;
+    return target >= 0 && target < (int)g.vehicles.size() && g.vehicles[target].active ? target : -1;
 }
 
 // Free distance the rail car can reverse along its path: limited by the retained path
@@ -507,6 +521,7 @@ static void StartYield(Game& g, int self, int priority, float need, int depth, c
     ai.retreatLeft = need; ai.yieldClear = 0; ai.mutualTime = 0;
     ai.waitingOn = -1;
     ai.yieldDepth = depth;
+    ai.lastYieldTo = priority; ai.lastYieldSerial = ai.yieldSerial; ai.lastYieldTime = g.time;
     g.statYields++;
     if (depth > 0) g.statChainYields++;
     if (g.debugContacts)
@@ -609,6 +624,121 @@ static bool UpdateYield(Game& g, int idx, float dt) {
     return true;
 }
 
+// A knocked car making room for the driver waiting on it (a role from a wait-for cycle):
+// the role ends once that driver has not waited on this car for clear_time, or after
+// three creeps that did not free it.
+static void UpdateRoom(Game& g, int idx, float dt) {
+    Vehicle& v = g.vehicles[idx];
+    DriverAI& ai = v.ai;
+    int b = ai.yieldTo;
+    const char* why = nullptr;
+    if (b < 0 || b >= (int)g.vehicles.size() || !g.vehicles[b].active || g.vehicles[b].serial != ai.yieldSerial ||
+        g.vehicles[b].driver != DriverType::Traffic || !g.vehicles[b].Drivable()) why = "priority_gone";
+    else {
+        bool waiting = AIWaitTarget(g, b) == idx;
+        ai.yieldClear = waiting ? 0 : ai.yieldClear + dt;
+        if (ai.yieldClear >= YieldTuning().clear) why = "resolved";
+        else if (waiting && ai.recovery.roomCreeps >= 3 && ai.recovery.gear == 0 && ai.recovery.roomRetry <= 0) why = "no_more_room";
+    }
+    if (!why) return;
+    if (g.debugContacts)
+        TraceLog(LOG_INFO, "YIELD #%d ends (%s) after making room for #%d t=%.2f", idx, why, b, g.time);
+    ai.yieldTo = -1; ai.yieldClear = 0; ai.mutualTime = 0;
+    RecoveryEndRoom(v);
+}
+
+// -------------------------------------------------------------------------------------
+//  Wait-for cycles. The pair rule above covers two drivers stopped behind each other
+//  when at least one is on rails. Two knocked cars, and loops of three or more drivers
+//  (junction gridlock), are found here once per frame from the frame-start wait-for
+//  edges. A loop that persists for detect_time gets one driver who gives way to the
+//  driver waiting on it: a rail car backs up along its own path, preferably one whose
+//  waiting driver is a knocked car that needs room; otherwise a knocked car that can
+//  move furthest away creeps clear. A pair kept by the pair rule for longer than three
+//  detection times is taken over too. A loop nobody can open is assessed again every
+//  second and stays observable.
+// -------------------------------------------------------------------------------------
+void AIResolveWaitCycles(Game& g, float dt) {
+    const YieldSettings& y = YieldTuning();
+    int n = (int)g.vehicles.size();
+    static std::vector<int> cycleOf, walk, target;
+    cycleOf.assign(n, -1); walk.assign(n, -1); target.resize(n);
+    for (int k = 0; k < n; k++) target[k] = AIWaitTarget(g, k);
+    int cycles = 0;
+    for (int start = 0; start < n; start++) {
+        int k = start;
+        while (k >= 0 && walk[k] < 0 && cycleOf[k] < 0) { walk[k] = start; k = target[k]; }
+        if (k >= 0 && walk[k] == start && cycleOf[k] < 0) {
+            for (int m = k; cycleOf[m] < 0; m = target[m]) cycleOf[m] = cycles;
+            cycles++;
+        }
+    }
+    for (int k = 0; k < n; k++) {
+        DriverAI& ai = g.vehicles[k].ai;
+        ai.cycleTime = cycleOf[k] >= 0 ? ai.cycleTime + dt : 0;
+        ai.cycleCheck = std::max(0.0f, ai.cycleCheck - dt);
+    }
+    if (y.enabled < 0.5f || y.cycles < 0.5f) return;
+    for (int c = 0; c < cycles; c++) {
+        int length = 0, rail = 0, first = -1;
+        float age = 1e9f;
+        for (int k = 0; k < n; k++) {
+            if (cycleOf[k] != c) continue;
+            if (first < 0) first = k;
+            length++;
+            if (AIOnRail(g.vehicles[k])) rail++;
+            age = std::min(age, g.vehicles[k].ai.cycleTime);
+        }
+        bool pairRule = length == 2 && rail > 0;
+        if (age < (pairRule ? y.detect * 3 : y.detect) || g.vehicles[first].ai.cycleCheck > 0) continue;
+        // The driver giving way, chosen for the one waiting on it (its predecessor).
+        int best = -1, bestPred = -1;
+        float bestScore = -1;
+        for (int k = 0; k < n; k++) {
+            if (cycleOf[k] != c) continue;
+            int pred = -1;
+            for (int m = 0; m < n; m++) if (cycleOf[m] == c && target[m] == k) pred = m;
+            if (pred < 0) continue;
+            const Vehicle& v = g.vehicles[k];
+            float score;
+            if (AIOnRail(v)) {
+                float room = RetreatRoom(g, k);
+                if (room < 30) continue;
+                score = 2000 + room + (AIOnRail(g.vehicles[pred]) ? 0.0f : 1000.0f);
+            } else {
+                // A knocked pair keeps its roles: the car that made room before does so again.
+                bool before = v.ai.lastYieldTo == pred && v.ai.lastYieldSerial == g.vehicles[pred].serial &&
+                              g.time - v.ai.lastYieldTime < 30;
+                float room = RecoveryFreeRoom(g, k, pred);
+                if (room < y.minRoom) continue;
+                score = room + (before ? 1000.0f : 0.0f);
+            }
+            if (score > bestScore || (score == bestScore && k > best)) { bestScore = score; best = k; bestPred = pred; }
+        }
+        if (best < 0) {
+            for (int k = 0; k < n; k++) if (cycleOf[k] == c) g.vehicles[k].ai.cycleCheck = 1.0f;
+            if (g.debugContacts)
+                TraceLog(LOG_INFO, "CYCLE from #%d (%d drivers) cannot be opened now t=%.2f", first, length, g.time);
+            continue;
+        }
+        Vehicle& v = g.vehicles[best];
+        const Vehicle& p = g.vehicles[bestPred];
+        if (AIOnRail(v)) {
+            float need = AIOnRail(p) ? std::max(v.length * 0.5f, 40.0f) + y.extra : p.length + y.extra;
+            StartYield(g, best, bestPred, need, 0, length == 2 ? "stuck_pair" : "wait_cycle");
+        } else {
+            v.ai.yieldTo = bestPred; v.ai.yieldSerial = p.serial; v.ai.yieldClear = 0; v.ai.mutualTime = 0;
+            v.ai.lastYieldTo = bestPred; v.ai.lastYieldSerial = p.serial; v.ai.lastYieldTime = g.time;
+            RecoveryStartRoom(v, bestPred);
+            g.statYields++;
+            if (g.debugContacts)
+                TraceLog(LOG_INFO, "YIELD #%d %s makes room for #%d %s: %s of %d drivers t=%.2f", best, v.S().name.c_str(),
+                         bestPred, p.S().name.c_str(), length == 2 ? "knocked pair" : "wait cycle", length, g.time);
+        }
+        for (int k = 0; k < n; k++) if (cycleOf[k] == c) g.vehicles[k].ai.cycleTime = 0;
+    }
+}
+
 // -------------------------------------------------------------------------------------
 //  Traffic update
 // -------------------------------------------------------------------------------------
@@ -665,6 +795,9 @@ static void UpdateKnocked(Game& g, int idx, float dt) {
             ai.blend = 0;
             ai.laneShift = ai.laneShiftTarget = 0;
             ai.recover = ai.gearTimer = ai.jammed = 0;
+            if (ai.yieldTo >= 0 && g.debugContacts)
+                TraceLog(LOG_INFO, "YIELD #%d ends (rejoined) after making room for #%d t=%.2f", idx, ai.yieldTo, g.time);
+            ai.yieldTo = -1; ai.yieldClear = 0;
             RecoveryReset(ai.recovery);
             v.recoveryTracked = false;
             v.in = VehicleInput{};
@@ -673,6 +806,8 @@ static void UpdateKnocked(Game& g, int idx, float dt) {
             return;
         }
     }
+    if (ai.yieldTo >= 0) UpdateRoom(g, idx, dt);
+    else if (ai.recovery.roomFor >= 0) RecoveryEndRoom(v);   // the role was cleared elsewhere (an incident)
     RecoveryReason previous = ai.recovery.reason;
     int previousGear = ai.recovery.gear;
     RecoveryDrive(g, idx, origin, forward, dt);
@@ -716,6 +851,7 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
     ai.panic = std::max(0.0f, ai.panic - dt);
     ai.reason = 0;
     ai.stopDist = 1e9f;
+    int junctionBlocker = -1;               // the vehicle keeping us out of the junction box
     float front = ai.s + v.length * 0.5f;
     for (size_t k = 0; k < ai.path.size(); k++) {
         const Waypoint& w = ai.path[k];
@@ -729,7 +865,7 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
             bool canStop = stopGap > (ai.speed * ai.speed) / (2 * COMFORT_DECEL * 1.6f) - 6;
             bool mustStop = false;
             if (ai.panic <= 0 && (sig == SIG_RED || (sig == SIG_YELLOW && canStop))) { mustStop = true; ai.reason = 1; }
-            else if (stopGap < 90 && !JunctionClear(g, idx, w)) { mustStop = true; ai.reason = w.turnType == 2 ? 4 : 6; }
+            else if (stopGap < 90 && !JunctionClear(g, idx, w, &junctionBlocker)) { mustStop = true; ai.reason = w.turnType == 2 ? 4 : 6; }
             if (mustStop) {
                 desired = std::min(desired, sqrtf(2 * COMFORT_DECEL * std::max(0.0f, stopGap - 2)));
                 ai.stopDist = std::max(0.0f, stopGap - 2);
@@ -742,7 +878,9 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
     Obstacle ob = ScanPath(g, idx, look, ai.laneShift, ai.distracted <= 0);
     ai.blocker = ob.gap < 30 ? ob.vehicle : -1;
     // Wait-for edge, and a mutual blockage: the two drivers stopped behind each other.
+    // Held at the stop line by a car that keeps the box occupied, we wait on that car.
     ai.waitingOn = ob.vehicle >= 0 && ob.gap < 30 && ai.speed < 5 ? ob.vehicle : -1;
+    if (ai.waitingOn < 0 && junctionBlocker >= 0 && ai.speed < 5 && ai.stopDist < 30) ai.waitingOn = junctionBlocker;
     if (ai.waitingOn >= 0) {
         int b = ai.waitingOn;
         const Vehicle& B = g.vehicles[b];
@@ -911,8 +1049,12 @@ void AIUpdatePolice(Game& g, int idx, float dt) {
 // -------------------------------------------------------------------------------------
 //  Spawning
 // -------------------------------------------------------------------------------------
-void AIStartRail(Game& g, Vehicle& v, float tail) {
+void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction) {
     AIResetPath(v, g.map);
+    if (insideJunction && InBox(v.pos, g.map.InterCenter(v.ai.ti, v.ai.tj), 40)) {
+        v.ai.ti = std::clamp(v.ai.ti + DX(v.ai.dir), 0, INTER_X - 1);
+        v.ai.tj = std::clamp(v.ai.tj + DY(v.ai.dir), 0, INTER_Y - 1);
+    }
     Vector2 dir = DirVec(v.ai.dir);
     StartPath(v, v.pos - dir * tail, dir);
     PlanNext(v, g.map, nullptr);

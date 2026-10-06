@@ -80,6 +80,11 @@ struct DriverAI {
     float mutualTime = 0;    // how long the mutual wait has persisted
     float yieldClear = 0;    // how long the conflict has looked resolved
     int   yieldDepth = 0;    // 0: direct role, >0: backing up for the driver ahead (chain)
+    float cycleTime = 0;     // how long this driver has been part of a wait-for cycle
+    float cycleCheck = 0;    // s until a stuck cycle is assessed again
+    int   lastYieldTo = -1;  // the driver last given way to (a knocked pair keeps its roles)
+    uint32_t lastYieldSerial = 0;
+    float lastYieldTime = -1e9f;
     // --- incidents (traffic_incidents.h) ---
     uint8_t mood = 1;        // DriverMood: calm / normal / aggressive
     int   incident = -1;     // incident this driver is stopping for; -1 none

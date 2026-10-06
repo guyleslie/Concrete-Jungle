@@ -35,7 +35,15 @@ inline bool AIOnRail(const Vehicle& v) { return v.driver == DriverType::Traffic 
 // it to predict where a turning car will go).
 Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle);
 // Fixtures: put v on rails at its current pose and lane direction, with 'tail' px of
-// already-driven path behind it (a yielding driver can retrace that much).
-void AIStartRail(Game& g, Vehicle& v, float tail);
+// already-driven path behind it (a yielding driver can retrace that much). With
+// 'insideJunction' a car standing in a junction box goes straight through it.
+void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction = false);
+// The one vehicle this traffic driver waits for, or -1 (a wait-for edge): a rail car the
+// car it is stopped behind; a holding knocked car the vehicle that blocked most of its
+// moves. A driver acting on a yielding role waits on nobody.
+int AIWaitTarget(const Game& g, int idx);
+// Once per frame after AIObserveTraffic: finds wait-for cycles the pair rule does not
+// cover (two knocked cars, three or more drivers) and gives one driver a yielding role.
+void AIResolveWaitCycles(Game& g, float dt);
 // Places v on a random lane between minDist..maxDist from 'near' (optionally off-screen).
 bool AIPlaceOnRoad(Game& g, Vehicle& v, Vector2 near, float minDist, float maxDist, bool offscreen);

@@ -60,7 +60,8 @@ The run ends by logging:
 | `TRAFFIC` | Number of traffic cars, average speed, stopped and blocked cars, AI-to-AI contacts per second | Few blocked cars; AI contacts close to 0 in `drive` |
 | `TRAFFIC jolts` | Sudden velocity jumps per second, split into rail, knocked and police cars | Rail jolts close to 0 |
 | `TRAFFIC stopped because` | Why stopped cars are stopped: red light, queue, person (or a knocked car holding), yield at a junction, static obstacle, full junction box, giving way to another driver | Mostly red lights and queues |
-| `TRAFFIC yielding` | Cooperative yielding roles taken (and how many were chain roles), cars still giving way at the end, and mutual pairs still stopped behind each other without a role | Unresolved pairs 0 |
+| `TRAFFIC yielding` | Cooperative yielding roles taken (and how many were chain roles), cars still giving way at the end, and wait-for loops still open at the end: mutual pairs and larger loops | Loops open at the end are only ones that have just formed |
+| `TRAFFIC wait cycles` | Wait-for loops that formed during the run, how many lasted over 10 s, and the longest; then the members of each loop still open at the end (`UNRESOLVED`). A loop lasting 5 s is logged as `WAIT-CYCLE` when it happens | None over 10 s |
 | `INCIDENTS` | Collision incidents started, drivers out, confrontations, fights, drivers back in their own car; interruptions by reason (no safe exit, car lost, driver dead, other); impacts that nobody took personally | Every driver out is back in their car or has a logged reason |
 | `PHYS` jitter | Frames where a physics body's position or heading reverses direction frame after frame | Close to 0 per body-second |
 | `PHYS` penetration | Deepest overlap with buildings or solid furniture, and frames deeper than 3 px | Under 3 px; no deep frames |
@@ -207,20 +208,22 @@ The pre-fix `before/depth-contract/manifest-20261005T170722846100Z-35064.json` c
 
 ## Cooperative yielding fixture
 
-`cj016-conflict-v1` freezes three mutual blockages that the earlier rules left as permanent stand-offs and runs them with production traffic AI and physics on uniform road (world-edge contacts disabled):
+`cj016-conflict-v2` freezes five blockages that earlier rules left as permanent stand-offs and runs them with production traffic AI and physics on uniform road (world-edge contacts disabled). The first three are the unchanged cases of `cj016-conflict-v1`; the last two were added in the third CJ-016 increment:
 
 | Situation | Set-up | Resolved when |
 |---|---|---|
 | `passing-head-on` | A Taxi passing a parked car in the oncoming lane meets an oncoming Taxi (seeds 0–4) or Bus (5–9) | The oncoming car has passed the passing car's start (at most 20 s), and the passing car has then passed the parked car back in its lane |
 | `knocked-needs-room` | A knocked Taxi, nose 3–5 px from a kerb wall, can only reverse into the rail Taxi or Bus stopped 6–10 px behind it; a parked car in the oncoming lane prevents passing | The knocked car is back on its lane, and the car behind has driven on |
 | `knocked-queue` | The same, with a second rail Taxi queued 10–16 px behind | As above; a role needs a chain role too |
+| `knocked-pair` | The same front car, but the Taxi or Bus behind it was knocked too: turned 0.12–0.22 rad towards the kerb, its front corner 4–8 px from the wall and a wall 70–85 px behind it, less than a full reversing manoeuvre needs | Both knocked cars are back on their lanes |
+| `junction-gridlock` | Four rail cars in a junction box, each nose 8–14 px short of the side of the car crossing ahead of it (north waits on west, west on south, south on east, east on north); seeds 5–9 make the northbound car a Bus. The junction's lights run as in the city | Two cars have moved off (resolved), then all four have driven two lengths on (completed) |
 
 ```bash
-python tools/run_cj016_conflict.py --phase before --run-name yielding-20261006
-python tools/run_cj016_conflict.py --phase after --run-name yielding-20261006
+python tools/run_cj016_conflict.py --phase before --run-name cycles-20261006
+python tools/run_cj016_conflict.py --phase after --run-name cycles-20261006
 ```
 
-Ten seeds vary the gaps, angles, speeds and classes; every case runs at 60 Hz and 20 Hz physics on the 1/60 s render clock: 60 cases in one process, each ending 2 s after success or after 30 s. Every case checks unchanged ownership, finite state, no pose jump, static penetration and vehicle overlap at most 3 px, no rail car knocked, no role flip, exactly one role for the passing car (at most one for a car behind a knocked car, which some seeded poses do not need), none for the priority driver, and the resolution times. The before phase uses a copy of `traffic.cfg` with `YIELD enabled 0`; the after phase uses the shipped file. `CJ_TEST_CASE=<substring>` narrows a diagnostic run. Results: [yielding and incident report](design/traffic-yielding-incident-results.md#cooperative-yielding).
+Ten seeds vary the gaps, angles, speeds and classes; every case runs at 60 Hz and 20 Hz physics on the 1/60 s render clock: 100 cases in one process, each ending 2 s after success or after 30 s. Every case checks unchanged ownership, finite state, no pose jump, static penetration and vehicle overlap at most 3 px, no rail car knocked, no role flip and the resolution times. The first three situations also check exactly one role for the passing car (at most one for a car behind a knocked car, which some seeded poses do not need) and none for the priority driver; the two new ones check one to two (pair) or one to four (gridlock) roles in all. The before phase uses a copy of `traffic.cfg` with `YIELD cycles 0` (the pair rule of the second increment, nothing for knocked pairs or longer loops); the after phase uses the shipped file. The first increment's stand-off baseline (`YIELD enabled 0`) is kept in the `cj016-conflict-v1` evidence. `CJ_TEST_CASE=<substring>` narrows a diagnostic run. Results: [yielding and incident report](design/traffic-yielding-incident-results.md#cooperative-yielding) (v1) and [third increment report](design/traffic-third-increment-results.md#wait-for-cycles) (v2).
 
 ## Driver incident fixture
 

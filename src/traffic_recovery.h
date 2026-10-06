@@ -8,6 +8,7 @@
 #include <cstdint>
 
 class Game;
+struct Vehicle;
 
 enum class RecoveryReason : uint8_t {
     Assessing, Forward, Reverse, GearChange, NoFeasibleManoeuvre, Hazard, Disabled,
@@ -73,6 +74,13 @@ struct RecoveryState {
     // Actors that rejected rollouts of the current/last job: vehicle index + 1, or
     // RECOVERY_PERSON_ID + person index + 1. A hold is replanned when one of them moves.
     std::array<int, 6> blockIds{}, blockVotes{};
+    // Making room (a role in a wait-for cycle): short checked creeps that move the car
+    // away from the driver waiting on it, then a hold until that driver is free.
+    int roomFor = -1;                        // the vehicle given room; -1: no role
+    bool roomPlanning = false;
+    int roomNext = 0, roomBest = -1, roomCreeps = 0;
+    float roomBestGain = 0, roomTime = 0, roomRetry = 0;
+    float moveLeft = -1;                     // s the committed move still lasts; -1: open-ended
 };
 
 struct RecoveryStats {
@@ -92,6 +100,12 @@ void LoadTrafficRecords(const char* type, TrafficField* fields, int count);
 void RecoveryBeginFrame(Game& g);
 void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, float dt);
 bool RecoveryCanRejoin(Game& g, int idx, float dt);
+// Free distance (px) the knocked car can move straight along its axis away from
+// 'other', from the common snapshot: how much room it could make.
+float RecoveryFreeRoom(Game& g, int idx, int other);
+// Take / leave the making-room role for 'other' (a driver waiting on this car).
+void RecoveryStartRoom(Vehicle& v, int other);
+void RecoveryEndRoom(Vehicle& v);
 void RecoveryReset(RecoveryState& state);
 const char* RecoveryReasonText(RecoveryReason reason);
 const char* RejoinCauseText(RejoinCause cause);

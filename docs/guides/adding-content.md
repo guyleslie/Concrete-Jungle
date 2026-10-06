@@ -121,6 +121,8 @@ See [Cooperative yielding](../design/traffic.md#cooperative-yielding).
 | `retreat_accel` | 40–400 px/s² | Reversing acceleration |
 | `retreat_extra` | 0–200 px | Room beyond a knocked car's length that the rail car backs up |
 | `max_chain` | 1–6 drivers | Longest chain of queued drivers backing up together |
+| `cycles` | 0–1 | 0 keeps only the pair rule: nothing resolves two knocked cars or a loop of three or more drivers (baseline measurements) |
+| `min_room` | 2–60 px | Least room a knocked car must be able to make, moving straight away from the driver waiting on it, to take the making-room role |
 
 ### Incidents
 

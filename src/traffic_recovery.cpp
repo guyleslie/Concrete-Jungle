@@ -532,6 +532,8 @@ bool InsideWorld(const OBB& box) {
            box.c.x + radiusX <= geometry.maxX + 0.025f && box.c.y + radiusY <= geometry.maxY + 0.025f;
 }
 
+Vector2 terminalPos{};                       // final pose of the last safe rollout
+float terminalAngle = 0;
 int failedVehicle = -1;                      // observed vehicle that rejected the last rollout
 int failedPerson = -1;                       // observed person that rejected it
 int rolloutGear = 0;                         // gear of the rollout being checked
@@ -783,6 +785,7 @@ Candidate Predict(Game& g, const Vehicle& v, const RecoveryState& state, Candida
         return candidate;
     }
     candidate.safe = true;
+    terminalPos = scratch.pos; terminalAngle = scratch.angle;
     if (cause) *cause = RejoinCause::Clear;
     candidate.terminalAligned = LaneAligned(scratch, state);
     candidate.distance = travelled;
@@ -1095,7 +1098,89 @@ bool CheckCovered(const Vehicle& v, const RecoveryState& state) {
     return same && count == state.checkActors;
 }
 
+// Separation of two boxes along the four box axes: positive when apart. It is the gap
+// a separating-axis test finds, a lower bound of the true distance, and grows as the
+// boxes move apart.
+float OBBGap(const OBB& a, const OBB& b) {
+    Vector2 axes[4] = { a.ax[0], a.ax[1], b.ax[0], b.ax[1] };
+    Vector2 d = b.c - a.c;
+    float gap = -1e9f;
+    for (Vector2 n : axes) gap = std::max(gap, fabsf(Dot(d, n)) - OBBProjectRadius(a, n) - OBBProjectRadius(b, n));
+    return gap;
+}
+
+OBB ObservedBox(int actor) {
+    const ObservedVehicle& o = observedVehicles[actor];
+    return MakeOBB(o.pos, o.angle, o.width * 0.5f, o.length * 0.5f);
+}
+
+// Moving along its own axis, which way takes the car away from 'other'.
+int AwayGear(const Vehicle& v, int other) {
+    return Dot(observedVehicles[other].pos - v.pos, v.Fwd()) > 0 ? -1 : 1;
+}
+
+// A making-room job: 20 short creeps away from the other car (five steering angles,
+// 0.3-1.2 s of driving, each followed by the checked stopping tail). The creep that
+// opens the largest gap to the other car wins; on a tie the shorter one.
+constexpr int ROOM_CANDIDATES = 20;
+void RoomUnit(Game& g, Vehicle& v, RecoveryState& state) {
+    static const float steers[5] = { 0.0f, -0.5f, 0.5f, -1.0f, 1.0f };
+    static const float times[4] = { 0.3f, 0.6f, 0.9f, 1.2f };
+    int k = state.roomNext++;
+    Candidate c;
+    c.gear = AwayGear(v, state.roomFor);
+    c.steer = steers[k % 5];
+    float drive = times[k / 5];
+    work.current.candidates++;
+    c = Predict(g, v, state, c, drive + Tuning().stopTail, true);
+    if (c.safe && c.distance > 2) {
+        OBB other = ObservedBox(state.roomFor);
+        float gain = OBBGap(MakeOBB(terminalPos, terminalAngle, v.width * 0.5f, v.length * 0.5f), other)
+                   - OBBGap(v.Box(), other);
+        if (gain > state.roomBestGain + 0.5f) {
+            state.roomBestGain = gain; state.roomBest = k;
+            state.candidates[0] = c;          // the slot is free while a role replaces planning
+            state.roomTime = drive;
+        }
+    }
+    if (state.roomNext >= ROOM_CANDIDATES) state.roomPlanning = false;
+}
+
 } // namespace
+
+float RecoveryFreeRoom(Game& g, int idx, int other) {
+    if (observedGame != &g || idx < 0 || other < 0 || idx >= (int)observedVehicles.size() || other >= (int)observedVehicles.size())
+        return 0;
+    const Vehicle& v = g.vehicles[idx];
+    GatherNearby(g, v, idx);
+    Vector2 dir = v.Fwd() * (float)AwayGear(v, other);
+    float limit = v.length * 1.2f, step = 4;
+    for (float d = step; d <= limit; d += step) {
+        OBB box = v.Box(); box.c = box.c + dir * d;
+        for (int k = 0; k < nearbyCount; k++) {
+            float depth = 0;
+            // An existing contact may be left behind, not deepened.
+            if (Overlap(nearby[k], box, 0, Tuning().clearance, depth) && depth > nearby[k].initialDepth + 0.025f)
+                return d - step;
+        }
+    }
+    return limit;
+}
+
+void RecoveryStartRoom(Vehicle& v, int other) {
+    RecoveryState& state = v.ai.recovery;
+    state.roomFor = other;
+    state.roomPlanning = false; state.roomCreeps = 0; state.roomRetry = 0; state.moveLeft = -1;
+    state.planning = false; state.planWait = 0;
+    state.gear = 0; state.steer = 0; state.tracking = false;
+}
+
+void RecoveryEndRoom(Vehicle& v) {
+    RecoveryState& state = v.ai.recovery;
+    state.roomFor = -1; state.roomPlanning = false; state.moveLeft = -1;
+    state.gear = 0; state.steer = 0; state.tracking = false;
+    state.nextPlan = 0; state.commit = 0; state.holdSignature = 0;   // plan afresh
+}
 
 void RecoveryReset(RecoveryState& state) { state = RecoveryState{}; }
 
@@ -1219,7 +1304,20 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
     }
     // A hold between planning jobs neither checks nor plans this frame: it needs no
     // neighbourhood. Moving, planning or due to (re)plan, the car gathers it first.
-    bool idleHold = state.gear == 0 && !state.planning && state.nextPlan > 0;
+    bool room = state.roomFor >= 0;
+    if (room) {
+        state.roomRetry -= dt;
+        if (state.moveLeft >= 0) {
+            state.moveLeft -= dt;
+            if (state.moveLeft <= 0) {               // the creep is done: hold and let them out
+                state.moveLeft = -1; state.gear = 0; state.steer = 0;
+                state.reason = RecoveryReason::NoFeasibleManoeuvre;
+                state.roomRetry = 1.0f;
+            }
+        }
+    }
+    bool idleHold = room ? state.gear == 0 && !state.roomPlanning && state.roomRetry > 0
+                         : state.gear == 0 && !state.planning && state.nextPlan > 0;
     if (!idleHold) {
         GatherNearby(g, v, idx);
         if (!nearbyComplete) {
@@ -1245,7 +1343,9 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
         // Validate a few frames more of moving time, so the next frames can reuse it.
         int extra = std::clamp((int)lroundf(COVER_TIME / dt), 0, (int)state.checkPos.size());
         captureDt = dt; captureCount = 0;
-        c = Predict(g, v, state, c, std::min(Tuning().horizon, immediate + extra * dt + Tuning().stopTail), true);
+        float moving = immediate + extra * dt;
+        if (state.moveLeft >= 0) moving = std::min(moving, state.moveLeft);   // a creep ends earlier
+        c = Predict(g, v, state, c, std::min(Tuning().horizon, moving + Tuning().stopTail), true);
         captureDt = 0;
         state.checkFrames = 0;
         if (c.safe && captureCount >= extra) RecordCheck(v, state, extra);
@@ -1254,12 +1354,38 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
             state.tracking = false;
             state.reason = RecoveryReason::Hazard;
             urgent = true;
+            if (room) { state.moveLeft = -1; state.roomRetry = 0.5f; }
         }
         work.current.immediateMs += Milliseconds(immediateStart);
     }
     // A hazard restarts any job: earlier rollouts did not foresee the new conflict.
     if (urgent) state.planning = false;
-    if (!state.planning && state.nextPlan <= 0 && (state.commit <= 0 || state.gear == 0 || urgent)) {
+    if (room) {
+        // Making room replaces planning: at most three creeps, each assessed afresh.
+        if (!state.roomPlanning && state.gear == 0 && state.roomRetry <= 0 && state.roomCreeps < 3) {
+            state.roomPlanning = true; state.roomNext = 0; state.roomBest = -1; state.roomBestGain = 2.0f;
+            state.plans++; timing.plans++;
+        }
+        if (state.roomPlanning) {
+            auto planStart = Clock::now();
+            long long frameBudget = (long long)(Tuning().planningSteps * std::clamp(dt * 60.0f, 1.0f, 3.0f));
+            while (state.roomPlanning && budget.steps < frameBudget) {
+                long long before = work.current.steps;
+                RoomUnit(g, v, state);
+                budget.steps += work.current.steps - before;
+            }
+            if (!state.roomPlanning) {
+                if (state.roomBest >= 0) {
+                    const Candidate& c = state.candidates[0];
+                    state.gear = c.gear; state.steer = c.steer; state.tracking = false;
+                    state.moveLeft = state.roomTime;
+                    state.reason = state.gear > 0 ? RecoveryReason::Forward : RecoveryReason::Reverse;
+                    state.roomCreeps++;
+                } else state.roomRetry = 1.0f;     // nothing opens a gap now; look again later
+            }
+            work.current.planMs += Milliseconds(planStart);
+        }
+    } else if (!state.planning && state.nextPlan <= 0 && (state.commit <= 0 || state.gear == 0 || urgent)) {
         bool holding = state.reason == RecoveryReason::NoFeasibleManoeuvre || state.reason == RecoveryReason::Queued;
         if (state.gear == 0 && holding && state.holdAge < HOLD_RECHECK && HoldSignature(v, state) == state.holdSignature) {
             // Same pose, statics and blockers: the previous search still applies.
@@ -1271,7 +1397,7 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
             state.plans++; timing.plans++;
         }
     }
-    if (state.planning) {
+    if (state.planning && !room) {
         auto planStart = Clock::now();
         // Rollouts share a deterministic per-frame step budget, scaled to the frame
         // interval. Only the longest-waiting jobs may use it, so none starves.

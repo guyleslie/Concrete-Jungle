@@ -1,6 +1,6 @@
 # CJ-016 third increment results
 
-The third CJ-016 increment (2026-10-06) brings the driver decision CPU of every city scenario under the approved targets. `chase` fell from 0.689 / 1.415 ms (average / 95th percentile) to 0.321 / 0.819 ms and `rampage` from 0.727 / 1.547 ms to 0.378 / 0.861 ms; `crash` now has a wide margin at 0.234 / 0.484 ms. Apart from one deliberate capacity change, the optimisations leave every decision bit for bit unchanged, and all four fixtures (182 isolated checks, 60 yielding and 80 incident cases) reproduce the second increment exactly. Roles for two knocked cars, junction gridlock and the incident presentation follow in this increment; the user playtest is pending.
+The third CJ-016 increment (2026-10-06) brings the driver decision CPU of every city scenario under the approved targets and resolves wait-for loops that the pair rule left standing: two knocked cars blocking each other, and junction gridlock. `chase` fell from 0.689 / 1.415 ms (average / 95th percentile) to 0.321 / 0.819 ms and `rampage` from 0.727 / 1.547 ms to 0.378 / 0.861 ms; `crash` now has a wide margin at 0.234 / 0.484 ms. Apart from one deliberate capacity change, the optimisations leave every decision bit for bit unchanged, and all four fixtures (182 isolated checks, 60 yielding and 80 incident cases) reproduce the second increment exactly. Two knocked cars and four cars locked in a junction box went from 0 to 20 of 20 resolved fixture cases each. The incident presentation follows in this increment; the user playtest is pending.
 
 ## Contents
 
@@ -10,6 +10,7 @@ The third CJ-016 increment (2026-10-06) brings the driver decision CPU of every 
 - [Changes](#changes)
 - [Exactness](#exactness)
 - [Reproducible on-foot runs](#reproducible-on-foot-runs)
+- [Wait-for cycles](#wait-for-cycles)
 - [Limits and remaining work](#limits-and-remaining-work)
 
 ## Evidence
@@ -82,8 +83,33 @@ The fixtures never had more than 12 relevant actors, so the larger covered-check
 
 `foot` and `day` gave different traffic and pedestrian counts on two runs of the same executable. On foot, the camera looks ahead towards the mouse cursor, and the camera decides what is on screen and therefore which cars and people are recycled; the runs depended on where the cursor happened to rest. Test runs now use the screen centre. With that fixed, `foot` from the base revision and from this change match line by line.
 
+## Wait-for cycles
+
+The end-of-run `unresolved mutual pair` that the second increment reported in `crash` and `rampage` turned out to be a pair that had just formed: the new `TRAFFIC wait cycles` metric shows that no loop in the city runs lasted longer than 1.9 s on the CPU build (for example `crash` ended with a rail Taxi and a knocked Semi that had been waiting on each other for 0.3 s, before the 0.5 s detection time). Two knocked cars blocking each other, and loops of three or more drivers, therefore did not occur in the scripted city scenes; the new fixture situations stage them.
+
+| Situation, rate | Before: resolved | After: resolved | After: resolved median / max (s) | After: completed max (s) | Roles |
+|---|---|---|---|---|---|
+| `knocked-pair` 60 Hz | 0 / 10 | 10 / 10 | 4.02 / 5.08 | 9.35 | 10 |
+| `knocked-pair` 20 Hz | 0 / 10 | 10 / 10 | 3.65 / 4.85 | 9.35 | 10 |
+| `junction-gridlock` 60 Hz | 0 / 10 | 10 / 10 | 3.06 / 3.10 | 7.37 | 10 |
+| `junction-gridlock` 20 Hz | 0 / 10 | 10 / 10 | 3.05 / 3.10 | 7.30 | 10 |
+
+The before phase keeps the second increment's pair rule (`YIELD cycles 0`). In `knocked-pair` each knocked car then held with `no_feasible_manoeuvre`, each waiting on the other, for the full 30 s: the rear car's full reversing manoeuvre does not fit in front of the wall behind it, and the front car can only reverse into it. After the change the rear car (it can move 70–85 px straight back; the front car, nose at the kerb, cannot move away at all) makes room with one short creep, the front car's hold replans as soon as its blocker moves, it reverses out and rejoins its lane, and then the rear car rejoins too. In `junction-gridlock` the four cars stood for 30 s; after the change the car with the most driven path behind it backs up 80 px (a Taxi) or 136 px (the Bus), the car waiting on it crosses, and the loop unwinds. In every case one role was taken, nobody flipped a role, no vehicle overlapped another or a wall and no rail car was knocked. The 60 earlier cases reproduce the second increment's results line by line.
+
+### Evidence and city check
+
+| Run | Manifest |
+|---|---|
+| Conflict fixture v2, before (`YIELD cycles 0`) | `build/shots/cj016-conflict/before/s3-cycles-20261006/manifest-20261006T102135131305Z-24064.json`: 60 / 100 cases |
+| Conflict fixture v2, after | `build/shots/cj016-conflict/after/s3-cycles-20261006/manifest-20261006T102530160347Z-44656.json`: 100 / 100 cases |
+| Recovery, clearance, incidents | `build/shots/cj016/after/s3-cycles-20261006/manifest-20261006T102753842290Z-56404.json`, `build/shots/cj016-clearance/after/s3-cycles-20261006/manifest-20261006T103227029224Z-4572.json`, `build/shots/cj016-incident/after/s3-cycles-20261006/manifest-20261006T103246755820Z-2676.json`: 156 / 156, 26 / 26 checks, 80 / 80 cases, every result line as in `final3` |
+| City | `build/shots/cj002/after/cj016-s3-cycles-20261006/manifest-20261006T103733074407Z-city-4288.json` |
+
+All used executable SHA-256 `b3899678c768dc155db7b449ecbd0ebad02455f0eae94c4522d4519903a59511` and `traffic.cfg` SHA-256 `d26c66b0b2737f2f1e53ee045eae58d715572f8172e571553afd8f32e7b1a82e`. In the six city scenarios no wait-for loop lasted over 10 s (the longest: 1.9 s in `rampage`), recovery give-ups stayed at zero, and driver decisions stayed within the targets (`chase` 0.347 / 0.839 ms, `rampage` 0.374 / 0.894 ms, `crash` 0.251 / 0.498 ms). `crash` still ends with the rail Taxi and the knocked Semi that met 0.3 s before the end.
+
 ## Limits and remaining work
 
 - The covered-check capacity change is the only behaviour change; its city effect is measured above but not isolated in a fixture.
 - Single frames of 2–2.6 ms remain where a planning job and several immediate checks coincide; the planning budget (`planning_steps 600`) is unchanged.
-- Roles for two knocked cars, junction gridlock, the shouting sound, the raised-fist gesture and lane changes without sideways sliding are the next parts of this increment. The user playtest is pending.
+- Wait-for loops are staged in fixtures; the scripted city scenes produced none that lasted. The fixtures cover one geometry each (a knocked pair at a kerb, a four-car box), with one seed family.
+- The shouting sound, the raised-fist gesture and lane changes without sideways sliding are the next part of this increment. The user playtest is pending.

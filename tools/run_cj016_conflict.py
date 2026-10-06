@@ -7,10 +7,13 @@ Examples:
     python tools/run_cj016_conflict.py --phase after --dry-run
 
 Build separately. "before" runs the same build and fixture with a copy of
-assets/data/traffic.cfg whose YIELD enabled record is 0, so drivers keep the earlier
-stand-off rule; the copy is written beside the evidence and fingerprinted. "after"
-uses the shipped traffic.cfg unchanged. The fixture runs 60 cases (3 situations x
-10 seeds x 60/20 Hz) in one process and ends itself when the last case is complete.
+assets/data/traffic.cfg whose YIELD cycles record is 0, so drivers keep the pair rule
+of the second CJ-016 increment but nothing resolves two knocked cars or a longer
+wait-for cycle (the first increment's stand-off baseline, YIELD enabled 0, is kept in
+the cj016-conflict-v1 evidence). The copy is written beside the evidence and
+fingerprinted. "after" uses the shipped traffic.cfg unchanged. The fixture runs 100
+cases (5 situations x 10 seeds x 60/20 Hz) in one process and ends itself when the
+last case is complete.
 Exit codes: 0 accepted, 1 failed/incomplete fixture, 2 setup error, 130 interrupted.
 """
 
@@ -30,9 +33,9 @@ from run_cj016 import (ROOT, existing_outputs, git_state, integer_field, positiv
                        record_fields, save_manifest, stop_process, utc_now)
 from run_cj016 import INPUTS as RECOVERY_INPUTS
 
-FIXTURE = "cj016-conflict-v1"
+FIXTURE = "cj016-conflict-v2"
 MAX_FRAMES = 200000
-KINDS = ("passing-head-on", "knocked-needs-room", "knocked-queue")
+KINDS = ("passing-head-on", "knocked-needs-room", "knocked-queue", "knocked-pair", "junction-gridlock")
 CASES = tuple("%s-%s-s%d" % (kind, rate, seed)
               for rate in ("60hz", "20hz") for kind in KINDS for seed in range(10))
 INPUTS = RECOVERY_INPUTS + (
@@ -90,11 +93,11 @@ def fingerprints(case):
 
 
 def write_before_config(case):
-    """Copy the shipped traffic data with yielding disabled; nothing else changes."""
+    """Copy the shipped traffic data with cycle roles disabled; nothing else changes."""
     text = (ROOT / "assets" / "data" / "traffic.cfg").read_text(encoding="utf-8")
-    replaced, count = re.subn(r"(?m)^YIELD\s+enabled\s+\S+\s*$", "YIELD enabled 0", text)
+    replaced, count = re.subn(r"(?m)^YIELD\s+cycles\s+\S+\s*$", "YIELD cycles 0", text)
     if count != 1:
-        raise OSError("assets/data/traffic.cfg must contain exactly one 'YIELD enabled' record")
+        raise OSError("assets/data/traffic.cfg must contain exactly one 'YIELD cycles' record")
     (ROOT / case["traffic_config"]).write_text(replaced, encoding="utf-8")
 
 

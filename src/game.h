@@ -124,6 +124,11 @@ public:
     int   statYields = 0, statChainYields = 0;                 // cooperative yielding roles taken (direct + chain)
     float diagMaxPen = 0, diagBodySeconds = 0, diagPlayerSlow = 0;
     void  PhysDiagnostics(float dt);
+    // wait-for cycles (--shot): drivers waiting on each other in a closed loop
+    std::vector<float> waitCycleTime;               // per vehicle: time spent in a cycle so far
+    float diagLongestCycle = 0;                     // s, the longest-lasting cycle
+    int   diagCycles = 0, diagLongCycles = 0;       // cycles that formed / lasted over 10 s
+    void  WaitDiagnostics(float dt);
     void  LogPhysStats() const;
     void ApplyTestImpacts(float dt) { HandleImpacts(dt); }
     // pedestrian diagnostics (--shot): per-frame sums (divide by 'frames' for averages)

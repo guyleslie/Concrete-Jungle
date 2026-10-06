@@ -4,7 +4,7 @@ How traffic and police vehicles drive. Traffic follows its lane kinematically ("
 
 Source: `src/traffic.h`, `src/traffic.cpp`, `src/traffic_recovery.*`, `src/traffic_incidents.*`; recovery, yielding and incident tuning in `assets/data/traffic.cfg`; population management in `Game::UpdateSpawning` and `Game::UpdatePolice` (`src/game.cpp`).
 
-The user approved the [CJ-016 specification](traffic-behaviour-proposal.md) on 2026-10-05. Its first increment covers knocked-vehicle recovery and persistent holding. The second increment (2026-10-06) adds a shared CPU budget for recovery planning, [cooperative yielding](#cooperative-yielding) for two drivers stopped behind each other, queue-aware rejoining and [driver incidents](#driver-incidents): stopping, getting out, confronting, fighting and returning to the same car. Ordinary traffic stays on rails: a yielding driver retraces its own path kinematically. [ADR-0004](../adr/0004-kinematic-rail-traffic.md) remains Accepted and [ADR-0008](../adr/0008-human-like-traffic.md) remains Proposed. Measured results are in the [yielding and incident report](traffic-yielding-incident-results.md).
+The user approved the [CJ-016 specification](traffic-behaviour-proposal.md) on 2026-10-05. Its first increment covers knocked-vehicle recovery and persistent holding. The second increment (2026-10-06) adds a shared CPU budget for recovery planning, [cooperative yielding](#cooperative-yielding) for two drivers stopped behind each other, queue-aware rejoining and [driver incidents](#driver-incidents): stopping, getting out, confronting, fighting and returning to the same car. The third increment (2026-10-06) brings the decision CPU under its targets and resolves [wait-for cycles](#wait-for-cycles): two knocked cars and junction gridlock. Ordinary traffic stays on rails: a yielding driver retraces its own path kinematically. [ADR-0004](../adr/0004-kinematic-rail-traffic.md) remains Accepted and [ADR-0008](../adr/0008-human-like-traffic.md) remains Proposed. Measured results are in the [yielding and incident report](traffic-yielding-incident-results.md) and the [third increment report](traffic-third-increment-results.md).
 
 ## Contents
 
@@ -59,7 +59,7 @@ A car only enters a junction box when:
 - a left turn has no oncoming traffic about to come through on green;
 - its exit lane has room for it, so it never blocks the box.
 
-Directional right-of-way rules allow compatible movements through a junction and make left turns yield to oncoming traffic. They do not authorize ignoring an occupied vehicle footprint. Cooperative resolution of mutually blocked vehicles remains a later CJ-016 increment.
+Directional right-of-way rules allow compatible movements through a junction and make left turns yield to oncoming traffic. They do not authorize ignoring an occupied vehicle footprint. A knocked car standing in the box is not a "mover" for these rules, so traffic can still enter and get stuck around it; drivers who end up waiting on each other in a loop are resolved by the [wait-for cycle](#wait-for-cycles) rule.
 
 ## Obstacles and impatience
 
@@ -67,6 +67,7 @@ Directional right-of-way rules allow compatible movements through a junction and
 |---|---|
 | Stopped behind a static vehicle for 1 s (scaled by the driver's temper) | Overtakes through the oncoming lane if it is clear; otherwise, except for large vehicles, mounts the kerb if the sidewalk is free of furniture and buildings. |
 | Two drivers stopped behind each other | One of them gives way and backs up; see [Cooperative yielding](#cooperative-yielding). |
+| Two knocked cars, or three or more drivers, waiting on each other in a loop | One of them backs up or makes room; see [Wait-for cycles](#wait-for-cycles). |
 | Blocked for 6 s | Makes a U-turn in the middle of the block, if it is far enough from the junction, the opposite lane is clear and every pose of the swept turn misses other vehicles (not for large vehicles). A refused U-turn keeps the current route. |
 | Blocked, or someone standing in the road | Honks; impatient drivers honk sooner. |
 | Distracted (random, about once every few minutes per driver) | Ignores pedestrians for 1–2.5 s — accidents happen. |
@@ -84,7 +85,22 @@ Each traffic driver keeps a *wait-for* edge: a rail car waits on the vehicle it 
 
 The role is stable: the other driver never takes the opposite role for the same pair, and the role ends only after the conflict has looked resolved for `clear_time` (the priority driver no longer waits on the yielder and is no longer in its way within two of its lengths). The yielder stays on rails and retraces its own driven path at up to `retreat_speed`, with comfortable braking, stopping 14 px short of any vehicle, person or the player behind it. Traffic keeps the driven path behind each car (at least 240 px or three lengths) for this. A passing driver tucks back into its own lane as soon as the lane beside its whole body is free, reversing on until the lateral move is complete; a car giving room to a knocked car backs up that car's length plus `retreat_extra`. If a car queued close behind blocks the retreat, it backs up too (a chain of at most `max_chain` drivers).
 
-Other drivers' recovery forecasts see a yielding car's negative path speed and its retreat end. Yielding cars are not recycled. Two physical (knocked) cars blocking each other are not yet given roles; each one's planner treats the other as an obstacle. `TRAFFIC yielding` in the test log reports roles taken, chains and unresolved mutual pairs at the end of a run. See the [conflict fixture](../testing.md#cooperative-yielding-fixture).
+Other drivers' recovery forecasts see a yielding car's negative path speed and its retreat end. Yielding cars are not recycled.
+
+A rail car held at its stop line because a car occupies the junction box, or has stopped on its exit lane, waits on that car too: the wait-for graph includes junction waits.
+
+### Wait-for cycles
+
+The pair rule above needs a rail car. Two knocked cars blocking each other, and loops of three or more drivers (junction gridlock: four cars in a box, each nose against the next car's side), are found once per frame (`AIResolveWaitCycles`), before any driver decides: every traffic driver has at most one wait-for edge, so following the edges from each car finds every closed loop. A loop that persists for `detect_time` gets one driver who gives way to the driver waiting on it (its predecessor in the loop):
+
+| Candidate | Condition | Preferred |
+|---|---|---|
+| A rail car | At least 30 px of driven path free behind it | One whose predecessor is a knocked car that needs room; then the one with the most room |
+| A knocked car | Can move at least `min_room` straight along its axis away from its predecessor | The one that made room for the same driver within the last 30 s, then the one with the most room |
+
+Rail cars rank before knocked cars; ties go to the higher index. A rail car backs up along its driven path as in the pair rule. A knocked car *makes room*: its planner is replaced by short checked creeps away from its predecessor, 20 candidates of 0.3–1.2 s of driving at five steering angles, each followed by the checked stopping tail and checked against every actor like any rollout. The creep that opens the largest gap to the predecessor's box (at least 2 px) wins; it runs under the per-frame immediate check, then the car holds while the other driver plans its way out (its hold replans as soon as a blocker moves). After at most three creeps, or once the predecessor has not waited on the car for `clear_time`, the role ends and the car plans normally again. A pair that the pair rule has not resolved after three detection times is taken over the same way. A loop that nobody can open is assessed again every second and remains observable; nobody is moved or removed. The pass costs only the edge walk unless a loop persists.
+
+`TRAFFIC yielding` in the test log reports roles taken, chains, unresolved mutual pairs and larger loops at the end of a run; `TRAFFIC wait cycles` reports how many loops formed, how many lasted over 10 s and the longest, and lists the members of loops still open at the end. A loop that has just formed at the end of a run (before `detect_time`) counts as open there, so the duration figures are the meaningful ones. See the [conflict fixture](../testing.md#cooperative-yielding-fixture).
 
 ## Knocked off the lane
 
