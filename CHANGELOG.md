@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - MIT licence for the project's own code (`LICENSE`, CJ-009); third-party assets keep the licences listed in CREDITS. A screenshot at the top of the README, ready for publishing on GitHub.
+- A CJ-008 note: the `drive` autopilot now locks up with a traffic taxi in the first junction.
 - Angry drivers shout: three synthesised voices ("hey!", "oi!", "hah!") at a personal pitch, every second or so from the moment they walk up; `shout1.wav`–`shout3.wav` in `assets/sounds/` replace them. Arguing, they raise and shake a fist (two new civilian atlas frames); the punch frame is now only for blows.
 - `TRAFFIC slip` in the test log: the rear-axle slip of rail cars during lane changes, turns and straight driving. New backlog item CJ-020 for the turning slip it found.
 - Wait-for cycles: two knocked cars blocking each other, and three or more drivers waiting on each other in a loop (junction gridlock), are found once per frame; one driver gives way to the driver waiting on it. A rail car backs up along its path; a knocked car makes room with short checked creeps away from the other car. A car held at a stop line by a car in the junction box now waits on that car. `YIELD cycles` and `YIELD min_room` in `traffic.cfg`; `TRAFFIC wait cycles` in the test log.
