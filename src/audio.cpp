@@ -177,6 +177,49 @@ static std::vector<short> Scream() {
     return s.PCM(0.5f);
 }
 
+// An angry shout: a glottal pulse train (raised pitch that rises and falls, with jitter
+// and shimmer) through three formant resonators in cascade that glide from one vowel to
+// the next, an aspirated onset and a little saturation for the strain of a raised voice.
+struct Vowel { float f1, f2, f3; };
+static std::vector<short> Shout(float seconds, float f0, Vowel from, Vowel to, float aspiration, uint32_t seed) {
+    Synth s(seconds);
+    const float bw[3] = { 90, 120, 170 };
+    float y1[3] = {}, y2[3] = {};
+    float phase = 0, jitter = 0, shimmer = 1, prevFlow = 0;
+    for (size_t i = 0; i < s.N(); i++) {
+        float t = i / (float)SR, u = t / seconds;
+        // Breath first, then the voice; it swells, holds and drops away.
+        float voicing = Saturate((t - 0.04f) * 25) * Saturate((1 - u) * 3.5f);
+        float pitch = f0 * (1 + 0.18f * sinf(PI * Saturate(u * 1.8f)) - 0.25f * u * u);
+        jitter += (Noise(seed) - jitter) * 0.003f;
+        phase += pitch * (1 + jitter * 0.04f) / SR;
+        if (phase >= 1) { phase -= 1; shimmer = 1 + Noise(seed) * 0.08f; }
+        // Glottal flow (open 0..0.6, closing to 0.72) and its derivative: the radiated pulse.
+        float flow = phase < 0.6f ? 0.5f - 0.5f * cosf(PI * phase / 0.6f)
+                   : phase < 0.72f ? cosf(PI * 0.5f * (phase - 0.6f) / 0.12f) : 0.0f;
+        float pulse = (flow - prevFlow) * SR / (pitch * 6) * shimmer;
+        prevFlow = flow;
+        float breath = Noise(seed) * (aspiration * Saturate(1 - t * 12) * 0.8f + 0.04f * voicing);
+        float x = pulse * voicing + breath;
+        float glide = SmoothStep(0.2f, 0.8f, u);
+        // A raised voice opens the mouth wider: the first formant rises.
+        float f[3] = { Lerpf(from.f1, to.f1, glide) * 1.1f, Lerpf(from.f2, to.f2, glide), Lerpf(from.f3, to.f3, glide) };
+        for (int k = 0; k < 3; k++) {           // unity gain at DC, peaks at the formants
+            float r = expf(-PI * bw[k] / SR), c = 2 * r * cosf(2 * PI * f[k] / SR);
+            float y = (1 - c + r * r) * x + c * y1[k] - r * r * y2[k];
+            y2[k] = y1[k]; y1[k] = y;
+            x = y;
+        }
+        s.buf[i] = x * Saturate(t * 80) * Saturate((1 - u) * 4.0f);
+    }
+    HighPass(s.buf, 120);
+    float peak = 1e-6f;
+    for (float v : s.buf) peak = std::max(peak, fabsf(v));
+    for (float& v : s.buf) v = tanhf(1.4f * v / peak);
+    LowPass(s.buf, 6000);
+    return s.PCM(0.9f);
+}
+
 // -------------------------------------------------------------------------------------
 void AudioSystem::MakeLoop(Loop& l, const std::vector<short>& pcm, const char* overrideName) {
     char path[256];
@@ -218,10 +261,13 @@ void AudioSystem::Init() {
     pcm[(int)Sfx::Footstep]  = Burst(0.08f, 60, 700, 0, 60, 0.6f, 12);
     pcm[(int)Sfx::Reload]    = Tone({ 1800, 1200 }, 0.05f, 0.9f);
     pcm[(int)Sfx::Scream]    = Scream();
+    pcm[(int)Sfx::ShoutHey]  = Shout(0.42f, 205, { 520, 1850, 2500 }, { 300, 2250, 2950 }, 0.9f, 31);   // "hey!"
+    pcm[(int)Sfx::ShoutOi]   = Shout(0.46f, 190, { 560, 860, 2400 }, { 320, 2150, 2850 }, 0.25f, 32);  // "oi!"
+    pcm[(int)Sfx::ShoutHah]  = Shout(0.36f, 225, { 820, 1250, 2650 }, { 650, 1200, 2450 }, 0.8f, 33);  // "hah!"
 
     const char* names[(int)Sfx::COUNT] = { "pistol", "shotgun", "rifle", "punch", "knife", "crash", "crash_small", "explosion",
                                            "horn", "door", "pickup", "mission_pass", "mission_fail", "wasted", "splash", "glass",
-                                           "footstep", "reload", "scream" };
+                                           "footstep", "reload", "scream", "shout1", "shout2", "shout3" };
     for (int i = 0; i < (int)Sfx::COUNT; i++) {
         char path[256];
         snprintf(path, sizeof(path), "assets/sounds/%s.wav", names[i]);

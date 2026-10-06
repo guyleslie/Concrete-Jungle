@@ -85,7 +85,7 @@ About 15 % of people are tough (courage above 0.85). Punched by the player on fo
 
 A traffic driver who gets out after a collision is a pedestrian with an owner's handle to their car and an explicit opponent: another driver on foot, the player, or the other car's door. The [incident rules](traffic.md#driver-incidents) decide the transitions; the pedestrian AI walks and punches.
 
-- `Confront`: walks at 1.3 times the walking speed to the opponent and faces them; arguing shows the punch frame as a raised fist every 0.9–1.4 s.
+- `Confront`: walks at 1.3 times the walking speed to the opponent and faces them. From five reaches away the person shouts every 0.9–1.4 s (a [shout](audio.md#shouts) in their own voice) and, face to face or standing, raises a fist and shakes it for 0.75 s (two atlas frames, the arm lifted towards the camera above the head, the other hand held out). Only at a car still occupied does the fist come down on the door, with the punch frame and a thump.
 - `Fight` against another driver: the same punches as against the player (every 0.8–1.2 s), for 6–10 damage with a 12 % chance to knock the other down; a driver who is hit while still arguing fights back.
 - `ToCar`: walks to the driver's door, or the passenger door when the driver's side is blocked, facing it to start; within 16 px the person gets back in.
 

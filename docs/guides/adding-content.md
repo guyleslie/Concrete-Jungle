@@ -191,7 +191,7 @@ Trees are used in parks, streets and courtyards; bushes along paths, in planters
 
 ## Sounds
 
-Put a WAV file named after the sound into `assets/sounds/` to replace the synthesised version. The names are listed in [Audio](../design/audio.md#sound-types).
+Put a WAV file named after the sound into `assets/sounds/` to replace the synthesised version. The names are listed in [Audio](../design/audio.md#sound-types); `shout1.wav`–`shout3.wav` replace the three driver shouts.
 
 ## Street furniture
 

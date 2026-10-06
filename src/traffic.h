@@ -38,6 +38,41 @@ Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle);
 // already-driven path behind it (a yielding driver can retrace that much). With
 // 'insideJunction' a car standing in a junction box goes straight through it.
 void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction = false);
+// Fixtures: a constant lane shift (a car already passing, for example).
+void AISetLaneShift(Vehicle& v, float shift);
+
+// Lane shift of a rail car at path distance s of its rear axle: 'from' before s0, 'to'
+// beyond s1 (s1 < s0 for a shift driven in reverse), a smooth S-curve between. 'slope'
+// receives its derivative along the path.
+inline float LaneShiftAt(float from, float to, float s0, float s1, float s, float* slope = nullptr) {
+    if (slope) *slope = 0;
+    if (from == to || s0 == s1) return to;
+    float t = (s - s0) / (s1 - s0);
+    if (t <= 0) return from;
+    if (t >= 1) return to;
+    if (slope) *slope = (to - from) * 6 * t * (1 - t) / (s1 - s0);
+    return from + (to - from) * t * t * (3 - 2 * t);
+}
+
+// Pose of a rail car at path distance s from two axle samples of its path. With a
+// constant shift the body is offset sideways from the path. While the shift changes,
+// the rear axle traces the shifted path and the body points along its tangent, as a
+// steered car's does: it turns into the new lane instead of sliding sideways.
+template <class Sampler>
+inline Vector2 ShiftedRailPose(Sampler sample, float s, float length, float from, float to, float s0, float s1,
+                               float fallbackAngle, Vector2* heading) {
+    float axle = length * 0.32f;
+    Vector2 fp = sample(s + axle), rp = sample(s - axle);
+    Vector2 dir = Norm(fp - rp);
+    if (Len2(dir) < 0.5f) dir = Forward(fallbackAngle);
+    float slope = 0;
+    float rear = LaneShiftAt(from, to, s0, s1, s - axle, &slope);
+    float front = LaneShiftAt(from, to, s0, s1, s + axle);
+    if (rear == front && slope == 0) { *heading = dir; return (fp + rp) * 0.5f + Perp(dir) * rear; }
+    Vector2 body = Norm(dir + Perp(dir) * slope);
+    *heading = body;
+    return rp + Perp(dir) * rear + body * axle;
+}
 // The one vehicle this traffic driver waits for, or -1 (a wait-for edge): a rail car the
 // car it is stopped behind; a holding knocked car the vehicle that blocked most of its
 // moves. A driver acting on a yielding role waits on nobody.

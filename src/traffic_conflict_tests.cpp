@@ -86,6 +86,9 @@ struct TrafficConflictTests::State {
     float phaseTime = 0, maxOverlap = 0, maxPen = 0, resolved = -1, secondary = -1, successAt = -1;
     float priorityStart = 0, yielderStart = 0, parkedY = 0;
     std::vector<Vector2> startPos;           // gridlock: each car must drive clear of the box
+    std::vector<Vector2> railRear;           // rear axle points of rail cars at the previous step
+    float maxSlip = 0, shiftSlip = 0;        // deg: largest rail-car slip, and while changing lane
+    std::vector<float> railShift;
     std::vector<int> gridlock;
     int yielder = -1, priority = -1, parked = -1, queued = -1, overlapA = -1, overlapB = -1;
     Vector2 centre{};
@@ -164,7 +167,7 @@ struct TrafficConflictTests::State {
             yielder = Add(g, "Taxi", V2(north, y), 0, DriverType::Traffic, "PASSING");
             Rail(g, yielder, rng.Range(70.0f, 110.0f), 1.2f);
             Vehicle& x = g.vehicles[yielder];
-            x.ai.laneShift = x.ai.laneShiftTarget = shift;
+            AISetLaneShift(x, shift);
             x.pos = V2(north + shift, y);
             float gap = rng.Range(230.0f, 330.0f);
             priority = Add(g, bus ? "Bus" : "Taxi", V2(south, y - gap), PI, DriverType::Traffic, "ONCOMING");
@@ -218,7 +221,8 @@ struct TrafficConflictTests::State {
         }
         g.map.RebuildTestIndex();
         roles.assign(g.vehicles.size(), 0); lastYield.assign(g.vehicles.size(), -1);
-        lastPos.clear(); startPos.clear();
+        lastPos.clear(); startPos.clear(); railRear.assign(g.vehicles.size(), V2(NAN, NAN));
+        railShift.assign(g.vehicles.size(), 0); maxSlip = shiftSlip = 0;
         for (const Vehicle& v : g.vehicles) { lastPos.push_back(v.pos); startPos.push_back(v.pos); }
         centre = V2(ic.x, parkedY);
         g.player.inVehicle = false; g.player.vehicle = -1;
@@ -239,6 +243,17 @@ struct TrafficConflictTests::State {
             if (Dist(lastPos[i], v.pos) > std::max(8.0f, travel + 4.0f)) teleports++;
             lastPos[i] = v.pos;
             if (a.startedRail && !v.ai.rail) knocks++;
+            if (AIOnRail(v)) {
+                Vector2 rear;
+                float slip = std::isfinite(railRear[i].x) ? RailRearSlip(v, railRear[i], step, &rear)
+                                                          : (RailRearSlip(v, v.pos, 0, &rear), -1.0f);
+                if (slip >= 0 && Dist(rear, railRear[i]) > fabsf(v.ai.speed) * step * 2 + 4) slip = -1;   // a re-planned pose
+                if (slip >= 0) {
+                    maxSlip = std::max(maxSlip, slip);
+                    if (fabsf(v.ai.laneShift - railShift[i]) > 0.01f) shiftSlip = std::max(shiftSlip, slip);
+                }
+                railRear[i] = rear; railShift[i] = v.ai.laneShift;
+            } else railRear[i] = V2(NAN, NAN);
             int to = v.ai.yieldTo;
             if (to >= 0 && lastYield[i] != to) {
                 roles[i]++;
@@ -277,7 +292,6 @@ struct TrafficConflictTests::State {
             }
             int moved = 0;
             for (int k : gridlock) if (Dot(g.vehicles[k].pos - startPos[k], g.vehicles[k].Fwd()) > 40) moved++;
-            if (resolved < 0 && moved >= 1 && !g.vehicles[yielder].ai.rail) resolved = -1;
             if (resolved < 0 && moved >= 2) resolved = phaseTime;
             if (secondary < 0 && all) secondary = phaseTime;
             if (successAt < 0 && resolved >= 0 && secondary >= 0) successAt = phaseTime;
@@ -322,6 +336,8 @@ struct TrafficConflictTests::State {
             Check("yielder_roles", (float)roles[yielder], c.kind == Kind::HeadOn ? 1.0f : 0.0f, 1);
             Check("priority_roles", (float)roles[priority], 0, 0);
         }
+        // A rail car's rear axle follows its body: no sideways sliding, lane changes included.
+        Check("lane_change_slip_deg", shiftSlip, 0, 8);
         Check("resolved_s", resolved, 0, c.kind == Kind::HeadOn ? 20.0f : MAX_CASE_S);
         Check("completed_s", secondary, 0, MAX_CASE_S);
         // The queued car stands too close behind: a role always needs the chain.
@@ -331,6 +347,7 @@ struct TrafficConflictTests::State {
         TraceLog(LOG_INFO, "CJ016Y result fixture=%s case=%s duration_s=%.3f resolved_s=%.3f completed_s=%.3f yielder_roles=%d all_roles=%d chain_roles=%d flips=%d vehicle_overlap_px=%.3f overlap_pair=%d,%d static_pen_px=%.3f contacts=%d knocks=%d teleports=%d result=%s",
                  FIXTURE_ID, c.name.c_str(), phaseTime, resolved, secondary, roles[yielder], totalRoles, chainRoles, flips,
                  maxOverlap, overlapA, overlapB, maxPen, vehicleContacts, knocks, teleports, pass ? "PASS" : "FAIL");
+        TraceLog(LOG_INFO, "CJ016Y slip case=%s lane_change_deg=%.2f any_rail_deg=%.2f", c.name.c_str(), shiftSlip, maxSlip);
         completed++;
         capture = c.name;
         (void)g;

@@ -76,6 +76,7 @@ struct Pedestrian {
     bool     foePlayer = false;                                  // the opponent is the player
     int      foeVehicle = -1;  uint32_t foeVehicleSerial = 0;   // opponent still in this car
     float    argue = 0;                                          // s spent arguing face to face
+    float    shoutT = 0;                                         // s left of the raised, shaken fist
 };
 
 constexpr float PED_RADIUS = 0.32f * 16.0f * 1.35f;   // keep in sync with cfg::CHAR_SCALE
@@ -115,4 +116,5 @@ void AlarmPed(Pedestrian& p, Vector2 from, float duration, bool secondHand); // 
 void KnockDownPed(Pedestrian& p, Vector2 impulse);
 void ProvokePed(Pedestrian& p, const Game& g);                                // punched by the player
 void DrawPed(const Pedestrian& p);
+int  PedDrawFrame(const Pedestrian& p);     // the atlas frame DrawPed shows (spritegen::PED_FRAME_*)
 void DrawPedShadow(const Pedestrian& p, Vector2 sv);

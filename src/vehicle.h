@@ -51,6 +51,10 @@ struct DriverAI {
     float s = 0;             // distance of the vehicle centre along the path
     float speed = 0;
     float laneShift = 0, laneShiftTarget = 0;    // sideways offset for passing obstacles
+    // The shift as a function of the rear axle's path distance (traffic.h LaneShiftAt):
+    // 'shiftFrom' before shiftS0, 'shiftTo' beyond shiftS1, an S-curve between.
+    float shiftFrom = 0, shiftTo = 0, shiftS0 = 0, shiftS1 = 0;
+    float pullBack = 0, pullShift = 0;   // backing up first to pull out round an obstacle
     int   curTurn = 0;       // manoeuvre inside the current junction (for yielding)
     float blend = 0;         // legacy rail U-turn easing; physical recovery never blends
     Vector2 blendPos{};  float blendAng = 0;

@@ -639,6 +639,7 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
     } break;
     case PedState::Confront: case PedState::ToCar:
         p.punchT -= dt;                                             // the incident controller decides
+        p.shoutT -= dt;
         break;
     default: break;
     }
@@ -775,15 +776,24 @@ void DrawPedShadow(const Pedestrian& p, Vector2 sv) {
     DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, p.pos + sv * (lying ? 2.0f : 12.0f), 0, s, s * (lying ? 0.6f : 1.0f), p.angle, ColorA(BLACK, 0.8f * fade));
 }
 
+int PedDrawFrame(const Pedestrian& p) {
+    bool lying = p.state == PedState::Down || p.state == PedState::Dead;
+    if (lying) return spritegen::PED_FRAME_DOWN;
+    if ((p.state == PedState::Fight || p.state == PedState::Confront) && p.punchT > 0)
+        return spritegen::PED_FRAME_PUNCH + (p.punchT > 0.12f ? 0 : 1);
+    // Shouting face to face, or standing: the raised fist, shaken about four times a second.
+    // Walking up, the legs keep walking and only the voice carries.
+    if (p.state == PedState::Confront && p.shoutT > 0 && (p.argue > 0 || Len(p.vel) < 8))
+        return spritegen::PED_FRAME_FIST + ((int)(p.shoutT * 8) & 1);
+    if (Len(p.vel) < 4 && fabsf(p.turnRate) < 1.0f) return spritegen::PED_FRAME_IDLE;
+    return (int)p.anim % spritegen::PED_WALK_FRAMES;
+}
+
 void DrawPed(const Pedestrian& p) {
     if (gAssets.peds.empty()) return;
     const Texture2D& t = gAssets.peds[p.skin % gAssets.peds.size()];
-    int frame;
     bool lying = p.state == PedState::Down || p.state == PedState::Dead;
-    if (lying) frame = spritegen::PED_FRAME_DOWN;
-    else if ((p.state == PedState::Fight || p.state == PedState::Confront) && p.punchT > 0) frame = spritegen::PED_FRAME_PUNCH + (p.punchT > 0.12f ? 0 : 1);
-    else if (Len(p.vel) < 4 && fabsf(p.turnRate) < 1.0f) frame = spritegen::PED_FRAME_IDLE;
-    else frame = (int)p.anim % spritegen::PED_WALK_FRAMES;
+    int frame = PedDrawFrame(p);
     const float F = (float)spritegen::PED_FRAME;
     Rectangle src = { frame * F, 0, F, F };
     float size = PED_DRAW * (lying ? PED_LYING : 1.0f);

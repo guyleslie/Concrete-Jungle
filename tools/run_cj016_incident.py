@@ -31,7 +31,7 @@ from run_cj016 import (ROOT, existing_outputs, git_state, integer_field, positiv
                        record_fields, save_manifest, stop_process, utc_now)
 from run_cj016 import INPUTS as RECOVERY_INPUTS
 
-FIXTURE = "cj016-incident-v1"
+FIXTURE = "cj016-incident-v2"
 MAX_FRAMES = 400000
 KINDS = ("aggressive-pair", "calm-pair", "aggressive-player", "interrupted")
 CASES = tuple("%s-%s-s%d" % (kind, rate, seed)

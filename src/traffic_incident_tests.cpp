@@ -14,6 +14,7 @@
 //  Ten seeds vary gaps, speeds and the hit car's class; 60 Hz and 20 Hz physics.
 // =====================================================================================
 #include "traffic_incident_tests.h"
+#include "sprite_gen.h"
 #include "game.h"
 #include "traffic.h"
 #include "traffic_incidents.h"
@@ -22,7 +23,7 @@
 #include <vector>
 
 namespace {
-constexpr const char* FIXTURE_ID = "cj016-incident-v1";
+constexpr const char* FIXTURE_ID = "cj016-incident-v2";
 constexpr uint32_t SEED = 0x000c0016u;
 constexpr float RENDER_DT = 1.0f / 60.0f;
 constexpr int SEEDS = 10;
@@ -72,6 +73,7 @@ struct TrafficIncidentTests::State {
     bool invalid = false, finished = false, nextCase = false, fired = false, braking = false;
     float phaseTime = 0, contactAt = -1, firstExit = -1, fightAt = -1, fightDistance = -1, successAt = -1;
     int lastFights = 0, lastExits = 0, punchesAtStart = 0;
+    float arguePunchS = 0, argueFistS = 0;   // s of arguing shown with the punch / raised-fist frames
     IncidentStats startStats;
     Vector2 centre{};
     std::string capture, lastResult;
@@ -84,6 +86,7 @@ struct TrafficIncidentTests::State {
         d.returns = s.returns - startStats.returns; d.noSafeExit = s.noSafeExit - startStats.noSafeExit;
         d.carLost = s.carLost - startStats.carLost; d.driverDead = s.driverDead - startStats.driverDead;
         d.interrupted = s.interrupted - startStats.interrupted; d.ignoredCalm = s.ignoredCalm - startStats.ignoredCalm;
+        d.shouts = s.shouts - startStats.shouts;
         return d;
     }
     void Check(const char* name, float value, float low, float high) {
@@ -110,6 +113,7 @@ struct TrafficIncidentTests::State {
         Rng rng(SEED ^ ((uint32_t)c.seed * 2654435761u + (uint32_t)c.kind * 40503u));
         phaseFrame = 0; phaseTime = 0; contactAt = firstExit = fightAt = fightDistance = successAt = -1;
         violations = duplicates = removed = teleports = nonfinite = 0;
+        arguePunchS = argueFistS = 0;
         fired = braking = false;
         startStats = IncidentGetStats(); lastFights = startStats.fights; lastExits = startStats.exits;
         punchesAtStart = g.pedPunches;
@@ -178,6 +182,13 @@ struct TrafficIncidentTests::State {
     }
     void Observe(Game& g, float step) {
         phaseTime += step;
+        for (const Pedestrian& p : g.peds) {
+            if (!p.active || p.state != PedState::Confront) continue;
+            int frame = PedDrawFrame(p);
+            if ((frame == spritegen::PED_FRAME_PUNCH || frame == spritegen::PED_FRAME_PUNCH + 1) && p.foeVehicle < 0)
+                arguePunchS += step;
+            if (frame == spritegen::PED_FRAME_FIST || frame == spritegen::PED_FRAME_FIST + 1) argueFistS += step;
+        }
         const Case& c = Current();
         for (const ImpactEvent& e : g.physics.events)
             if (e.kind == ContactKind::Vehicle && contactAt < 0 &&
@@ -263,6 +274,10 @@ struct TrafficIncidentTests::State {
         Check("settled_s", successAt, 0, MAX_CASE_S);
         switch (c.kind) {
         case Kind::AggressivePair:
+            // Arguing is shouting with a raised fist; the punch frames belong to the fight.
+            Check("shouts", (float)d.shouts, 2, 1000);
+            Check("argue_fist_s", argueFistS, 1, 1000);
+            Check("argue_punch_frames_s", arguePunchS, 0, 0);
             Check("drivers_out", (float)d.exits, 2, 2);
             Check("fights", (float)d.fights, 1, 1);
             Check("exit_before_fight_s", fightAt - firstExit, 0.5f, MAX_CASE_S);
@@ -275,6 +290,9 @@ struct TrafficIncidentTests::State {
             Check("knocked_car_rejoined_s", rejoined[rear], 0, 30);
             break;
         case Kind::AggressivePlayer:
+            Check("shouts", (float)d.shouts, 1, 1000);
+            Check("argue_fist_s", argueFistS, 1, 1000);
+            Check("argue_punch_frames_s", arguePunchS, 0, 0);
             Check("drivers_out", (float)d.exits, 1, 1);
             Check("confrontations", (float)d.confrontations, 1, 1);
             Check("fights", (float)d.fights, 1, 1);
@@ -292,9 +310,9 @@ struct TrafficIncidentTests::State {
         // raylib bounds each trace line: outcome and counts are logged separately.
         TraceLog(LOG_INFO, "CJ016I result fixture=%s case=%s duration_s=%.3f settled_s=%.3f checks_failed=%d result=%s",
                  FIXTURE_ID, c.name.c_str(), phaseTime, successAt, failures - before, pass ? "PASS" : "FAIL");
-        TraceLog(LOG_INFO, "CJ016I diagnostics case=%s contact_s=%.3f first_exit_s=%.3f fight_s=%.3f fight_distance_px=%.3f started=%d exits=%d confrontations=%d fights=%d returns=%d car_lost=%d driver_dead=%d no_safe_exit=%d violations=%d duplicates=%d",
+        TraceLog(LOG_INFO, "CJ016I diagnostics case=%s contact_s=%.3f first_exit_s=%.3f fight_s=%.3f fight_distance_px=%.3f started=%d exits=%d confrontations=%d fights=%d returns=%d car_lost=%d driver_dead=%d no_safe_exit=%d violations=%d duplicates=%d shouts=%d argue_fist_s=%.2f argue_punch_s=%.2f",
                  c.name.c_str(), contactAt, firstExit, fightAt, fightDistance, d.started, d.exits, d.confrontations, d.fights,
-                 d.returns, d.carLost, d.driverDead, d.noSafeExit, violations, duplicates);
+                 d.returns, d.carLost, d.driverDead, d.noSafeExit, violations, duplicates, d.shouts, argueFistS, arguePunchS);
         completed++;
         capture = c.name;
     }

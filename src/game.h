@@ -129,6 +129,13 @@ public:
     float diagLongestCycle = 0;                     // s, the longest-lasting cycle
     int   diagCycles = 0, diagLongCycles = 0;       // cycles that formed / lasted over 10 s
     void  WaitDiagnostics(float dt);
+    // rail-car slip (--shot): the rear axle of a kinematic car must move along its body
+    std::vector<Vector2> railRear;                  // rear axle point last frame (NaN: none)
+    std::vector<float> railShift, railAngle;        // lane shift and heading last frame
+    float diagRailMoving = 0, diagRailSlipping = 0, diagRailMaxSlip = 0;   // straight: car-s, car-s, deg
+    float diagTurnMoving = 0, diagTurnSlipping = 0, diagTurnMaxSlip = 0;   // turning
+    float diagShiftMoving = 0, diagShiftSlipping = 0, diagShiftMaxSlip = 0, diagSideStill = 0;   // changing lane
+    void  RailSlipDiagnostics(float dt);
     void  LogPhysStats() const;
     void ApplyTestImpacts(float dt) { HandleImpacts(dt); }
     // pedestrian diagnostics (--shot): per-frame sums (divide by 'frames' for averages)
@@ -197,3 +204,6 @@ private:
 };
 
 Rng& GRng();
+// Rear-axle slip angle (degrees) of a car since its rear axle point was at 'previous';
+// -1 when it moved less than 5 px/s. 'rear' receives the current rear axle point.
+float RailRearSlip(const Vehicle& v, Vector2 previous, float dt, Vector2* rear);

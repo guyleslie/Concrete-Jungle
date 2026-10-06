@@ -93,6 +93,8 @@ struct ObservedVehicle {
     Vector2 pos{}, vel{};
     float angle = 0, angVel = 0, width = 0, length = 0;
     float pathDistance = 0, speed = 0, shift = 0, radius = 0, routeGap = 0;
+    float shiftFrom = 0, shiftTo = 0, shiftS0 = 0, shiftS1 = 0;   // lane-change profile
+    float shiftSpan = 0;                     // how far the lane offset can move the centre
     float minDistance = -1e9f;               // a yielding retreat stops here
     float maxDistance = 1e9f;                // the planned stop: red light, queue, person
     float blend = 0, blendAngle = 0;
@@ -219,14 +221,12 @@ Vector2 SampleObservedPath(const ObservedVehicle& o, float distance) {
 }
 
 Vector2 ObservedRailCentre(const ObservedVehicle& o, float time, Vector2* heading = nullptr) {
-    float axle = o.length * 0.32f;
     float distance = Clampf(o.pathDistance + o.speed * time, o.minDistance, o.maxDistance);
-    Vector2 front = SampleObservedPath(o, distance + axle);
-    Vector2 rear = SampleObservedPath(o, distance - axle);
-    Vector2 direction = Norm(front - rear);
-    if (Len2(direction) < 0.5f) direction = Forward(o.angle);
+    Vector2 direction;
+    Vector2 pos = ShiftedRailPose([&](float d) { return SampleObservedPath(o, d); }, distance, o.length,
+                                  o.shiftFrom, o.shiftTo, o.shiftS0, o.shiftS1, o.angle, &direction);
     if (heading) *heading = direction;
-    return (front + rear) * 0.5f + Perp(direction) * o.shift;
+    return pos;
 }
 
 OBB PredictObserved(const ObservedVehicle& o, float time, float grow) {
@@ -432,7 +432,7 @@ void GatherNearbyImpl(Game& g, const Vehicle& v, int self, float horizon) {
         float incomingSpeed = std::max(Len(o.vel), o.rail ? fabsf(o.speed) : 0.0f);
         float incomingReach = incomingSpeed * horizon;
         if (o.rail && o.pathCount > 1) {
-            incomingReach += o.routeGap + 2 * fabsf(o.shift);
+            incomingReach += o.routeGap + o.shiftSpan;
             if (o.blend > 0) incomingReach = std::max(incomingReach, Dist(o.blendPos, o.pos));
         }
         float reach = std::max(cfg.nearbyRadius, ownReach + radius + incomingReach);
@@ -649,7 +649,7 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
                 // actual initial pose may differ from route centre zero;
                 // include that gap both in centre travel and the first sweep.
                 // A skipped actor passes the original distance cull too.
-                float shiftSpan = 2 * fabsf(actor.shift);
+                float shiftSpan = actor.shiftSpan;
                 float travel = fabsf(actor.speed) * time + shiftSpan + actor.routeGap;
                 float maxSweep = fabsf(actor.speed) * h + shiftSpan + n.radius * PI + actor.routeGap;
                 float bound = baseReach + travel + growScale * maxSweep;
@@ -1242,6 +1242,10 @@ void RecoveryBeginFrame(Game& g) {
         // knocked car ahead): forecasting it beyond made a car queued behind a recovering
         // one look like an incoming collision each time the recovering car moved off.
         o.maxDistance = o.rail && v.ai.yieldTo < 0 && v.ai.stopDist < 1e8f ? v.ai.s + std::max(0.0f, v.ai.stopDist) : 1e9f; o.pathDistance = v.ai.s; o.shift = v.ai.laneShift;
+        o.shiftFrom = v.ai.shiftFrom; o.shiftTo = v.ai.shiftTo; o.shiftS0 = v.ai.shiftS0; o.shiftS1 = v.ai.shiftS1;
+        // A constant offset swings by at most twice itself as the path turns; during a lane
+        // change the rear-axle pose adds up to a third of the change (slope * axle).
+        o.shiftSpan = 2 * std::max(fabsf(o.shiftFrom), fabsf(o.shiftTo)) + 0.35f * fabsf(o.shiftTo - o.shiftFrom);
         o.blend = v.ai.blend; o.blendPos = v.ai.blendPos; o.blendAngle = v.ai.blendAng;
         o.pathCount = 0;
         // 4 s is the longest forecast; the drift bound encloses the residual motion.

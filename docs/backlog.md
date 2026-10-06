@@ -17,13 +17,14 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated during the third CJ-016 increment on 2026-10-06:
+Recommended order, updated after the third CJ-016 increment on 2026-10-06:
 
-1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — the third increment is in progress: decision CPU is under the targets and wait-for loops (two knocked cars, junction gridlock) are resolved; the shouting sound, the raised fist and lane changes without sideways sliding follow. Then the user playtest (queues, two-car conflicts, heavy-vehicle reversing, a full confrontation; temporarily `INCIDENT aggressive_share 1` makes every driver aggressive), under the [approved specification](design/traffic-behaviour-proposal.md). The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
-2. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities needed by CJ-016 deliberately rather than changing traffic behaviour incidentally.
-3. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
-4. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-5. **[CJ-004](#cj-004-replace-placeholder-art) and [CJ-011](#cj-011-relaxed-player-posture) Character art** — one art session: civilians, motorbikes, and a relaxed player.
+1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — the third increment is done: decision CPU under the targets, wait-for loops resolved, shouting, a raised fist and steered lane changes. Next: the user playtest (queues, two-car conflicts, heavy-vehicle reversing, a full confrontation, lane changes; temporarily `INCIDENT aggressive_share 1` makes every driver aggressive), under the [approved specification](design/traffic-behaviour-proposal.md). The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
+2. **[CJ-020](#cj-020-turning-kinematics-of-traffic) Turning kinematics of traffic** — rail cars still slide through tight right turns.
+3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities needed by CJ-016 deliberately rather than changing traffic behaviour incidentally.
+4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
+5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
+6. **[CJ-004](#cj-004-replace-placeholder-art) and [CJ-011](#cj-011-relaxed-player-posture) Character art** — one art session: civilians, motorbikes, and a relaxed player.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance. The new traffic priority does not close them.
 
@@ -43,9 +44,10 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-018](#cj-018-police-drivers-avoid-pedestrians) | Police drivers avoid pedestrians | Medium | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
-| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | In progress; third increment under way |
+| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | In progress; awaiting playtest of the third increment |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
+| [CJ-020](#cj-020-turning-kinematics-of-traffic) | Turning kinematics of traffic | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
@@ -222,7 +224,7 @@ Remaining: the playtest.
 ### CJ-016 Road rage and traffic incidents
 
 - **Priority:** High
-- **Status:** In progress; specification approved on 2026-10-05; recovery (2026-10-05), CPU peaks, cooperative yielding and driver incidents (2026-10-06) implemented and measured; city CPU targets met and wait-for loops resolved (2026-10-06); incident presentation and the user playtest pending
+- **Status:** In progress; specification approved on 2026-10-05; recovery (2026-10-05), CPU peaks, cooperative yielding and driver incidents (2026-10-06) implemented and measured; city CPU targets met, wait-for loops resolved, shouting, raised fist and steered lane changes (2026-10-06); the user playtest pending
 
 **User direction (2026-10-03).** Drivers should behave like people: follow, yield, avoid, reverse, honk, sometimes misjudge and collide, and occasionally get out to confront or fight another driver. A blocked situation must not be solved by deleting a driver, forcing them to walk away after a timer, or relocating an involved vehicle. This is the current priority; CJ-002 supplies the necessary vehicle capabilities.
 
@@ -238,7 +240,9 @@ Remaining: the playtest.
 
 **Third increment (2026-10-06), wait-for cycles.** Two knocked cars blocking each other and loops of three or more drivers (junction gridlock) are found once per frame; one driver gives way to the driver waiting on it, a rail car by backing up, a knocked car by short checked creeps that make room. A car held at a stop line waits on the car in the box. The conflict fixture (v2, 100 cases) adds `knocked-pair` and `junction-gridlock`: 0 → 20 of 20 each, with the 60 earlier cases unchanged. The city runs had no loop lasting over 10 s; the "unresolved pair" at the end of `crash` is one that formed 0.3 s before the end.
 
-**Remaining.** The shouting sound, the raised-fist gesture and lane changes without sideways sliding (the third increment continues with these); police reaction to a fight; the user playtest of queues, two-car conflicts, heavy-vehicle reversing and a full confrontation. Visible towing follows the accepted core.
+**Third increment (2026-10-06), presentation.** Arguing drivers shout (three synthesised voices at a personal pitch, every second or so) and shake a raised fist (two new civilian atlas frames); the punch frame is kept for blows. Rail cars change lane by steering: the lateral offset follows an S-curve along the path, the rear axle traces it and the body points along it; a car standing too close behind an obstacle backs up before pulling out, and a yielding car reverses back into its lane the same way. Incident fixture v2: 40 → 80 of 80 (shouts 0 → 4–10 per case, raised fist 0 → 1.5–4.4 s, punch frame while arguing face to face 0.5–1.5 → 0 s); conflict fixture: lane-change slip 90° → 2.1°, 80 → 100 of 100. The slip measurement also found turning traffic sliding (CJ-020).
+
+**Remaining.** Police reaction to a fight; the user playtest of queues, two-car conflicts, heavy-vehicle reversing and a full confrontation. Visible towing follows the accepted core.
 
 **Acceptance criteria.** Follow the approved proposal's scenario table. Feasible blockages resolve physically; impossible ones remain stable and observable; timeout-based disappearance/relocation is zero; incident participants retain identity and car ownership; exiting, approaching, fighting and returning are visible actions with interruption rules. Validate with fixed seeds, 60 Hz/20 Hz scenarios, class-specific recovery tests, regression runs, separate traffic CPU timings and a user playtest. First deliver reliable manoeuvring, then incidents and combat; visible towing follows the accepted core.
 
@@ -266,6 +270,15 @@ Remaining: the playtest.
 **Idea.** Measure how fast the game runs, when and why it slows down. The `TIMING` log line (CPU time of the vehicle update, the pedestrian update and the world drawing) is a start.
 
 **Acceptance criteria.** A frame-time log over the run (average, 95th and 99th percentile, worst frame, and the frames above 20 ms with what was happening), frames that save screenshots excluded; per-system CPU times including physics, traffic, particles and each render pass; an optional on-screen graph (F3 debug view); documented in [Testing](testing.md).
+
+### CJ-020 Turning kinematics of traffic
+
+- **Priority:** Medium
+- **Status:** Open (found by the rear-axle slip measurement on 2026-10-06)
+
+**Problem.** Rail cars turn on a quadratic curve whose control point sits at the two lane offsets, so a right turn has a radius of about 2 m; real cars need about 5.5 m. Both axle samples stay on that curve, so the body follows the chord and the rear axle point slides sideways through the bend. `TRAFFIC slip` measured in `chase` and `day` on 2026-10-06: over 5° of rear-axle slip in 72–74 % of the turning time, up to 70–75°. Lane changes no longer slide (CJ-016); turns still do.
+
+**Acceptance criteria.** Rear-axle slip while turning at most 8° (`TRAFFIC slip`, turning) in every city scenario; turning paths sized for each class's turning radius, large vehicles included; the junction rules keep working (no new box conflicts, `TRAFFIC stopped because` comparable); before/after screenshots of turning traffic; playtested.
 
 ### CJ-005 Data-driven street furniture
 

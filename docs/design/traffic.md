@@ -21,7 +21,17 @@ The user approved the [CJ-016 specification](traffic-behaviour-proposal.md) on 2
 
 ## Rail driving
 
-A traffic car on its lane is not simulated by the physics solver. It keeps a path — a list of waypoints along the right-hand lane — and a distance *s* along it. Every frame the AI advances *s* by its speed and places the car on the path: the pose comes from two sample points at the front and rear axle (±32 % of the length), so long vehicles sweep realistically through turns. A lateral offset shifts the car sideways when it overtakes or mounts the kerb.
+A traffic car on its lane is not simulated by the physics solver. It keeps a path — a list of waypoints along the right-hand lane — and a distance *s* along it. Every frame the AI advances *s* by its speed and places the car on the path: the pose comes from two sample points at the front and rear axle (±32 % of the length), so long vehicles sweep realistically through turns. A lateral offset moves the car out of its lane when it overtakes or mounts the kerb; see [Lane changes](#lane-changes).
+
+### Lane changes
+
+The offset is a function of the rear axle's path distance, not of time: it holds one value, follows a smooth S-curve over a stretch of path and holds the next. While it changes, the rear axle traces the shifted path and the body points along that path's tangent, the way a steered car's rear wheels follow and its front swings out; a car that is not rolling does not move sideways at all. The S-curve is long enough for its sharpest bend to stay within a comfortable turning radius (`max(90 px, 1.25 lengths)`) and, at speed, for a lateral acceleration of about 6 m/s²; it is at least one and a half car lengths. Returning to the lane after passing, the curve is fitted before the next stop line when the bend allows, and the car keeps to 130 px/s (about 30 km/h) while a lane change is in progress.
+
+- **Pulling out** (overtaking or onto the kerb): before committing, the driver checks the body's swept poses along the whole curve, with 7 px to spare, against other vehicles (and, onto the sidewalk, buildings and solid furniture). Standing too close behind the obstacle, it first backs up along its driven path, 8 px at a time up to one and a half lengths, as far as the curve needs.
+- **Looking ahead** during a lane change, the look-ahead tests the yawed body at each point ahead instead of a point at the front bumper, as the plan did.
+- **Tucking back in while giving way** (see [Cooperative yielding](#cooperative-yielding)): reversing, the driver retraces its pull-out if it is still on it, or steers in over a reversing S-curve; the room behind is checked with the swept body.
+
+Other drivers' forecasts use the same pose rule. `TRAFFIC slip` in the test log measures the angle between a rail car's body and the motion of its rear axle point, separately for lane changes, turning and straight driving.
 
 Rail cars cannot jitter or deadlock in physics. They keep their distance by looking ahead along their own path, and in the solver they are infinitely heavy moving bodies that ignore buildings and street furniture (see [Physics › Traffic on rails](physics.md#traffic-on-rails)).
 
@@ -65,7 +75,7 @@ Directional right-of-way rules allow compatible movements through a junction and
 
 | Situation | Reaction |
 |---|---|
-| Stopped behind a static vehicle for 1 s (scaled by the driver's temper) | Overtakes through the oncoming lane if it is clear; otherwise, except for large vehicles, mounts the kerb if the sidewalk is free of furniture and buildings. |
+| Stopped behind a static vehicle for 1 s (scaled by the driver's temper) | Overtakes through the oncoming lane if it is clear; otherwise, except for large vehicles, mounts the kerb if the sidewalk is free of furniture and buildings. It steers out along an S-curve, backing up first if it stands too close ([Lane changes](#lane-changes)). |
 | Two drivers stopped behind each other | One of them gives way and backs up; see [Cooperative yielding](#cooperative-yielding). |
 | Two knocked cars, or three or more drivers, waiting on each other in a loop | One of them backs up or makes room; see [Wait-for cycles](#wait-for-cycles). |
 | Blocked for 6 s | Makes a U-turn in the middle of the block, if it is far enough from the junction, the opposite lane is clear and every pose of the swept turn misses other vehicles (not for large vehicles). A refused U-turn keeps the current route. |
@@ -83,7 +93,7 @@ Each traffic driver keeps a *wait-for* edge: a rail car waits on the vehicle it 
 | Two rail cars, one further out of its lane (passing) | The one further out of its lane |
 | Two rail cars otherwise | The one with retreat space when the other has none; then a fixed index order |
 
-The role is stable: the other driver never takes the opposite role for the same pair, and the role ends only after the conflict has looked resolved for `clear_time` (the priority driver no longer waits on the yielder and is no longer in its way within two of its lengths). The yielder stays on rails and retraces its own driven path at up to `retreat_speed`, with comfortable braking, stopping 14 px short of any vehicle, person or the player behind it. Traffic keeps the driven path behind each car (at least 240 px or three lengths) for this. A passing driver tucks back into its own lane as soon as the lane beside its whole body is free, reversing on until the lateral move is complete; a car giving room to a knocked car backs up that car's length plus `retreat_extra`. If a car queued close behind blocks the retreat, it backs up too (a chain of at most `max_chain` drivers).
+The role is stable: the other driver never takes the opposite role for the same pair, and the role ends only after the conflict has looked resolved for `clear_time` (the priority driver no longer waits on the yielder and is no longer in its way within two of its lengths). The yielder stays on rails and retraces its own driven path at up to `retreat_speed`, with comfortable braking, stopping 14 px short of any vehicle, person or the player behind it. Traffic keeps the driven path behind each car (at least 240 px or three lengths) for this. A passing driver tucks back into its own lane in reverse as soon as the swept way back is free of vehicles and people, retracing its pull-out or steering in over a reversing S-curve ([Lane changes](#lane-changes)), and reverses on until the rear axle is back in the lane; a car giving room to a knocked car backs up that car's length plus `retreat_extra`. If a car queued close behind blocks the retreat, it backs up too (a chain of at most `max_chain` drivers).
 
 Other drivers' recovery forecasts see a yielding car's negative path speed and its retreat end. Yielding cars are not recycled.
 
@@ -162,7 +172,7 @@ Every traffic driver has a mood drawn when the car is placed: `aggressive_share`
 
 1. **Stop.** A rail car pulls up where it is; a knocked car holds with the handbrake. Nothing else plans meanwhile.
 2. **Get out on a safe side.** The driver's (left) door first, otherwise the right one: not into a building, a car or the path of a vehicle moving towards that point. With no safe side for `exit_wait`, the driver stays in and drives on (`no_safe_exit`). The person who gets out is the same driver: the car keeps a handle (index and serial) to them and they keep one to the car, which waits with the handbrake on and is protected from recycling.
-3. **Confront.** The driver walks to the other driver if they are out, to the player on foot, or otherwise to the other car's door, and argues face to face for `argue_time`, shaking a fist; at a car door the blows land on the door.
+3. **Confront.** The driver walks to the other driver if they are out, to the player on foot, or otherwise to the other car's door, shouting on the way, and argues face to face for `argue_time`, shouting and shaking a raised fist ([Pedestrians › Drivers on foot](pedestrians.md#drivers-on-foot), [Audio › Shouts](audio.md#shouts)); at a car door the fist comes down on the door.
 4. **Escalate or end.** Two drivers who both came to argue fight; so does a driver facing the player on foot. Otherwise the argument ends. A fight lasts at most about `fight_time`; a person below 45 health backs off for 1.5–2.5 s. If the other party leaves by more than `give_up_distance`, the driver gives up.
 5. **Return.** Fight over, flight over or interrupted, the driver walks back to the door of the same car, gets in and recovers to the lane physically. The car is never moved and nobody is replaced.
 

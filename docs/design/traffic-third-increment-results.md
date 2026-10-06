@@ -1,6 +1,6 @@
 # CJ-016 third increment results
 
-The third CJ-016 increment (2026-10-06) brings the driver decision CPU of every city scenario under the approved targets and resolves wait-for loops that the pair rule left standing: two knocked cars blocking each other, and junction gridlock. `chase` fell from 0.689 / 1.415 ms (average / 95th percentile) to 0.321 / 0.819 ms and `rampage` from 0.727 / 1.547 ms to 0.378 / 0.861 ms; `crash` now has a wide margin at 0.234 / 0.484 ms. Apart from one deliberate capacity change, the optimisations leave every decision bit for bit unchanged, and all four fixtures (182 isolated checks, 60 yielding and 80 incident cases) reproduce the second increment exactly. Two knocked cars and four cars locked in a junction box went from 0 to 20 of 20 resolved fixture cases each. The incident presentation follows in this increment; the user playtest is pending.
+The third CJ-016 increment (2026-10-06) brings the driver decision CPU of every city scenario under the approved targets, resolves wait-for loops that the pair rule left standing (two knocked cars blocking each other, and junction gridlock), and finishes the incident presentation: shouting, a raised fist, and lane changes without sideways sliding. `chase` fell from 0.689 / 1.415 ms (average / 95th percentile) to 0.321 / 0.819 ms and `rampage` from 0.727 / 1.547 ms to 0.378 / 0.861 ms; `crash` now has a wide margin at 0.234 / 0.484 ms. Apart from one deliberate capacity change, the optimisations leave every decision bit for bit unchanged, and all four fixtures (182 isolated checks, 60 yielding and 80 incident cases) reproduce the second increment exactly. Two knocked cars and four cars locked in a junction box went from 0 to 20 of 20 resolved fixture cases each. Arguing drivers now shout and shake a raised fist, and rail cars change lane by steering: the rear-axle slip of a yielding car tucking back into its lane fell from 90° to 2°. The user playtest is pending.
 
 ## Contents
 
@@ -11,6 +11,8 @@ The third CJ-016 increment (2026-10-06) brings the driver decision CPU of every 
 - [Exactness](#exactness)
 - [Reproducible on-foot runs](#reproducible-on-foot-runs)
 - [Wait-for cycles](#wait-for-cycles)
+- [Incident presentation](#incident-presentation)
+- [Lane changes](#lane-changes)
 - [Limits and remaining work](#limits-and-remaining-work)
 
 ## Evidence
@@ -107,9 +109,49 @@ The before phase keeps the second increment's pair rule (`YIELD cycles 0`). In `
 
 All used executable SHA-256 `b3899678c768dc155db7b449ecbd0ebad02455f0eae94c4522d4519903a59511` and `traffic.cfg` SHA-256 `d26c66b0b2737f2f1e53ee045eae58d715572f8172e571553afd8f32e7b1a82e`. In the six city scenarios no wait-for loop lasted over 10 s (the longest: 1.9 s in `rampage`), recovery give-ups stayed at zero, and driver decisions stayed within the targets (`chase` 0.347 / 0.839 ms, `rampage` 0.374 / 0.894 ms, `crash` 0.251 / 0.498 ms). `crash` still ends with the rail Taxi and the knocked Semi that met 0.3 s before the end.
 
+## Incident presentation
+
+Arguing drivers now shout and raise a fist; the punch frame is kept for blows. The `cj016-incident-v2` fixture measures it in its aggressive situations (10 seeds, 60 Hz and 20 Hz each). The before run is the same fixture on a build with the measurements but the second increment's behaviour.
+
+| Situation | Before: shouts | After: shouts | Before: raised fist (s) | After: raised fist (s) | Before: punch frame while arguing face to face (s) | After |
+|---|---|---|---|---|---|---|
+| `aggressive-pair` | 0 | 8–10 | 0 | 3.45–4.43 | 1.00–1.50 | 0 |
+| `aggressive-player` | 0 | 4–6 | 0 | 1.50–2.20 | 0.50–0.75 | 0 |
+
+Before, 40 of 80 cases failed the new checks (every aggressive case); after, all 80 pass with every earlier check unchanged. The shouts are synthesised ([Audio › Shouts](audio.md#shouts)): three voices at a personal pitch. Their spectrograms show the intended formant glides; whether they sound convincing is for the playtest, and recorded voices remain part of [CJ-012](../backlog.md#cj-012-audio-overhaul). The raised fist is two new frames of the procedural civilian atlas in the existing style; the civilian art as a whole is still [CJ-004](../backlog.md#cj-004-replace-placeholder-art).
+
+## Lane changes
+
+`TRAFFIC slip` and the conflict fixture's `lane_change_slip_deg` measure the angle between a rail car's body and the motion of its rear axle point; a steered car's rear wheels do not slide sideways, so it should stay near 0°.
+
+| Measurement | Before | After |
+|---|---|---|
+| `passing-head-on`, slip while changing lane (max of 20 cases) | 90.0° | 2.1° |
+| `passing-head-on`, oncoming car through (median / max) | 5.18 / 5.72 s (60 Hz) | 5.23 / 5.80 s |
+| `passing-head-on`, passing car past the parked car and back in lane (median / max) | 10.14 / 10.45 s (60 Hz) | 11.09 / 11.25 s |
+| `chase`, slip while changing lane | 51.9 % of 3.0 car-s over 5°, max 90.0° | 0 % of 2.4 car-s, max 0.5° |
+| Conflict fixture v2 | 80 / 100 cases (every `passing-head-on` case fails the slip check) | 100 / 100 |
+
+Before, the yielding passing car slid straight sideways into its lane, 90° to its body. After, it reverses on an S-curve with its rear swinging in, holds while the oncoming car passes, then backs up about 40 px and pulls out round the parked car again; the whole manoeuvre takes about 0.9 s longer. In the other 80 conflict cases every metric is unchanged, as are the recovery (156 checks) and clearance (26 checks) fixtures line by line.
+
+The measurement also exposed a separate problem: rail cars slide through turns. A right turn's curve has a radius of about 2 m and both axle samples stay on it, so in every city scenario 70–74 % of the turning time shows over 5° of rear-axle slip, up to 70–75°. This is not a lane change and is unchanged here; it is backlog item [CJ-020](../backlog.md#cj-020-turning-kinematics-of-traffic).
+
+### Evidence
+
+| Run | Manifest or log |
+|---|---|
+| Before (measurements on the wait-for cycle build) | `build/shots/s3pres/before-conflict/` (conflict, incident and six city logs, run directly with `build/ConcreteJungle-s3-metrics-before.exe`) |
+| Conflict fixture v2, after | `build/shots/cj016-conflict/after/s3-present-20261006/manifest-20261006T115346878515Z-47340.json`: 100 / 100 |
+| Incident fixture v2, after | `build/shots/cj016-incident/after/s3-present2-20261006/manifest-20261006T121326195536Z-40376.json`: 80 / 80 (the first run, `s3-present-20261006`, passed every case but its runner still expected the v1 fixture name) |
+| Recovery, clearance | `build/shots/cj016/after/s3-present-20261006/manifest-20261006T120023300283Z-57576.json`, `build/shots/cj016-clearance/after/s3-present-20261006/manifest-20261006T120453782259Z-9368.json` |
+| City | `build/shots/cj002/after/cj016-s3-present-20261006/manifest-20261006T120513462310Z-city-47052.json` |
+
+All after runs used executable SHA-256 `18b92d616fadae520c3cd4ced1e37804eadefbffe40343bd598ddce2b24abe8f` and `traffic.cfg` SHA-256 `d26c66b0b2737f2f1e53ee045eae58d715572f8172e571553afd8f32e7b1a82e`. Driver decisions stayed within the targets in five scenarios of the city run (`chase` 0.331 / 0.826 ms). `rampage` measured 0.451 / 1.050 ms in that run; the before build, with the same decision code, measured 0.519 / 1.195 ms in the same time window, and two repeats of the after build right afterwards measured 0.393 / 0.884 and 0.391 / 0.892 ms (`build/shots/s3pres/cpu/`). The machine was evidently busier during that window; the `rampage` 95th percentile has about 10 % margin in a quiet one.
+
 ## Limits and remaining work
 
 - The covered-check capacity change is the only behaviour change; its city effect is measured above but not isolated in a fixture.
 - Single frames of 2–2.6 ms remain where a planning job and several immediate checks coincide; the planning budget (`planning_steps 600`) is unchanged.
 - Wait-for loops are staged in fixtures; the scripted city scenes produced none that lasted. The fixtures cover one geometry each (a knocked pair at a kerb, a four-car box), with one seed family.
-- The shouting sound, the raised-fist gesture and lane changes without sideways sliding are the next part of this increment. The user playtest is pending.
+- The shouts are synthesised and the fist frames procedural, both stand-ins until CJ-012 and CJ-004; turning traffic still slides (CJ-020).
+- The user playtest of queues, two-car conflicts, heavy-vehicle reversing, a full confrontation (now with shouting) and lane changes is pending.

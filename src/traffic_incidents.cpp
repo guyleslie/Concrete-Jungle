@@ -191,6 +191,17 @@ void GetIn(Game& g, Incident& in, int s) {
     Log(g, in, TextFormat("driver is back in #%d", side.vehicle));
 }
 
+// A yell: each person has a voice of their own (one of the shout recordings or
+// syntheses, at a personal pitch), and raises a fist for the length of it.
+void Shout(Game& g, Pedestrian& p) {
+    uint32_t voice = p.serial * 2654435761u;
+    Sfx sound = (Sfx)((int)Sfx::ShoutHey + (int)(voice % SHOUT_VARIANTS));
+    float pitch = 0.86f + 0.26f * ((voice >> 16) & 255) / 255.0f;
+    g.audio.Play(sound, p.pos, 0.8f, pitch);
+    p.shoutT = 0.75f;
+    stats.shouts++;
+}
+
 void StartFight(Game& g, Incident& in, Pedestrian& p) {
     const Settings& cfg = Tuning();
     p.state = PedState::Fight;
@@ -220,18 +231,22 @@ void UpdateOnFoot(Game& g, Incident& in, int s, float dt) {
         if (!IncidentFoePos(g, p, &reach, &x, &y)) { p.state = PedState::ToCar; break; }
         float d = Dist(p.pos, V2(x, y));
         if (d > cfg.giveUp) { p.state = PedState::ToCar; Log(g, in, "the other party has gone"); break; }
-        if (d > reach * 1.5f) break;
-        if (p.argue == 0) { stats.confrontations++; Log(g, in, TextFormat("person #%d confronts the other driver", side.ped)); }
-        p.argue += dt;
+        // The shouting starts on the way over: a yell every second or so, the fist raised
+        // and shaken; at a car still occupied the fist comes down on the door.
+        bool close = d <= reach * 1.5f;
         p.punchCd -= dt;
-        if (p.punchCd <= 0) {                         // fist shaking; on a car it lands on the door
+        if (d <= reach * 5 && p.punchCd <= 0) {
             p.punchCd = GRng().Range(0.9f, 1.4f);
-            p.punchT = 0.25f;
-            if (p.foeVehicle >= 0) {
+            Shout(g, p);
+            if (close && p.foeVehicle >= 0) {
+                p.punchT = 0.25f;
                 g.audio.Play(Sfx::Punch, p.pos, 0.6f, GRng().Range(0.8f, 0.95f));
                 g.DamageVehicle(p.foeVehicle, 1.5f, false, p.pos);
             }
         }
+        if (!close) break;
+        if (p.argue == 0) { stats.confrontations++; Log(g, in, TextFormat("person #%d confronts the other driver", side.ped)); }
+        p.argue += dt;
         if (p.argue >= cfg.argueTime) {
             const Side& o = in.side[1 - s];
             bool foeOut = p.foe >= 0 && ValidPed(g, p.foe, p.foeSerial);
@@ -421,7 +436,7 @@ IncidentStats IncidentGetStats() { return stats; }
 int IncidentActiveCount() { return (int)incidents.size(); }
 
 void IncidentLogStats() {
-    TraceLog(LOG_INFO, "INCIDENTS: started %d, drivers out %d, confrontations %d, fights %d, back in their car %d | no safe exit %d, car lost %d, driver dead %d, other interruptions %d | impacts without a confrontation %d",
+    TraceLog(LOG_INFO, "INCIDENTS: started %d, drivers out %d, confrontations %d, fights %d, back in their car %d | no safe exit %d, car lost %d, driver dead %d, other interruptions %d | impacts without a confrontation %d | shouts %d",
              stats.started, stats.exits, stats.confrontations, stats.fights, stats.returns,
-             stats.noSafeExit, stats.carLost, stats.driverDead, stats.interrupted, stats.ignoredCalm);
+             stats.noSafeExit, stats.carLost, stats.driverDead, stats.interrupted, stats.ignoredCalm, stats.shouts);
 }

@@ -343,6 +343,44 @@ void Game::WaitDiagnostics(float dt) {
     for (size_t i = 0; i < vehicles.size(); i++) waitCycleTime[i] = cycleOf[i] >= 0 ? waitCycleTime[i] + dt : 0;
 }
 
+// Slip of a rail car: the angle between its body and the motion of its rear axle point
+// (0.32 lengths behind the centre). A steered car's rear wheels do not slide sideways,
+// so a lane shift that translates the body sideways shows up here; so does any sideways
+// motion while the car stands still.
+float RailRearSlip(const Vehicle& v, Vector2 previous, float dt, Vector2* rear) {
+    *rear = v.pos - v.Fwd() * (v.length * 0.32f);
+    if (dt <= 0) return -1;
+    Vector2 vel = (*rear - previous) * (1.0f / dt);
+    if (Len(vel) < 5) return -1;
+    return atan2f(fabsf(Dot(vel, RightOf(v.angle))), fabsf(Dot(vel, v.Fwd()))) * RAD2DEG;
+}
+
+void Game::RailSlipDiagnostics(float dt) {
+    if (railRear.size() < vehicles.size()) {
+        railRear.resize(vehicles.size(), V2(NAN, NAN)); railShift.resize(vehicles.size(), 0); railAngle.resize(vehicles.size(), 0);
+    }
+    for (size_t i = 0; i < vehicles.size(); i++) {
+        const Vehicle& v = vehicles[i];
+        if (!v.active || !AIOnRail(v) || v.ai.blend > 0) { railRear[i] = V2(NAN, NAN); continue; }
+        Vector2 rear;
+        bool known = std::isfinite(railRear[i].x);
+        float slip = known ? RailRearSlip(v, railRear[i], dt, &rear) : (RailRearSlip(v, v.pos, 0, &rear), -1.0f);
+        // A recycled or re-planned car jumps: no slip is measured across the jump.
+        if (known && Dist(rear, railRear[i]) > fabsf(v.ai.speed) * dt * 2 + 4) slip = -1;
+        bool shifting = known && fabsf(v.ai.laneShift - railShift[i]) > 0.01f;
+        bool turning = known && fabsf(WrapAngle(v.angle - railAngle[i])) > 0.0005f;
+        if (slip >= 0) {
+            float& moving = shifting ? diagShiftMoving : turning ? diagTurnMoving : diagRailMoving;
+            float& slipping = shifting ? diagShiftSlipping : turning ? diagTurnSlipping : diagRailSlipping;
+            float& worst = shifting ? diagShiftMaxSlip : turning ? diagTurnMaxSlip : diagRailMaxSlip;
+            moving += dt;
+            if (slip > 5) slipping += dt;
+            worst = std::max(worst, slip);
+        } else if (known && shifting && v.ai.speed < 1) diagSideStill += dt;
+        railRear[i] = rear; railShift[i] = v.ai.laneShift; railAngle[i] = v.angle;
+    }
+}
+
 void Game::LogPhysStats() const {
     int knocked = 0, knockedLong = 0, abandoned = 0;
     for (const Vehicle& v : vehicles) {
@@ -356,6 +394,11 @@ void Game::LogPhysStats() const {
     TraceLog(LOG_INFO, "PHYS: penetration max %.1f px, frames > 3px: %d | player stuck events %d | knocked AI %d (>12s: %d), abandoned %d",
              diagMaxPen, diagDeepPen, diagStuck, knocked, knockedLong, abandoned);
     TraceLog(LOG_INFO, "PHYS: traffic knocked off the lane %d times, re-joined %d, drivers gave up %d", statKnocks, statRejoins, statAbandons);
+    auto share = [](float part, float whole) { return 100.0f * part / std::max(0.001f, whole); };
+    TraceLog(LOG_INFO, "TRAFFIC slip (rail cars, rear axle; car-s, share over 5 deg, max deg): changing lane %.1f, %.1f %%, %.1f | turning %.0f, %.1f %%, %.1f | straight %.0f, %.2f %%, %.1f | sideways while stopped %.2f car-s",
+             diagShiftMoving, share(diagShiftSlipping, diagShiftMoving), diagShiftMaxSlip,
+             diagTurnMoving, share(diagTurnSlipping, diagTurnMoving), diagTurnMaxSlip,
+             diagRailMoving, share(diagRailSlipping, diagRailMoving), diagRailMaxSlip, diagSideStill);
     for (size_t i = 0; i < vehicles.size(); i++) {
         const Vehicle& v = vehicles[i];
         if (!v.active || v.driver != DriverType::Traffic || v.ai.rail || v.ai.dynTimer < 12) continue;
@@ -762,7 +805,7 @@ void Game::UpdatePlaying(float dt) {
     double t0 = GetTime();
     UpdateVehicles(dt);
     double t1 = GetTime();
-    if (debugContacts) { PhysDiagnostics(dt); WaitDiagnostics(dt); }
+    if (debugContacts) { PhysDiagnostics(dt); WaitDiagnostics(dt); RailSlipDiagnostics(dt); }
     IncidentsUpdate(*this, dt);                    // drivers stopping, getting out and back in
     double t2 = GetTime();
     UpdatePeds(dt);

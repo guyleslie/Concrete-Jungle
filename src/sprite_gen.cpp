@@ -620,6 +620,10 @@ static void PedFrame(Painter& P, float ox, const PedLook& L, int frame) {
     float ph = frame < 8 ? frame / 8.0f * 2.0f * PI : 0.0f;
     float s = frame < 8 ? sinf(ph) : 0.0f;
     int punchArm = frame == PED_FRAME_PUNCH ? 1 : frame == PED_FRAME_PUNCH + 1 ? -1 : 0;   // +1 right, -1 left
+    // Raised fist (shouting): the right arm is lifted towards the camera, its fist above
+    // the head; the two frames shake it. The left hand is held out, palm open.
+    bool fist = frame == PED_FRAME_FIST || frame == PED_FRAME_FIST + 1;
+    bool shake = frame == PED_FRAME_FIST + 1;
     float stride = 13.0f, swing = 8.0f;
     // feet (under the body)
     for (int sx = -1; sx <= 1; sx += 2) {
@@ -632,10 +636,17 @@ static void PedFrame(Painter& P, float ox, const PedLook& L, int frame) {
     }
     // arms swing opposite to the legs
     for (int sx = -1; sx <= 1; sx += 2) {
+        if (fist && sx > 0) continue;                                   // drawn over the head below
         Vector2 a = { cx + sx * (bw - 3), cy - 1 };
         Vector2 b = { cx + sx * (bw + 1), cy + 4 + sx * s * swing };
         if (punchArm == sx) b = { cx + sx * 7.0f, cy - 30 };            // jab: fist straight ahead
         else if (punchArm != 0) b = { cx + sx * (bw - 4), cy - 9 };      // guard hand up
+        if (fist) {                                                      // open hand held out
+            b = { cx - (bw + 8), cy - (shake ? 9.0f : 6.0f) };
+            P.Mat(BBC(a, b, 6), [=](Vector2 p) { return sdCapsule(p, a, b, 5.0f); }, m(L.shirt));
+            P.Mat(BB(b, 6, 6), [=](Vector2 p) { return sdEllipse(p, b, { 5.2f, 3.6f }); }, m(L.skin, 3, 0.2f));
+            continue;
+        }
         P.Mat(BBC(a, b, 6), [=](Vector2 p) { return sdCapsule(p, a, b, 5.0f); }, m(L.shirt));
         P.Mat(BB(b, 5, 5), [=](Vector2 p) { return sdCircle(p, b, 4.3f); }, m(L.skin, 3, 0.2f));
     }
@@ -658,6 +669,19 @@ static void PedFrame(Painter& P, float ox, const PedLook& L, int frame) {
     } else if (L.hairStyle != 2) {
         Mat hm = M(L.hair, 5, 0.12f, 10, OL); hm.bulge = 1.2f;
         P.Mat(BB({ cx, cy - 2 }, 10, 10), [=](Vector2 p) { return sdCircle(p, { cx, cy - 2.2f }, 9.1f); }, hm);
+    }
+    if (fist) {
+        // Raised towards the camera: the sleeve foreshortens and the fist reads larger.
+        Vector2 a = { cx + (bw - 4), cy - 2 };
+        Vector2 e = { cx + bw - 1, cy - (shake ? 11.0f : 13.0f) };          // elbow
+        Vector2 f = { cx + (shake ? 10.0f : 7.5f), cy - (shake ? 19.0f : 23.0f) };
+        P.Mat(BBC(a, e, 7), [=](Vector2 p) { return sdCapsule(p, a, e, 5.6f); }, m(L.shirt, 5, 0.18f));
+        P.Mat(BBC(e, f, 7), [=](Vector2 p) { return sdCapsule(p, e, f, 4.8f); }, m(L.skin, 3, 0.2f));
+        P.Mat(BB(f, 8, 8), [=](Vector2 p) { return sdRoundBox(p, f, { 5.6f, 5.0f }, 3.0f); }, m(L.skin, 4, 0.25f));
+        for (int k = 0; k < 3; k++) {                                     // knuckles
+            Vector2 c = { f.x - 3.0f + k * 3.0f, f.y - 4.4f };
+            P.Mat(BB(c, 2, 2), [=](Vector2 p) { return sdCircle(p, c, 1.3f); }, M(Shift(L.skin, 0.85f), 1, 0.1f, 14, 0));
+        }
     }
 }
 

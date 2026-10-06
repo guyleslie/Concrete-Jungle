@@ -24,6 +24,7 @@ enum class DriverMood : uint8_t { Calm, Normal, Aggressive };
 struct IncidentStats {
     int started = 0, exits = 0, confrontations = 0, fights = 0, returns = 0;
     int noSafeExit = 0, carLost = 0, driverDead = 0, interrupted = 0, ignoredCalm = 0;
+    int shouts = 0;                          // shouts by drivers who got out
 };
 
 void IncidentsReset();

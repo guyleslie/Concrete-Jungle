@@ -76,9 +76,15 @@ static void PlanNext(Vehicle& v, const CityMap& map, const Vector2* goal) {
 
 // Starts a path at 'start' heading 'dir', with a tail behind it so the rear-axle sample
 // is always on the path (otherwise the pose would lurch when a path begins).
+static void SetShiftConstant(DriverAI& ai, float shift) {
+    ai.laneShift = ai.shiftFrom = ai.shiftTo = shift;
+    ai.shiftS0 = ai.shiftS1 = 0;
+}
+
 static void StartPath(Vehicle& v, Vector2 start, Vector2 dir) {
     DriverAI& ai = v.ai;
     ai.path.clear();
+    SetShiftConstant(ai, ai.laneShift);       // path distances restart: the shift is held
     Waypoint tail; tail.p = start - dir * (v.length + 24); Push(ai, tail);
     Waypoint s0; s0.p = start; Push(ai, s0);
     ai.s = ai.path.back().cum;
@@ -134,12 +140,81 @@ static Vector2 SampleAt(const DriverAI& ai, float s, PathCursor& cursor, float* 
 
 Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle) {
     const DriverAI& ai = v.ai;
-    float axle = v.length * 0.32f, s = ai.s + ahead;
-    Vector2 fp = Sample(ai, s + axle), rp = Sample(ai, s - axle);
-    Vector2 dir = Norm(fp - rp);
-    if (Len2(dir) < 0.5f) dir = Forward(v.angle);
-    if (angle) *angle = AngleOf(dir);
-    return (fp + rp) * 0.5f + Perp(dir) * ai.laneShift;
+    Vector2 heading;
+    Vector2 pos = ShiftedRailPose([&](float d) { return Sample(ai, d); }, ai.s + ahead, v.length,
+                                  ai.shiftFrom, ai.shiftTo, ai.shiftS0, ai.shiftS1, v.angle, &heading);
+    if (angle) *angle = AngleOf(heading);
+    return pos;
+}
+
+void AISetLaneShift(Vehicle& v, float shift) {
+    SetShiftConstant(v.ai, shift);
+    v.ai.laneShiftTarget = shift;
+}
+
+// Length of an S-curve lane change of 'delta' px: the curve's sharpest bend (6*delta/L^2)
+// stays within a comfortable turning radius for the vehicle, and at speed its lateral
+// acceleration within about 6 m/s^2 (a brisk city lane change); never shorter than one
+// and a half car lengths, and no longer than 'room' allows when the bend permits.
+static float ShiftLength(const Vehicle& v, float delta, float speed, float room = 1e9f) {
+    float radius = std::max(90.0f, v.length * 1.25f);
+    float bend = std::max(sqrtf(6 * fabsf(delta) * radius), v.length * 1.5f);
+    float lateral = sqrtf(6 * fabsf(delta) * speed * speed / 96.0f);
+    return std::max(bend, std::min(lateral, room));
+}
+
+// Begin a lane shift to 'target' at the rear axle's current path distance, driven
+// forward (+1) or in reverse (-1).
+static void StartShift(Vehicle& v, float target, int direction, float speed, float room = 1e9f) {
+    DriverAI& ai = v.ai;
+    float rear = ai.s - v.length * 0.32f;
+    float current = LaneShiftAt(ai.shiftFrom, ai.shiftTo, ai.shiftS0, ai.shiftS1, rear);
+    ai.shiftFrom = current; ai.shiftTo = target;
+    ai.shiftS0 = rear; ai.shiftS1 = rear + direction * ShiftLength(v, target - current, speed, room);
+}
+
+// Does the body, driven along the path from s 'from' to s 'to' with the given shift
+// profile, keep clear of other vehicles (and, onto the sidewalk, of buildings and
+// solid furniture; with 'people', of people)?
+static bool ShiftSweepClear(Game& g, int self, float from, float to, float shiftFrom, float shiftTo,
+                            float s0, float s1, bool sidewalk, bool people, float grow = 2) {
+    const Vehicle& v = g.vehicles[self];
+    float step = from <= to ? 6.0f : -6.0f;
+    static std::vector<int> near, ids;
+    near.clear();
+    float reach = fabsf(to - from) + v.length + 200;
+    for (int k = 0; k < (int)g.vehicles.size(); k++)
+        if (k != self && g.vehicles[k].active && Len2(g.vehicles[k].pos - v.pos) < reach * reach) near.push_back(k);
+    for (float s = from;; s += step) {
+        bool last = step > 0 ? s >= to : s <= to;
+        if (last) s = to;
+        Vector2 heading;
+        Vector2 pos = ShiftedRailPose([&](float d) { return Sample(v.ai, d); }, s, v.length, shiftFrom, shiftTo, s0, s1,
+                                      v.angle, &heading);
+        OBB box = MakeOBB(pos, AngleOf(heading), v.width * 0.5f + grow, v.length * 0.5f + grow);
+        Vector2 n; float depth;
+        for (int k : near) if (OBBOverlap(box, g.vehicles[k].Box(), n, depth)) return false;
+        if (sidewalk) {
+            if (g.map.PointInBuilding(pos, v.width * 0.5f)) return false;
+            g.map.QueryObjects({ pos.x - 60, pos.y - 60, 120, 120 }, ids);
+            for (int k : ids) {
+                const CityObject& o = g.map.objects[k];
+                if (o.alive && !o.soft && o.radius > 0 && CircleOBB(o.pos, o.radius, box, n, depth)) return false;
+            }
+        }
+        if (people) {
+            bool person = false;
+            float r = v.length * 0.5f + PED_RADIUS + 2;
+            g.pedGrid.Query(pos, r, [&](int k) {
+                const Pedestrian& p = g.peds[k];
+                if (p.active && p.state != PedState::Dead && PointInOBB(box, p.pos, PED_RADIUS)) person = true;
+            });
+            if (!g.player.inVehicle && PointInOBB(box, g.player.pos, PED_RADIUS)) person = true;
+            if (person) return false;
+        }
+        if (last) break;
+    }
+    return true;
 }
 
 void AIResetPath(Vehicle& v, const CityMap& map) {
@@ -284,18 +359,31 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
     // The sample points first, and the box around them: only vehicles and people that
     // can reach that box are tested at every sample. The order of the tests, and so
     // the obstacle found, is the same as testing everyone at every sample.
-    struct PathSample { Vector2 p; float hd; };
+    struct PathSample { Vector2 p; float hd; OBB body; };
     static std::vector<PathSample> samples;
     samples.clear();
     PathCursor cursor;
     float lastHd = 0; Vector2 lastSide = Perp(Forward(0.0f));
     Rectangle area{};
+    // During a lane change each point is looked at where the car will be when it gets there.
+    bool profiled = lateralShift == ai.laneShift && ai.shiftFrom != ai.shiftTo;
+    float kerbSide = profiled ? std::max(ai.shiftFrom, ai.shiftTo) : lateralShift;   // > 0: onto the sidewalk
     for (int i = 0; i < n; i++) {
         float hd = 0;
         Vector2 p = SampleAt(ai, front + i * step, cursor, &hd);
         if (hd != lastHd) { lastHd = hd; lastSide = Perp(Forward(hd)); }
-        p = p + lastSide * lateralShift;
-        samples.push_back({ p, hd });
+        if (profiled) {
+            // The front of the body when it gets there: the pose d further on, plus half a length.
+            Vector2 heading;
+            Vector2 centre = ShiftedRailPose([&](float x) { return Sample(ai, x); }, ai.s + i * step, v.length,
+                                             ai.shiftFrom, ai.shiftTo, ai.shiftS0, ai.shiftS1, v.angle, &heading);
+            p = centre + heading * (v.length * 0.5f);
+            hd = AngleOf(heading);
+            samples.push_back({ p, hd, MakeOBB(centre, hd, v.width * 0.5f + 4, v.length * 0.5f + 4) });
+        } else {
+            p = p + lastSide * lateralShift;
+            samples.push_back({ p, hd, OBB{} });
+        }
         if (i == 0) area = { p.x, p.y, 0, 0 };
         float x0 = std::min(area.x, p.x), y0 = std::min(area.y, p.y);
         float x1 = std::max(area.x + area.width, p.x), y1 = std::max(area.y + area.height, p.y);
@@ -322,7 +410,7 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
                             area.y + area.height + pedReach, [&](int k) {
             const Pedestrian& pd = g.peds[k];
             if (!pd.active || pd.state == PedState::Dead) return;
-            if (g.map.TileAt(pd.pos) != Tile::Road && lateralShift <= 0) return;   // on the sidewalk: ignore
+            if (g.map.TileAt(pd.pos) != Tile::Road && kerbSide <= 0) return;   // on the sidewalk: ignore
             people.push_back(k);
         });
     for (int i = 0; i < n; i++) {
@@ -332,7 +420,9 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
         for (size_t c = 0; c < cands.size(); c++) {
             int k = cands[c];
             const Vehicle& o = g.vehicles[k];
-            if (!PointInOBB(boxes[c], p, halfW)) continue;
+            // Changing lane, the yawed body itself is tested, as when the change was planned.
+            Vector2 n; float depth;
+            if (profiled ? !OBBOverlap(samples[i].body, boxes[c], n, depth) : !PointInOBB(boxes[c], p, halfW)) continue;
             if (d < best.gap) {
                 bool isPlayer = g.player.inVehicle && g.player.vehicle == k;
                 best = Obstacle{};
@@ -348,7 +438,7 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
                 if (Len2(g.peds[k].pos - p) <= pedReach * pedReach) { seen = true; break; }
             if (seen) { best = Obstacle{}; best.gap = d; best.isPed = true; }
             if (!g.player.inVehicle && Len2(g.player.pos - p) < pedReach * pedReach &&
-                (g.map.TileAt(g.player.pos) == Tile::Road || lateralShift > 0) && d < best.gap) {
+                (g.map.TileAt(g.player.pos) == Tile::Road || kerbSide > 0) && d < best.gap) {
                 best = Obstacle{}; best.gap = d; best.isPlayer = true; best.isPed = true;
             }
         }
@@ -453,6 +543,30 @@ static float RetreatRoom(Game& g, int self, int* blocker = nullptr) {
     if (ai.path.size() < 2) return 0;
     float tail = ai.s - v.length * 0.32f - ai.path.front().cum - 2;
     float limit = std::clamp(tail, 0.0f, RetreatKeep(v));
+    if (ai.shiftFrom != ai.shiftTo) {
+        // Changing lane in reverse the body yaws, so the swept body itself is tested.
+        for (float d = 8; d <= limit + 14; d += 8) {
+            Vector2 heading;
+            Vector2 pos = ShiftedRailPose([&](float x) { return Sample(ai, x); }, ai.s - d, v.length,
+                                          ai.shiftFrom, ai.shiftTo, ai.shiftS0, ai.shiftS1, v.angle, &heading);
+            OBB box = MakeOBB(pos, AngleOf(heading), v.width * 0.5f + 3, v.length * 0.5f + 3);
+            Vector2 n; float depth;
+            for (int k = 0; k < (int)g.vehicles.size(); k++) {
+                const Vehicle& o = g.vehicles[k];
+                if (k == self || !o.active || Len2(o.pos - pos) > 300 * 300 || !OBBOverlap(box, o.Box(), n, depth)) continue;
+                if (blocker) *blocker = k;
+                return std::clamp(d - 14, 0.0f, limit);
+            }
+            bool person = false;
+            g.pedGrid.Query(pos, v.length * 0.5f + PED_RADIUS + 3, [&](int k) {
+                const Pedestrian& pd = g.peds[k];
+                if (pd.active && pd.state != PedState::Dead && PointInOBB(box, pd.pos, PED_RADIUS)) person = true;
+            });
+            if (!g.player.inVehicle && PointInOBB(box, g.player.pos, PED_RADIUS)) person = true;
+            if (person) return std::clamp(d - 14, 0.0f, limit);
+        }
+        return limit;
+    }
     float rear = ai.s - v.length * 0.5f, halfW = v.width * 0.5f + 4;
     for (float d = 0; d <= limit + 14; d += 8) {
         float hd = 0;
@@ -475,26 +589,86 @@ static float RetreatRoom(Game& g, int self, int* blocker = nullptr) {
     return limit;
 }
 
-// Is the body's full length, shifted to 'shift', free of other vehicles and people?
-static bool LaneBesideClear(Game& g, int self, float shift) {
-    const Vehicle& v = g.vehicles[self];
-    float halfW = v.width * 0.5f + 4;
-    for (float d = -v.length * 0.5f - 10; d <= v.length * 0.5f + 10; d += 8) {
-        float hd = 0;
-        Vector2 p = Sample(v.ai, v.ai.s + d, &hd) + Perp(Forward(hd)) * shift;
-        for (int k = 0; k < (int)g.vehicles.size(); k++) {
-            if (k == self || !g.vehicles[k].active) continue;
-            const Vehicle& o = g.vehicles[k];
-            if (Len2(o.pos - p) < 160 * 160 && PointInOBB(o.Box(), p, halfW)) return false;
-        }
-        bool person = false;
-        g.pedGrid.Query(p, halfW + PED_RADIUS, [&](int k) {
-            const Pedestrian& pd = g.peds[k];
-            if (pd.active && pd.state != PedState::Dead && Len2(pd.pos - p) < (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) person = true;
-        });
-        if (person) return false;
+static void PoseOnPath(Vehicle& v, float dt);
+
+// Pull out round an obstacle into 'target': an S-curve that starts at the rear axle.
+// Standing close behind the obstacle, the car backs up first, just far enough for the
+// swept body to clear it (up to 1.5 lengths, if the path behind is free); without a
+// clear way it stays behind the obstacle.
+static bool PlanPullOut(Game& g, int idx, float target, bool sidewalk) {
+    Vehicle& v = g.vehicles[idx];
+    DriverAI& ai = v.ai;
+    float axle = v.length * 0.32f;
+    float length = ShiftLength(v, target - ai.laneShift, 0);
+    float room = std::min(RetreatRoom(g, idx), v.length * 1.5f);
+    for (float back = 0; back <= room; back += 8) {
+        float start = ai.s - back, s0 = start - axle, s1 = s0 + length;
+        // The look-ahead keeps 4 px round the front: plan with a little more, so that it
+        // never stops a car halfway out.
+        if (!ShiftSweepClear(g, idx, start, s1 + axle + v.length * 0.5f, ai.laneShift, target, s0, s1, sidewalk, false, 7)) continue;
+        if (back == 0) { StartShift(v, target, 1, 0); ai.laneShiftTarget = target; }
+        else { ai.pullBack = back; ai.pullShift = target; }
+        if (g.debugContacts)
+            TraceLog(LOG_INFO, "PULL-OUT #%d %s to shift %.0f over %.0f px, backing up %.0f px first t=%.2f",
+                     idx, v.S().name.c_str(), target, length, back, g.time);
+        return true;
+    }
+    return false;
+}
+
+// Backing up before a pull-out: reverse along the driven path, checked behind like a
+// yielding driver, then start the S-curve from where the car stopped.
+static bool UpdatePullBack(Game& g, int idx, float dt) {
+    Vehicle& v = g.vehicles[idx];
+    DriverAI& ai = v.ai;
+    float room = RetreatRoom(g, idx);
+    if (room < 2 && ai.speed < 1) { ai.pullBack = 0; return false; }   // someone came behind: stay
+    float want = std::min(40.0f, sqrtf(2 * COMFORT_DECEL * std::max(0.0f, std::min(room, ai.pullBack) - 1)));
+    float speed = want > ai.speed ? std::min(want, ai.speed + 120 * dt) : std::max(want, ai.speed - COMFORT_DECEL * 1.6f * dt);
+    float ds = std::min(speed * dt, ai.pullBack);
+    ai.s -= ds; ai.pullBack -= ds; ai.speed = speed;
+    PoseOnPath(v, dt);
+    v.speedFwd = -speed; v.slip = 0; v.reversing = speed > 1; v.braking = speed < 1;
+    v.in = VehicleInput{};
+    ai.reason = 7; ai.waitingOn = -1; ai.blocker = -1; ai.stopDist = 0;
+    v.rpm = Lerpf(v.rpm, 0.25f + 0.4f * Saturate(speed / 60.0f), Damp(4, dt));
+    if (ai.pullBack <= 1.5f && speed < 1) {           // the braking curve stops within a pixel
+        ai.pullBack = 0; ai.speed = 0;
+        StartShift(v, ai.pullShift, 1, 0);
+        ai.laneShiftTarget = ai.pullShift;
     }
     return true;
+}
+
+// Where, reversing, the rear axle is back in the lane: the end of a reversing S-curve to
+// zero, or the start of a pull-out from zero that is retraced; NaN for neither.
+static float TuckEnd(const DriverAI& ai) {
+    bool backward = ai.shiftS1 < ai.shiftS0;
+    if (ai.shiftTo == 0 && ai.shiftFrom != 0 && backward) return ai.shiftS1;
+    if (ai.shiftFrom == 0 && ai.shiftTo != 0 && !backward) return ai.shiftS0;
+    return NAN;
+}
+
+// A yielding driver out of its lane returns to it in reverse: back along its pull-out
+// if it is still on it, otherwise over a new reversing S-curve; only when the swept
+// way back is free of vehicles and people.
+static void PlanTuckIn(Game& g, int idx) {
+    Vehicle& v = g.vehicles[idx];
+    DriverAI& ai = v.ai;
+    float axle = v.length * 0.32f, rear = ai.s - axle;
+    float from = ai.shiftFrom, to = ai.shiftTo, s0 = ai.shiftS0, s1 = ai.shiftS1;
+    bool retrace = from == 0 && to != 0 && s1 > s0 && rear > s0 && rear - s0 <= RetreatKeep(v);
+    if (!retrace) {
+        float current = LaneShiftAt(from, to, s0, s1, rear);
+        from = current; to = 0; s0 = rear; s1 = rear - ShiftLength(v, current, YieldTuning().speed);
+    }
+    float end = (retrace ? s0 : s1) + axle;                           // the rear axle back at the lane
+    if (end - axle < ai.path.front().cum + 2) return;                 // not enough path kept behind
+    // A wider margin than the room check while reversing (3 px), so a planned tuck-in is
+    // never stopped halfway by that check.
+    if (!ShiftSweepClear(g, idx, ai.s, end, from, to, s0, s1, false, true, 5)) return;
+    ai.shiftFrom = from; ai.shiftTo = to; ai.shiftS0 = s0; ai.shiftS1 = s1;
+    ai.laneShiftTarget = 0;
 }
 
 // Stable role choice for a mutual pair: a knocked car gets room from the rail car;
@@ -541,12 +715,11 @@ static void EndYield(Game& g, int self, const char* why) {
 // Pose from the path at ai.s (front/rear axle samples), velocity from the pose change.
 static void PoseOnPath(Vehicle& v, float dt) {
     DriverAI& ai = v.ai;
-    float axle = v.length * 0.32f;
-    Vector2 fp = Sample(ai, ai.s + axle), rp = Sample(ai, ai.s - axle);
-    Vector2 dir = Norm(fp - rp);
-    if (Len2(dir) < 0.5f) dir = Forward(v.angle);
-    Vector2 pos = (fp + rp) * 0.5f + Perp(dir) * ai.laneShift;
+    Vector2 dir;
+    Vector2 pos = ShiftedRailPose([&](float d) { return Sample(ai, d); }, ai.s, v.length,
+                                  ai.shiftFrom, ai.shiftTo, ai.shiftS0, ai.shiftS1, v.angle, &dir);
     float ang = AngleOf(dir);
+    ai.laneShift = LaneShiftAt(ai.shiftFrom, ai.shiftTo, ai.shiftS0, ai.shiftS1, ai.s - v.length * 0.32f);
     if (ai.blend > 0) {
         ai.blend = std::max(0.0f, ai.blend - dt * 1.4f);
         float t = SmoothStep(0, 1, ai.blend);
@@ -602,14 +775,22 @@ static bool UpdateYield(Game& g, int idx, float dt) {
     float ds = std::min(speed * dt, std::max(0.0f, ai.retreatLeft));
     ai.s -= ds; ai.retreatLeft -= ds;
     ai.speed = speed;
-    // Passing drivers tuck back into their own lane as soon as it is free beside them,
-    // reversing on until the lateral move is complete (it needs rolling travel).
-    if (ai.laneShiftTarget != 0 && fabsf(ai.laneShift) > 1 && LaneBesideClear(g, idx, 0)) ai.laneShiftTarget = 0;
-    if (ai.laneShiftTarget == 0 && fabsf(ai.laneShift) > 3) ai.retreatLeft = std::max(ai.retreatLeft, 30.0f);
-    bool wasShifted = fabsf(ai.laneShift) > 3;
-    // Lateral motion only while rolling: a stopped car does not slide sideways.
-    ai.laneShift = Lerpf(ai.laneShift, ai.laneShiftTarget, Damp(2.2f * Saturate(speed / 30.0f), dt));
-    if (wasShifted && ai.laneShiftTarget == 0 && fabsf(ai.laneShift) <= 3) ai.retreatLeft = 0;   // tucked in
+    // Passing drivers tuck back into their own lane as soon as the way back is free:
+    // reversing, they retrace their pull-out if they are still on it, or steer back in
+    // over a reversing S-curve. The rear axle leads; the car turns in, it does not slide.
+    float rearS = ai.s - v.length * 0.32f;
+    float zeroEnd = TuckEnd(ai);
+    bool tucking = ai.laneShiftTarget == 0 && std::isfinite(zeroEnd) && rearS > zeroEnd + 0.5f;
+    if (!tucking && fabsf(ai.laneShift) > 1) {
+        PlanTuckIn(g, idx);
+        zeroEnd = TuckEnd(ai);
+        tucking = ai.laneShiftTarget == 0 && std::isfinite(zeroEnd) && rearS > zeroEnd + 0.5f;
+    }
+    if (tucking) ai.retreatLeft = std::max(ai.retreatLeft, rearS - zeroEnd);
+    else if (std::isfinite(zeroEnd) && ai.laneShiftTarget == 0 && fabsf(ai.laneShift) < 1) {
+        SetShiftConstant(ai, 0);             // tucked in
+        ai.retreatLeft = 0;
+    }
     PoseOnPath(v, dt);
     v.speedFwd = -speed;
     v.slip = 0;
@@ -793,7 +974,7 @@ static void UpdateKnocked(Game& g, int idx, float dt) {
             ai.rail = true;
             ai.speed = std::max(0.0f, speed);
             ai.blend = 0;
-            ai.laneShift = ai.laneShiftTarget = 0;
+            SetShiftConstant(ai, 0); ai.laneShiftTarget = 0; ai.pullBack = 0;
             ai.recover = ai.gearTimer = ai.jammed = 0;
             if (ai.yieldTo >= 0 && g.debugContacts)
                 TraceLog(LOG_INFO, "YIELD #%d ends (rejoined) after making room for #%d t=%.2f", idx, ai.yieldTo, g.time);
@@ -838,9 +1019,11 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
         ai.path.pop_front();
         for (Waypoint& w : ai.path) w.cum -= base;
         ai.s -= base;
+        ai.shiftS0 -= base; ai.shiftS1 -= base;
     }
     ai.uturnCooldown = std::max(0.0f, ai.uturnCooldown - dt);
     if (ai.yieldTo >= 0 && UpdateYield(g, idx, dt)) return;
+    if (ai.pullBack > 0 && UpdatePullBack(g, idx, dt)) return;
     // now and then a driver looks at their phone... (accidents happen)
     if (ai.distracted > 0) ai.distracted -= dt;
     else if (r.Chance(dt * 0.004f * ai.temper)) ai.distracted = r.Range(1.0f, 2.5f);
@@ -906,15 +1089,17 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
     bool stoppedByBlocker = ob.gap < 70 && (ob.isStatic || (ob.vehicle >= 0 && g.vehicles[ob.vehicle].Speed() < 5 && !AIOnRail(g.vehicles[ob.vehicle])));
     if (stoppedByBlocker || (ob.vehicle >= 0 && ob.gap < 40 && ai.speed < 5 && ai.reason == 2)) ai.blocked += dt;
     else ai.blocked = std::max(0.0f, ai.blocked - dt);
-    if (ai.laneShiftTarget == 0 && stoppedByBlocker && ai.blocked > 1.0f / ai.temper) {
+    if (ai.laneShiftTarget == 0 && ai.pullBack <= 0 && stoppedByBlocker && ai.blocked > 1.0f / ai.temper) {
         const float overtake = -LANE_OFFSET * 1.9f, kerb = LANE_OFFSET * 1.35f;
-        if (SideClear(g, idx, overtake, look + 160, false)) ai.laneShiftTarget = overtake;           // oncoming lane
-        else if (!sp.large() && SideClear(g, idx, kerb, look + 120, true)) ai.laneShiftTarget = kerb; // onto the sidewalk
+        if (!(SideClear(g, idx, overtake, look + 160, false) && PlanPullOut(g, idx, overtake, false)) &&   // oncoming lane
+            !sp.large() && SideClear(g, idx, kerb, look + 120, true)) PlanPullOut(g, idx, kerb, true);  // onto the sidewalk
     }
     if (ai.blocked > 6.0f && ai.uturnCooldown <= 0 && !sp.large()) {                               // give up: turn round
         if (PlanUTurn(g, v)) { ai.blocked = 0; return; }
         ai.uturnCooldown = 4;
     }
+    // A lane change in progress keeps a moderate speed (its S-curve was sized for it).
+    if (ai.shiftFrom != ai.shiftTo && ai.laneShiftTarget == 0) desired = std::min(desired, 130.0f);
     if (ai.laneShiftTarget != 0) {
         desired = std::min(desired, ai.laneShiftTarget > 0 ? 70.0f : 150.0f);
         bool beside = false;
@@ -924,9 +1109,18 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
             float al = Dot(rel, Forward(v.angle));
             if (al > -v.length && al < v.length + 60 && fabsf(Dot(rel, Perp(Forward(v.angle)))) < 80) beside = true;
         }
-        if (!beside && fabsf(ai.laneShift - ai.laneShiftTarget) < 6) ai.laneShiftTarget = 0;
+        // Passed: steer back once the whole body is out in the new lane.
+        float rear = ai.s - v.length * 0.32f;
+        bool settled = ai.shiftTo == ai.laneShiftTarget && (ai.shiftS1 >= ai.shiftS0 ? rear >= ai.shiftS1 : rear <= ai.shiftS1);
+        if (!beside && settled) {
+            // Back in the lane before the next stop line, if the bend allows.
+            float room = 1e9f;
+            for (const Waypoint& w : ai.path)
+                if (w.stop && w.cum - STOP_BACK - (ai.s + v.length * 0.5f) > 0) { room = w.cum - STOP_BACK - ai.s - v.length; break; }
+            StartShift(v, 0, 1, ai.speed, room);
+            ai.laneShiftTarget = 0;
+        }
     }
-    ai.laneShift = Lerpf(ai.laneShift, ai.laneShiftTarget, Damp(2.2f, dt));
     // An incident: pull up where we are, then the driver gets out (traffic_incidents).
     if (IncidentHoldsVehicle(v)) { desired = 0; ai.reason = 3; ai.stopDist = 0; }
     // horn: at the player, at people in the road, and at anyone blocking us for too long

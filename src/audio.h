@@ -13,7 +13,9 @@
 #include <string>
 
 enum class Sfx : int { Pistol = 0, Shotgun, Rifle, Punch, Knife, Crash, CrashSmall, Explosion, Horn, Door,
-                       Pickup, MissionPass, MissionFail, Wasted, Splash, Glass, Footstep, Reload, Scream, COUNT };
+                       Pickup, MissionPass, MissionFail, Wasted, Splash, Glass, Footstep, Reload, Scream,
+                       ShoutHey, ShoutOi, ShoutHah, COUNT };
+constexpr int SHOUT_VARIANTS = 3;          // ShoutHey, ShoutOi, ShoutHah: an angry driver yelling
 
 class AudioSystem {
 public:
