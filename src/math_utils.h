@@ -7,6 +7,7 @@
 #include "raymath.h"
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <algorithm>
 
 // ---- Random numbers (fast xorshift, deterministic per seed) -------------------------
@@ -36,6 +37,15 @@ inline float Sign(float v) { return v < 0 ? -1.0f : 1.0f; }
 // This matches raylib's DrawTexturePro rotation, so sprite rotation = angle * RAD2DEG.
 inline Vector2 Forward(float a) { return { sinf(a), -cosf(a) }; }
 inline Vector2 RightOf(float a) { return { cosf(a), sinf(a) }; }
+// sinf/cosf of an angle, reusing the last result when the same angle (bit for bit)
+// comes again: a physics step drives with the heading its box was just posed at.
+inline void CachedSinCos(float a, float& s, float& c) {
+    static uint32_t lastBits = 0x7fc00001u;  // a NaN pattern no real call matches
+    static float lastS = 0, lastC = 1;
+    uint32_t bits; memcpy(&bits, &a, sizeof bits);
+    if (bits != lastBits) { lastBits = bits; lastS = sinf(a); lastC = cosf(a); }
+    s = lastS; c = lastC;
+}
 inline float   AngleOf(Vector2 dir) { return atan2f(dir.x, -dir.y); }
 inline float   Dot(Vector2 a, Vector2 b) { return a.x * b.x + a.y * b.y; }
 inline float   Cross(Vector2 a, Vector2 b) { return a.x * b.y - a.y * b.x; }

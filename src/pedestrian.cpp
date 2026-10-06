@@ -40,14 +40,19 @@ static Gait GaitOf(PedState s) {
 //  Spatial grid
 // -------------------------------------------------------------------------------------
 void PedGrid::Build(const std::vector<Pedestrian>& peds) {
-    head.assign(W * H, -1);
+    // Only the cells filled last time need clearing (the grid has ~21,000 cells).
+    if (head.size() != (size_t)(W * H)) { head.assign(W * H, -1); used.clear(); }
+    for (int c : used) head[c] = -1;
+    used.clear();
     next.assign(peds.size(), -1);
     for (size_t k = 0; k < peds.size(); k++) {
         const Pedestrian& p = peds[k];
         if (!p.active) continue;
         int x = std::clamp((int)(p.pos.x / TILE), 0, W - 1), y = std::clamp((int)(p.pos.y / TILE), 0, H - 1);
-        next[k] = head[y * W + x];
-        head[y * W + x] = (int)k;
+        int c = y * W + x;
+        if (head[c] < 0) used.push_back(c);
+        next[k] = head[c];
+        head[c] = (int)k;
     }
 }
 

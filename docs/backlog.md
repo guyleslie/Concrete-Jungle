@@ -17,9 +17,9 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the second CJ-016 increment on 2026-10-06:
+Recommended order, updated during the third CJ-016 increment on 2026-10-06:
 
-1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — playtest the second increment (queues, two-car conflicts, heavy-vehicle reversing, a full confrontation; temporarily `INCIDENT aggressive_share 1` makes every driver aggressive), then bring `chase`/`rampage` decision CPU under the targets and give roles to two knocked cars and junction gridlock, under the [approved specification](design/traffic-behaviour-proposal.md). The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
+1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — the third increment is in progress: decision CPU is under the targets; roles for two knocked cars and junction gridlock, the shouting sound, the raised fist and lane changes without sideways sliding follow. Then the user playtest (queues, two-car conflicts, heavy-vehicle reversing, a full confrontation; temporarily `INCIDENT aggressive_share 1` makes every driver aggressive), under the [approved specification](design/traffic-behaviour-proposal.md). The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
 2. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities needed by CJ-016 deliberately rather than changing traffic behaviour incidentally.
 3. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 4. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
@@ -43,7 +43,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-018](#cj-018-police-drivers-avoid-pedestrians) | Police drivers avoid pedestrians | Medium | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
-| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | In progress; awaiting playtest of the second increment |
+| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | In progress; third increment under way |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
@@ -222,7 +222,7 @@ Remaining: the playtest.
 ### CJ-016 Road rage and traffic incidents
 
 - **Priority:** High
-- **Status:** In progress; specification approved on 2026-10-05; recovery (2026-10-05), CPU peaks, cooperative yielding and driver incidents (2026-10-06) implemented and measured; `chase`/`rampage` CPU targets and the user playtest pending
+- **Status:** In progress; specification approved on 2026-10-05; recovery (2026-10-05), CPU peaks, cooperative yielding and driver incidents (2026-10-06) implemented and measured; city CPU targets met (2026-10-06); knocked-pair and gridlock roles, incident presentation and the user playtest pending
 
 **User direction (2026-10-03).** Drivers should behave like people: follow, yield, avoid, reverse, honk, sometimes misjudge and collide, and occasionally get out to confront or fight another driver. A blocked situation must not be solved by deleting a driver, forcing them to walk away after a timer, or relocating an involved vehicle. This is the current priority; CJ-002 supplies the necessary vehicle capabilities.
 
@@ -234,7 +234,9 @@ Remaining: the playtest.
 
 **Second increment (2026-10-06).** Recovery planning is sliced across frames under a shared deterministic step budget; holds replan only when a blocker moves; followers behind a car keep their own distance (the rear-end rule) and rail cars are forecast no further than their planned stop; immediate checks validate a few extra frames and are reused while everything moves as forecast. The worst city decision frame fell from 11.6 ms to 2.5 ms; `crash` meets both decision targets (0.434 ms average, 0.933 ms p95), while `chase` (0.739 / 1.455 ms) and `rampage` (0.799 / 1.617 ms) still exceed them. Cooperative yielding gives two drivers stopped behind each other stable roles; the yielder retraces its own path on rails and tucks back into its lane, with a chain behind it. The new `traffic-conflict` fixture (60 cases) went from 6 to 60 resolved cases. Driver moods (10 % aggressive) and collision incidents let an aggressive driver stop, get out on a safe side, confront the other driver or the player, fight, and drive the same car on; interruptions end with a logged reason. The new `traffic-incident` fixture (80 cases) went from 20 to 80 accepted cases with no ownership violation or duplicate driver. Queue-aware rejoining, escape from an existing contact and a fixed U-turn route loss came out of the new fixtures. The frozen recovery and clearance fixtures still pass all 182 checks with unchanged rejoin times. Evidence: [yielding and incident report](design/traffic-yielding-incident-results.md).
 
-**Remaining.** CPU acceptance in `chase` and `rampage`; roles for two knocked cars and larger wait-for cycles (junction gridlock); police reaction to a fight and incident sound/gesture art; the user playtest of queues, two-car conflicts, heavy-vehicle reversing and a full confrontation. Visible towing follows the accepted core.
+**Third increment (2026-10-06), CPU.** Every city scenario now meets the decision CPU targets: `chase` 0.689 / 1.415 → 0.321 / 0.819 ms, `rampage` 0.727 / 1.547 → 0.378 / 0.861 ms, `crash` 0.390 / 0.865 → 0.234 / 0.484 ms (average / 95th percentile). The rail look-ahead tests only what can reach its sampled path, recovery rollouts let distant actors sleep and skip rail forecast boxes out of reach, and force steps share their trigonometry; these leave every decision unchanged, and all four fixtures reproduce the second increment line by line. Covered immediate checks now record up to 32 actors instead of 12, which changes city decisions. On-foot test runs no longer depend on the mouse cursor. Evidence: [third increment report](design/traffic-third-increment-results.md).
+
+**Remaining.** Roles for two knocked cars and larger wait-for cycles (junction gridlock); the shouting sound, the raised-fist gesture and lane changes without sideways sliding (the third increment continues with these); police reaction to a fight; the user playtest of queues, two-car conflicts, heavy-vehicle reversing and a full confrontation. Visible towing follows the accepted core.
 
 **Acceptance criteria.** Follow the approved proposal's scenario table. Feasible blockages resolve physically; impossible ones remain stable and observable; timeout-based disappearance/relocation is zero; incident participants retain identity and car ownership; exiting, approaching, fighting and returning are visible actions with interruption rules. Validate with fixed seeds, 60 Hz/20 Hz scenarios, class-specific recovery tests, regression runs, separate traffic CPU timings and a user playtest. First deliver reliable manoeuvring, then incidents and combat; visible towing follows the accepted core.
 

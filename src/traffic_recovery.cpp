@@ -45,6 +45,7 @@ void LoadTrafficRecords(const char* type, TrafficField* fields, int count) {
 }
 
 namespace {
+std::array<double, (size_t)DecisionStage::COUNT> stageMs{};
 
 constexpr float PREDICT_STEP = 1.0f / 240.0f;
 constexpr float OBB_GROW_RADIUS = 1.414214f;  // rounded above sqrt(2): both half-extents grow
@@ -110,12 +111,19 @@ Game* observedGame = nullptr;
 
 struct ForecastSample { OBB box{}; float sweptPad = 0; };
 struct ForecastRow {
+    uint32_t epoch = 0;                      // rows of an older epoch are empty
     int count = 0;
     bool constantReady = false;
     ForecastSample constant{};               // stationary actors: every sample after the first
     std::array<ForecastSample, MAX_FORECAST_SAMPLES> samples{};
+    // Rail actors: the route centre and direction of each sample, without the box.
+    int centreCount = 0;
+    std::array<Vector2, MAX_FORECAST_SAMPLES> centre{}, direction{};
 };
 std::vector<ForecastRow> vehicleForecasts;
+// A new snapshot or force step empties every row by starting a new epoch, without
+// touching the rows (each is ~46 KB; resetting them all cost a cache miss apiece).
+uint32_t forecastEpoch = 1;
 float predictionStep = PREDICT_STEP;
 float predictionControlInterval = 1.0f / 60.0f;
 
@@ -124,8 +132,7 @@ void SetControlInterval(float dt) {
     // Match the 60/20 Hz fixtures. Higher frame rates use the same force model at
     // a bounded 240 Hz forecast cadence, never unbounded work as frame dt shrinks.
     float h = std::max(PREDICT_STEP, dt / substeps);
-    if (fabsf(h - predictionStep) > 1e-7f)
-        for (ForecastRow& row : vehicleForecasts) { row.count = 0; row.constantReady = false; }
+    if (fabsf(h - predictionStep) > 1e-7f) forecastEpoch++;
     predictionStep = h;
     predictionControlInterval = std::max(PREDICT_STEP, dt);
 }
@@ -249,6 +256,7 @@ float PoseMotionBound(const OBB& previous, const OBB& current, float radius) {
 
 const ForecastSample& ForecastAt(int actor, int step) {
     ForecastRow& row = vehicleForecasts[actor];
+    if (row.epoch != forecastEpoch) { row.epoch = forecastEpoch; row.count = 0; row.constantReady = false; row.centreCount = 0; }
     const ObservedVehicle& o = observedVehicles[actor];
     if (o.stationary && step >= 2) {
         if (row.count < 2) ForecastAt(actor, 1);
@@ -272,6 +280,26 @@ const ForecastSample& ForecastAt(int actor, int step) {
     return row.samples[step];
 }
 
+// A rail actor's forecast centre at 'step' (the centre of its forecast box, computed the
+// same way) and a bound on that sample's sweep pad, from the route alone: the box
+// orientation and its trigonometry are needed only when the actor comes within reach.
+// The pad is the centre travel plus radius times the turn between the samples; for
+// unit directions less than a right angle apart the turn is at most pi/2 * |cross|.
+Vector2 RailCentreAt(int actor, int step, float* padBound) {
+    ForecastRow& row = vehicleForecasts[actor];
+    if (row.epoch != forecastEpoch) { row.epoch = forecastEpoch; row.count = 0; row.constantReady = false; row.centreCount = 0; }
+    const ObservedVehicle& o = observedVehicles[actor];
+    while (row.centreCount <= step) {
+        int k = row.centreCount;
+        row.centre[k] = ObservedRailCentre(o, k * predictionStep, &row.direction[k]);
+        row.centreCount++;
+    }
+    Vector2 a = row.direction[step - 1], b = row.direction[step];
+    float turn = Dot(a, b) > 0 ? PI * 0.5f * fabsf(Cross(a, b)) * 1.001f + 1e-5f : PI;
+    *padBound = Dist(row.centre[step - 1], row.centre[step]) * 1.001f + 1e-3f + o.radius * turn;
+    return row.centre[step];
+}
+
 enum class GeometryKind { Building, ObjectBox, ObjectCircle, Vehicle, Person };
 struct Nearby {
     GeometryKind kind = GeometryKind::Building;
@@ -283,16 +311,24 @@ struct Nearby {
     float centreSpeed = 0;                 // fixed observation, reused at every force sample
     Vector2 forecastOrigin{};
     bool released = true;
-    // Lower bound on (centre distance - cull reach) from an earlier step of the same
-    // rollout. While positive, the exact cull would also reject this static actor or
-    // person, so the per-step test is skipped with an identical result.
-    float margin = -1, marginOtherPad = 0;
     bool follower = false;                 // behind, moving our way: responsible for the gap
 };
 std::array<Nearby, MAX_NEARBY> nearby;
 int nearbyCount = 0;
 std::vector<int> queryBuildings, queryObjects;
 bool nearbyComplete = true;
+
+// Rollout broadphase. An actor found beyond its cull reach sleeps until the first force
+// step at which it could possibly be within reach again, given a per-step bound on the
+// ego's travel and sweep pad and the actor's own speed bound. Only awake actors are
+// tested, in nearby order, so the exact checks and the reported blocker are unchanged.
+// A step that exceeds the assumed ego bounds wakes every sleeper at once.
+std::array<int, MAX_NEARBY> awake;
+int awakeCount = 0;
+std::array<int, MAX_NEARBY> sleepNext;
+std::array<int, MAX_FORECAST_SAMPLES + 2> wakeHead;
+int wakeLimit = 0;                           // last force step of the rollout
+float egoStepBound = 0, padStepBound = 0;    // assumed ego travel / sweep pad per force step
 
 struct PredictionGeometry {
     OBB initial{};
@@ -320,12 +356,22 @@ void AddNearby(Nearby value) {
     // Existing contacts may be escaped, but never deepened by a prediction.
     float depth = 0;
     value.centreSpeed = Len(value.velocity);
+    // The initial footprint is the observed pose; beyond both enclosing circles (the
+    // other one grown by the clearance) there is no initial contact to test for.
+    if (value.kind == GeometryKind::Vehicle) value.forecastOrigin = observedVehicles[value.observed].pos;
+    Vector2 centre = value.kind == GeometryKind::Vehicle ? value.forecastOrigin : value.centre;
+    float growScale = value.kind == GeometryKind::Person || value.kind == GeometryKind::ObjectCircle ? 1.0f : OBB_GROW_RADIUS;
+    float reach = geometry.diagonal + value.radius + growScale * Tuning().clearance + 0.01f;
+    if (Len2(centre - geometry.initial.c) > reach * reach) {
+        value.initialDepth = 0;
+        nearby[nearbyCount++] = value;
+        return;
+    }
     const OBB* observed = nullptr;
     if (value.kind == GeometryKind::Vehicle) {
         // Every driver reads this same initial footprint; do not repeat its
         // rail path/trigonometry for every recovery neighbourhood.
         observed = &ForecastAt(value.observed, 0).box;
-        value.forecastOrigin = observed->c;
     }
     bool hit = Overlap(value, geometry.initial, 0, Tuning().clearance, depth, observed);
     // OBBOverlap may leave depth at its sentinel or a previous axis depth
@@ -495,13 +541,73 @@ int captureCount = 0;
 std::array<Vector2, 4> capturePos{};
 std::array<float, 4> captureAngle{};
 
-bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float sweptPad,
-                    float moved, float previousSweptPad) {
+void StartBroadphase(const Vehicle& v, int steps) {
+    awakeCount = 0;
+    for (int k = 0; k < nearbyCount; k++) {
+        // A follower never vetoes a forward rollout; it is not tested at all.
+        if (nearby[k].follower && rolloutGear > 0) continue;
+        awake[awakeCount++] = k;
+    }
+    wakeLimit = std::min(steps, MAX_FORECAST_SAMPLES);
+    for (int k = 0; k <= wakeLimit + 1; k++) wakeHead[k] = -1;
+    // Generous starting bounds: the controls aim below these speeds and yaw rates.
+    float speed = std::max(Len(v.vel), std::max(Tuning().forwardSpeed, Tuning().reverseSpeed)) * 1.25f + 20;
+    float yaw = std::max(fabsf(v.angVel), 2.0f) * 1.25f;
+    egoStepBound = speed * predictionStep;
+    padStepBound = egoStepBound + geometry.diagonal * yaw * predictionStep;
+}
+
+void WakeAll() {
+    for (int k = 0; k <= wakeLimit + 1; k++)
+        for (int n = wakeHead[k]; n >= 0; n = sleepNext[n]) awake[awakeCount++] = n;
+    for (int k = 0; k <= wakeLimit + 1; k++) wakeHead[k] = -1;
+    std::sort(awake.begin(), awake.begin() + awakeCount);
+}
+
+// Put actor 'idx' to sleep after it was culled at 'step' with 'margin' (centre distance
+// minus cull reach). Until it wakes, its distance stays above its reach: every step the
+// gap shrinks by at most the ego travel bound, the actor speed bound and a rounding
+// allowance, and the reach grows by at most the inflated sweep pads. Returns false
+// when the actor must stay awake.
+bool Sleep(int idx, int step, float margin, float actorSpeed, float actorPad, float growScale) {
+    float rate = egoStepBound + actorSpeed * predictionStep + 0.01f;
+    float room = margin - growScale * (padStepBound + actorPad);
+    if (room <= rate) return false;
+    int skip = (int)ceilf(room / rate) - 1;     // skip * rate < room
+    int wake = step + 1 + skip;
+    if (wake <= step + 1) return false;
+    // Beyond the rollout: parked in the last bucket, which only a bound violation wakes.
+    wake = std::min(wake, wakeLimit + 1);
+    sleepNext[idx] = wakeHead[wake];
+    wakeHead[wake] = idx;
+    return true;
+}
+
+bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float sweptPad, float moved) {
     const Settings& cfg = Tuning();
-    OBB box = scratch.Box();
+    // scratch.Box(), with the sine and cosine the next force step reuses.
+    float sinA, cosA;
+    CachedSinCos(scratch.angle, sinA, cosA);
+    OBB box; box.c = scratch.pos; box.ax[0] = { cosA, sinA }; box.ax[1] = { sinA, -cosA };
+    box.he[0] = scratch.width * 0.5f; box.he[1] = scratch.length * 0.5f;
     if (!InsideWorld(box)) return false;
-    work.current.steps++; work.current.actorTests += nearbyCount;
-    for (int idx = 0; idx < nearbyCount; idx++) {
+    // The sleepers assumed smaller ego steps: all of them are tested again now.
+    if (moved > egoStepBound || sweptPad > padStepBound) {
+        egoStepBound = std::max(egoStepBound * 2, moved * 1.5f);
+        padStepBound = std::max(std::max(padStepBound * 2, sweptPad * 1.5f), egoStepBound);
+        WakeAll();
+    }
+    if (step > wakeLimit) WakeAll();
+    else if (wakeHead[step] >= 0) {
+        for (int n = wakeHead[step]; n >= 0; n = sleepNext[n]) awake[awakeCount++] = n;
+        wakeHead[step] = -1;
+        std::sort(awake.begin(), awake.begin() + awakeCount);
+    }
+    work.current.steps++; work.current.actorTests += awakeCount;
+    int kept = 0;
+    for (int a = 0; a < awakeCount; a++) {
+        int idx = awake[a];
+        awake[kept++] = idx;
         Nearby& n = nearby[idx];
         const OBB* observed = nullptr;
         OBB partialPose;
@@ -509,15 +615,9 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
         float otherPad = n.centreSpeed * h;
         float growScale = n.kind == GeometryKind::Person || n.kind == GeometryKind::ObjectCircle
             ? 1.0f : OBB_GROW_RADIUS;
-        if (n.follower && rolloutGear > 0) { n.released = true; continue; }
-        if (n.kind != GeometryKind::Vehicle && n.margin > 0) {
-            // Both centres move at most 'moved' and centreSpeed*h; the reach changes
-            // only through the two pads. A small constant absorbs float rounding.
-            n.margin -= moved + n.centreSpeed * h + growScale * (sweptPad - previousSweptPad)
-                      + growScale * (otherPad - n.marginOtherPad) + 0.01f;
-            n.marginOtherPad = otherPad;
-            if (n.margin > 0) { n.released = true; continue; }
-        }
+        // Speed and sweep-pad bounds of the actor over later steps, for sleeping.
+        float actorSpeed = n.centreSpeed, actorPad = n.centreSpeed * predictionStep;
+        bool canSleep = true;
         if (n.kind == GeometryKind::Vehicle) {
             const ObservedVehicle& actor = observedVehicles[n.observed];
             float baseReach = geometry.diagonal + n.radius + growScale * (cfg.clearance + sweptPad);
@@ -527,7 +627,17 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
                 // bounded by translation + radius * |angular velocity| * h;
                 // wrapped endpoint rotation can never exceed that angle.
                 float bound = baseReach + growScale * (otherPad + n.radius * fabsf(actor.angVel) * h);
-                distant = Len2(position - scratch.pos) > bound * bound;
+                float distance2 = Len2(position - scratch.pos);
+                distant = distance2 > bound * bound;
+                // The detailed forecast has the same linear centre; its pad is the
+                // centre travel plus corner rotation, or the stationary drift bound.
+                actorPad = std::max((n.centreSpeed + n.radius * fabsf(actor.angVel)) * predictionStep * 1.01f + 0.01f,
+                                    actor.stationary ? actor.drift + 0.01f : 0.0f);
+                if (distant) {
+                    n.released = true;
+                    if (Sleep(idx, step, sqrtf(distance2) - bound, actorSpeed, actorPad, growScale)) kept--;
+                    continue;
+                }
             } else if (actor.blend <= 0) {
                 // Each axle point moves at most |path speed| * time. Their
                 // midpoint inherits that bound; a fixed lane shift contributes
@@ -541,12 +651,28 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
                 float travel = fabsf(actor.speed) * time + shiftSpan + actor.routeGap;
                 float maxSweep = fabsf(actor.speed) * h + shiftSpan + n.radius * PI + actor.routeGap;
                 float bound = baseReach + travel + growScale * maxSweep;
-                distant = Len2(n.forecastOrigin - scratch.pos) > bound * bound;
+                float distance2 = Len2(n.forecastOrigin - scratch.pos);
+                distant = distance2 > bound * bound;
+                // Later steps: the envelope grows by the path speed per step; its sweep
+                // term is fixed. The exact rail forecast below is not linear, so only
+                // this envelope may put the actor to sleep.
+                canSleep = false;
+                if (distant) {
+                    n.released = true;
+                    if (Sleep(idx, step, sqrtf(distance2) - bound, fabsf(actor.speed), 0.0f, growScale)) kept--;
+                    continue;
+                }
+            } else canSleep = false;   // a legacy blend mixes a separate pose: full forecast
+            bool sampled = step < MAX_FORECAST_SAMPLES && fabsf(time - step * predictionStep) < 1e-6f;
+            if (sampled && actor.rail && actor.pathCount > 1 && actor.blend <= 0 && !actor.stationary && step >= 2) {
+                // The forecast box sits at the route centre; out of reach even with the
+                // largest possible pad, its orientation is not needed.
+                float padBound = 0;
+                Vector2 centre = RailCentreAt(n.observed, step, &padBound);
+                float reachBound = geometry.diagonal + n.radius + growScale * (cfg.clearance + sweptPad + padBound) + 1e-3f;
+                if (Len2(centre - scratch.pos) > reachBound * reachBound) { n.released = true; continue; }
             }
-            // Legacy blend mixes a separate pose, so it deliberately bypasses
-            // the path-only envelope and receives the full exact forecast.
-            if (distant) { n.released = true; continue; }
-            if (step < MAX_FORECAST_SAMPLES && fabsf(time - step * predictionStep) < 1e-6f) {
+            if (sampled) {
                 const ForecastSample& forecast = ForecastAt(n.observed, step);
                 observed = &forecast.box; otherPad = forecast.sweptPad;
             } else {
@@ -563,15 +689,14 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
         float distance2 = Len2(position - scratch.pos);
         if (distance2 > reach * reach) {
             n.released = true;
-            if (n.kind != GeometryKind::Vehicle) { n.margin = sqrtf(distance2) - reach; n.marginOtherPad = otherPad; }
+            if (canSleep && Sleep(idx, step, sqrtf(distance2) - reach, actorSpeed, actorPad, growScale)) kept--;
             continue;
         }
-        n.margin = -1;
         work.current.overlaps++;
         float depth = 0;
-        bool hit = Overlap(n, box, time, cfg.clearance, depth, observed);
         if (!n.released && n.initialDepth > 0) {
-            if (hit) {
+            // An existing contact: escaping is allowed, deepening it is not.
+            if (Overlap(n, box, time, cfg.clearance, depth, observed)) {
                 if (depth > n.previousDepth + 0.025f) {
                     failedVehicle = n.kind == GeometryKind::Vehicle ? n.observed : -1;
                     failedPerson = n.kind == GeometryKind::Person ? n.observed : -1;
@@ -598,6 +723,7 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
             return false;
         }
     }
+    awakeCount = kept;
     return true;
 }
 
@@ -611,13 +737,12 @@ Candidate Predict(Game& g, const Vehicle& v, const RecoveryState& state, Candida
     for (int k = 0; k < nearbyCount; k++) {
         nearby[k].previousDepth = nearby[k].initialDepth;
         nearby[k].released = nearby[k].initialDepth <= 0;
-        nearby[k].margin = -1;
     }
-    float previousSweptPad = 0;
     float startError = LaneError(v, state), startHeading = fabsf(WrapAngle(v.angle - AngleOf(state.forward)));
     float movingTime = stoppingTail ? std::max(0.1f, horizon - Tuning().stopTail) : horizon;
     float travelled = 0;
     int steps = (int)ceilf(horizon / predictionStep - 0.0001f);
+    StartBroadphase(v, steps);
     VehicleInput input;
     float nextControl = 0;
     for (int k = 0; k < steps; k++) {
@@ -641,11 +766,10 @@ Candidate Predict(Game& g, const Vehicle& v, const RecoveryState& state, Candida
         float moved = Dist(scratch.pos, previousPos);
         float sweptPad = moved + geometry.diagonal * fabsf(WrapAngle(scratch.angle - previousAngle));
         if (!std::isfinite(scratch.pos.x) || !std::isfinite(scratch.pos.y) || !std::isfinite(scratch.angle) ||
-            !FootprintClear(scratch, k + 1, time + h, h, sweptPad, moved, previousSweptPad)) {
+            !FootprintClear(scratch, k + 1, time + h, h, sweptPad, moved)) {
             candidate.blocker = failedVehicle;
             return candidate;
         }
-        previousSweptPad = sweptPad;
         travelled += moved;
         while (captureDt > 0 && captureCount < (int)capturePos.size() &&
                time + h >= (captureCount + 1) * captureDt - 1e-5f) {
@@ -948,6 +1072,7 @@ void RecordCheck(const Vehicle& v, RecoveryState& state, int frames) {
     state.checkPos = capturePos; state.checkAngle = captureAngle;
 }
 
+
 bool CheckCovered(const Vehicle& v, const RecoveryState& state) {
     if (state.checkFrames <= 0 || state.checkGear != state.gear || state.checkTracking != state.tracking ||
         fabsf(state.checkSteer - state.steer) > 1e-4f) return false;
@@ -959,7 +1084,8 @@ bool CheckCovered(const Vehicle& v, const RecoveryState& state) {
     bool same = true;
     ForEachRelevantActor(v, [&](int id, Vector2 pos, Vector2) {
         if (!same) return;
-        int k = 0;
+        // The relevant actors come in nearby order, as recorded: try the same slot first.
+        int k = count < state.checkActors && state.checkId[count] == id ? count : 0;
         while (k < state.checkActors && state.checkId[k] != id) k++;
         if (k == state.checkActors) { same = false; return; }       // a newcomer
         Vector2 expected = state.checkActorPos[k] + state.checkActorVel[k] * elapsed;
@@ -1016,7 +1142,7 @@ void RecoveryBeginFrame(Game& g) {
         }
     observedVehicles.resize(g.vehicles.size());
     if (recovering && vehicleForecasts.size() < g.vehicles.size()) vehicleForecasts.resize(g.vehicles.size());
-    for (ForecastRow& forecast : vehicleForecasts) { forecast.count = 0; forecast.constantReady = false; }
+    forecastEpoch++;
     for (int idx = 0; idx < (int)g.vehicles.size(); idx++) {
         const Vehicle& v = g.vehicles[idx];
         ObservedVehicle& o = observedVehicles[idx];
@@ -1091,13 +1217,18 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
         timing.frameMs += Milliseconds(start);
         return;
     }
-    GatherNearby(g, v, idx);
-    if (!nearbyComplete) {
-        state.gear = 0; state.reason = RecoveryReason::NoFeasibleManoeuvre;
-        state.planning = false; state.planWait = 0;
-        v.in = Controls(v, 0, 0);
-        timing.frameMs += Milliseconds(start);
-        return;
+    // A hold between planning jobs neither checks nor plans this frame: it needs no
+    // neighbourhood. Moving, planning or due to (re)plan, the car gathers it first.
+    bool idleHold = state.gear == 0 && !state.planning && state.nextPlan > 0;
+    if (!idleHold) {
+        GatherNearby(g, v, idx);
+        if (!nearbyComplete) {
+            state.gear = 0; state.reason = RecoveryReason::NoFeasibleManoeuvre;
+            state.planning = false; state.planWait = 0;
+            v.in = Controls(v, 0, 0);
+            timing.frameMs += Milliseconds(start);
+            return;
+        }
     }
     // A committed move is checked through stopping, not just until the next update.
     // An actor entering its sweep invalidates it immediately, even between plans.
@@ -1212,7 +1343,9 @@ bool RecoveryCanRejoin(Game& g, int idx, float dt) {
     return finish(cause);
 }
 
-void RecoveryResetStats() { timing = Timing{}; decisionTiming = Timing{}; work = WorkProfile{}; }
+void DecisionStageAdd(DecisionStage stage, double ms) { stageMs[(size_t)stage] += ms; }
+
+void RecoveryResetStats() { timing = Timing{}; decisionTiming = Timing{}; work = WorkProfile{}; stageMs.fill(0); }
 
 static RecoveryStats ReadTimingStats(Timing& record) {
     FinishTimingFrame(record);
@@ -1264,4 +1397,7 @@ void RecoveryLogStats() {
     RecoveryStats d = RecoveryGetDecisionStats();
     TraceLog(LOG_INFO, "DRIVER DECISION CPU (includes police and cleanup): avg %.4f ms p95 %.4f ms worst %.4f ms | frames %d percentile samples %d",
              d.averageMs, d.p95Ms, d.worstMs, d.frames, d.percentileSamples);
+    double df = std::max(1, d.frames);
+    TraceLog(LOG_INFO, "DRIVER DECISION STAGES per frame: cleanup %.4f grid %.4f snapshot %.4f rail %.4f knocked %.4f police %.4f ms",
+             stageMs[0] / df, stageMs[1] / df, stageMs[2] / df, stageMs[3] / df, stageMs[4] / df, stageMs[5] / df);
 }

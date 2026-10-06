@@ -742,8 +742,10 @@ void Game::UpdatePlaying(float dt) {
         if (v.S().large()) view *= 1.15f;
         target = target + vel * 0.45f;
     } else {
-        Vector2 m = GetMousePosition();
         float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+        // Test runs ignore the real cursor: the camera decides what is on screen, and so
+        // which traffic and people are recycled; a run must not depend on the mouse.
+        Vector2 m = debugContacts ? V2(sw * 0.5f, sh * 0.5f) : GetMousePosition();
         Vector2 off = { (m.x - sw * 0.5f) / sh * cam.viewH, (m.y - sh * 0.5f) / sh * cam.viewH };
         target = target + Vector2Clamp(off * 0.22f, V2(-90, -90), V2(90, 90));
     }
@@ -1048,6 +1050,8 @@ void Game::UpdatePlayerDriving(float dt) {
 // -------------------------------------------------------------------------------------
 void Game::UpdateVehicles(float dt) {
     double decisionStart = GetTime();
+    double stageStart = decisionStart;
+    auto stage = [&](DecisionStage s) { double now = GetTime(); DecisionStageAdd(s, (now - stageStart) * 1000.0); stageStart = now; };
     // Resolve fire first: blasts and exiting occupants must be visible in the common
     // snapshot, rather than appearing halfway through another driver's decisions.
     for (size_t i = 0; i < vehicles.size(); i++) {
@@ -1062,20 +1066,32 @@ void Game::UpdateVehicles(float dt) {
             if (!v.recoveryTracked && v.wreckTimer > 40 && !OnScreen(v.pos, 200) && !(player.inVehicle && player.vehicle == (int)i)) v.active = false;
         }
     }
+    stage(DecisionStage::Cleanup);
     pedGrid.Build(peds);
+    stage(DecisionStage::Grid);
     AIObserveTraffic(*this);
+    stage(DecisionStage::Snapshot);
     // ---- drivers decide (rail traffic computes where it will be at the end of the frame) ----
+    // The clock is read only where the kind of driver changes from one car to the next.
+    DecisionStage running = DecisionStage::Rail;
     for (size_t i = 0; i < vehicles.size(); i++) {
         Vehicle& v = vehicles[i];
         if (!v.active) continue;
         v.kinFrom = v.pos; v.kinFromAng = v.angle;
         if (!v.wrecked && !v.burning) {
-            if (v.driver == DriverType::Traffic) AIUpdateTraffic(*this, (int)i, dt);
-            else if (v.driver == DriverType::Police) AIUpdatePolice(*this, (int)i, dt);
+            if (v.driver == DriverType::Traffic) {
+                DecisionStage kind = v.ai.rail ? DecisionStage::Rail : DecisionStage::Knocked;
+                if (kind != running) { stage(running); running = kind; }
+                AIUpdateTraffic(*this, (int)i, dt);
+            } else if (v.driver == DriverType::Police) {
+                if (running != DecisionStage::Police) { stage(running); running = DecisionStage::Police; }
+                AIUpdatePolice(*this, (int)i, dt);
+            }
         }
         // placed somewhere else (spawn / recycle): no sweep through the city
         if (Len2(v.pos - v.kinFrom) > 40 * 40) { v.kinFrom = v.pos; v.kinFromAng = v.angle; }
     }
+    stage(running);
     // Includes vehicle preparation, the pedestrian grid and police decisions: an
     // upper bound on traffic cost, separate from physics, pedestrian AI and rendering.
     RecoveryRecordDecisionTime((GetTime() - decisionStart) * 1000.0);

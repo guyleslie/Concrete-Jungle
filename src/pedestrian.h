@@ -87,7 +87,7 @@ inline bool IsDodging(const Pedestrian& p) { return p.state == PedState::Dodge; 
 // scratch whenever the positions have changed enough to matter (twice a frame).
 struct PedGrid {
     static constexpr int W = cfg::MAP_W, H = cfg::MAP_H;
-    std::vector<int> head, next;
+    std::vector<int> head, next, used;     // used: cells holding someone since the last build
     void Build(const std::vector<Pedestrian>& peds);
     template <class F> void Query(Vector2 p, float r, F&& f) const {
         if (head.empty()) return;
@@ -95,6 +95,15 @@ struct PedGrid {
         int y0 = std::max(0, (int)((p.y - r) / cfg::TILE)), y1 = std::min(H - 1, (int)((p.y + r) / cfg::TILE));
         for (int y = y0; y <= y1; y++)
             for (int x = x0; x <= x1; x++)
+                for (int k = head[y * W + x]; k >= 0; k = next[k]) f(k);
+    }
+    // Everyone whose cell overlaps the rectangle [x0, x1] x [y0, y1].
+    template <class F> void QueryRect(float x0, float y0, float x1, float y1, F&& f) const {
+        if (head.empty()) return;
+        int cx0 = std::max(0, (int)(x0 / cfg::TILE)), cx1 = std::min(W - 1, (int)(x1 / cfg::TILE));
+        int cy0 = std::max(0, (int)(y0 / cfg::TILE)), cy1 = std::min(H - 1, (int)(y1 / cfg::TILE));
+        for (int y = cy0; y <= cy1; y++)
+            for (int x = cx0; x <= cx1; x++)
                 for (int k = head[y * W + x]; k >= 0; k = next[k]) f(k);
     }
 };

@@ -47,7 +47,17 @@ void VehicleForces(Vehicle& v, const CityMap& map, float h) {
         in.handbrake = parked || v.wrecked;
     }
 
-    Vector2 fwd = Forward(v.angle), right = RightOf(v.angle);
+    // The same values as Forward()/RightOf(), with one sine and cosine evaluation.
+    float sinA, cosA;
+    CachedSinCos(v.angle, sinA, cosA);
+    Vector2 fwd = { sinA, -cosA }, right = { cosA, sinA };
+    // Factors that depend only on the sub-step length are computed once per length.
+    static float stepH = -1, handbrakeCar = 1, handbrakeBike = 1, steerDamp = 0, followSlip = 0, followGrip = 0;
+    if (h != stepH) {
+        stepH = h;
+        handbrakeCar = expf(-0.9f * h); handbrakeBike = expf(-1.6f * h);
+        steerDamp = Damp(9.0f, h); followSlip = Damp(3.5f, h); followGrip = Damp(9.0f, h);
+    }
     float vF = Dot(v.vel, fwd), vR = Dot(v.vel, right);
     float surf = map.Grip(v.pos);
     bool offroad = surf < 0.8f;
@@ -71,7 +81,7 @@ void VehicleForces(Vehicle& v, const CityMap& map, float h) {
     }
     bool driven = v.driver == DriverType::Player || v.driver == DriverType::Traffic || v.driver == DriverType::Police;
     if (in.handbrake) {
-        vF *= expf(-(sp.twoWheeler() ? 1.6f : 0.9f) * h);
+        vF *= sp.twoWheeler() ? handbrakeBike : handbrakeCar;
         // locked wheels: a slow car really stops (a fast handbrake turn keeps its old feel)
         float lock = (parked || v.wrecked) ? LOCKED_DECEL : HANDBRAKE_DECEL * (1.0f - SmoothStep(60.0f, 200.0f, fabsf(vF)));
         vF -= Sign(vF) * std::min(fabsf(vF), lock * surf * h);
@@ -102,13 +112,13 @@ void VehicleForces(Vehicle& v, const CityMap& map, float h) {
     v.vel = fwd * vF + right * vR;
 
     // ---- steering: target yaw rate, reached with limited tyre torque ----
-    v.steer = Lerpf(v.steer, in.steer, Damp(9.0f, h));
+    v.steer = Lerpf(v.steer, in.steer, steerDamp);
     float speedFactor = Saturate(fabsf(vF) / 150.0f) * (1.0f - 0.42f * Saturate(fabsf(vF) / sp.maxSpeed));
     float dir = Clampf(vF / 30.0f, -1.0f, 1.0f);           // smooth through zero (no flip-flop)
     float yawTarget = v.steer * sp.steerRate * speedFactor * dir * (in.handbrake ? 1.35f : 1.0f);
-    float follow = v.slip > 180 ? 3.5f : 9.0f;
+    float follow = v.slip > 180 ? followSlip : followGrip;
     float auth = YAW_AUTHORITY * surf * h;
-    v.angVel += Clampf((yawTarget - v.angVel) * Damp(follow, h), -auth, auth);
+    v.angVel += Clampf((yawTarget - v.angVel) * follow, -auth, auth);
 }
 
 void VehicleFrameEffects(Vehicle& v, const CityMap& map, Particles& fx, float dt) {

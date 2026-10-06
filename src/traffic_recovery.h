@@ -65,8 +65,8 @@ struct RecoveryState {
     bool checkTracking = false;
     std::array<Vector2, 4> checkPos{};
     std::array<float, 4> checkAngle{};
-    std::array<int, 12> checkId{};
-    std::array<Vector2, 12> checkActorPos{}, checkActorVel{};
+    std::array<int, 32> checkId{};
+    std::array<Vector2, 32> checkActorPos{}, checkActorVel{};
     // The vehicle that rejected most rollouts of the last hold (-1: geometry/people).
     // It is the wait-for edge used to detect a mutual blockage with a rail car.
     int blockedBy = -1;
@@ -100,3 +100,6 @@ RecoveryStats RecoveryGetStats();
 void RecoveryLogStats();
 void RecoveryRecordDecisionTime(double ms);  // full driver stage, recorded once before physics
 RecoveryStats RecoveryGetDecisionStats();
+// Where the driver decision time goes: accumulated per stage, logged per frame.
+enum class DecisionStage : uint8_t { Cleanup, Grid, Snapshot, Rail, Knocked, Police, COUNT };
+void DecisionStageAdd(DecisionStage stage, double ms);

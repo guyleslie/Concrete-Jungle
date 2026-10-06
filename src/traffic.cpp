@@ -103,6 +103,35 @@ static Vector2 Sample(const DriverAI& ai, float s, float* heading = nullptr) {
     return P.back().p;
 }
 
+// Sample() for a run of non-decreasing distances: each call continues from the segment
+// the previous one ended in instead of scanning the path from its start. Cumulative
+// distances never decrease, so the segment found is the same and so is the result.
+// The heading of a segment is computed once per segment the cursor visits.
+struct PathCursor { size_t seg = 0; size_t headingSeg = (size_t)-1; float heading = 0; };
+static float SegmentHeading(const std::deque<Waypoint>& P, size_t i, PathCursor& cursor) {
+    if (cursor.headingSeg != i) { cursor.headingSeg = i; cursor.heading = AngleOf(P[i + 1].p - P[i].p); }
+    return cursor.heading;
+}
+static Vector2 SampleAt(const DriverAI& ai, float s, PathCursor& cursor, float* heading = nullptr) {
+    const auto& P = ai.path;
+    if (P.empty()) return { 0, 0 };
+    if (P.size() == 1 || s <= P.front().cum) {
+        if (heading && P.size() > 1) *heading = SegmentHeading(P, 0, cursor);
+        return P.front().p;
+    }
+    for (size_t i = cursor.seg; i + 1 < P.size(); i++) {
+        if (s <= P[i + 1].cum) {
+            cursor.seg = i;
+            float seg = std::max(1e-3f, P[i + 1].cum - P[i].cum);
+            if (heading) *heading = SegmentHeading(P, i, cursor);
+            return LerpV(P[i].p, P[i + 1].p, (s - P[i].cum) / seg);
+        }
+    }
+    cursor.seg = P.size() - 2;
+    if (heading) *heading = SegmentHeading(P, P.size() - 2, cursor);
+    return P.back().p;
+}
+
 Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle) {
     const DriverAI& ai = v.ai;
     float axle = v.length * 0.32f, s = ai.s + ahead;
@@ -248,20 +277,59 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
     int n = (int)(lookAhead / step) + 1;
     float front = ai.s + v.length * 0.5f;
     float halfW = v.width * 0.5f + 4.0f;
-    static std::vector<int> cands;
-    cands.clear();
-    for (int k = 0; k < (int)g.vehicles.size(); k++) {
-        if (k == self || !g.vehicles[k].active) continue;
-        if (Len2(g.vehicles[k].pos - v.pos) < (lookAhead + 220) * (lookAhead + 220)) cands.push_back(k);
+    float pedReach = halfW + PED_RADIUS;
+    // The sample points first, and the box around them: only vehicles and people that
+    // can reach that box are tested at every sample. The order of the tests, and so
+    // the obstacle found, is the same as testing everyone at every sample.
+    struct PathSample { Vector2 p; float hd; };
+    static std::vector<PathSample> samples;
+    samples.clear();
+    PathCursor cursor;
+    float lastHd = 0; Vector2 lastSide = Perp(Forward(0.0f));
+    Rectangle area{};
+    for (int i = 0; i < n; i++) {
+        float hd = 0;
+        Vector2 p = SampleAt(ai, front + i * step, cursor, &hd);
+        if (hd != lastHd) { lastHd = hd; lastSide = Perp(Forward(hd)); }
+        p = p + lastSide * lateralShift;
+        samples.push_back({ p, hd });
+        if (i == 0) area = { p.x, p.y, 0, 0 };
+        float x0 = std::min(area.x, p.x), y0 = std::min(area.y, p.y);
+        float x1 = std::max(area.x + area.width, p.x), y1 = std::max(area.y + area.height, p.y);
+        area = { x0, y0, x1 - x0, y1 - y0 };
     }
+    // A sample inside a box grown by halfW lies within the grown box's circumcircle.
+    static std::vector<int> cands;
+    static std::vector<OBB> boxes;
+    cands.clear(); boxes.clear();
+    for (int k = 0; k < (int)g.vehicles.size(); k++) {
+        const Vehicle& o = g.vehicles[k];
+        if (k == self || !o.active) continue;
+        if (Len2(o.pos - v.pos) >= (lookAhead + 220) * (lookAhead + 220)) continue;
+        float hw = o.width * 0.5f + halfW, hl = o.length * 0.5f + halfW;
+        float r = sqrtf(hw * hw + hl * hl) + 0.5f;
+        if (o.pos.x < area.x - r || o.pos.x > area.x + area.width + r ||
+            o.pos.y < area.y - r || o.pos.y > area.y + area.height + r) continue;
+        cands.push_back(k); boxes.push_back(o.Box());
+    }
+    static std::vector<int> people;
+    people.clear();
+    if (watchPeople)
+        g.pedGrid.QueryRect(area.x - pedReach, area.y - pedReach, area.x + area.width + pedReach,
+                            area.y + area.height + pedReach, [&](int k) {
+            const Pedestrian& pd = g.peds[k];
+            if (!pd.active || pd.state == PedState::Dead) return;
+            if (g.map.TileAt(pd.pos) != Tile::Road && lateralShift <= 0) return;   // on the sidewalk: ignore
+            people.push_back(k);
+        });
     for (int i = 0; i < n; i++) {
         float d = i * step;
-        float hd = 0;
-        Vector2 p = Sample(ai, front + d, &hd);
-        p = p + Perp(Forward(hd)) * lateralShift;
-        for (int k : cands) {
+        Vector2 p = samples[i].p;
+        float hd = samples[i].hd;
+        for (size_t c = 0; c < cands.size(); c++) {
+            int k = cands[c];
             const Vehicle& o = g.vehicles[k];
-            if (!PointInOBB(o.Box(), p, halfW)) continue;
+            if (!PointInOBB(boxes[c], p, halfW)) continue;
             if (d < best.gap) {
                 bool isPlayer = g.player.inVehicle && g.player.vehicle == k;
                 best = Obstacle{};
@@ -273,15 +341,10 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
         if (best.gap <= d) break;
         if (watchPeople) {
             bool seen = false;
-            g.pedGrid.Query(p, halfW + PED_RADIUS, [&](int k) {
-                const Pedestrian& pd = g.peds[k];
-                if (seen || !pd.active || pd.state == PedState::Dead) return;
-                if (Len2(pd.pos - p) > (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) return;
-                if (g.map.TileAt(pd.pos) != Tile::Road && lateralShift <= 0) return;   // on the sidewalk: ignore
-                seen = true;
-            });
+            for (int k : people)
+                if (Len2(g.peds[k].pos - p) <= pedReach * pedReach) { seen = true; break; }
             if (seen) { best = Obstacle{}; best.gap = d; best.isPed = true; }
-            if (!g.player.inVehicle && Len2(g.player.pos - p) < (halfW + PED_RADIUS) * (halfW + PED_RADIUS) &&
+            if (!g.player.inVehicle && Len2(g.player.pos - p) < pedReach * pedReach &&
                 (g.map.TileAt(g.player.pos) == Tile::Road || lateralShift > 0) && d < best.gap) {
                 best = Obstacle{}; best.gap = d; best.isPlayer = true; best.isPed = true;
             }
