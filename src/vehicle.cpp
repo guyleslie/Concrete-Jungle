@@ -13,8 +13,10 @@ float VehicleYawInertia(const Vehicle& v) {
 
 void InitVehicle(Vehicle& v, int skin, Vector2 pos, float angle) {
     const VehicleSprite& s = gAssets.vehicles[skin];
+    static uint32_t nextSerial = 0;
     v = Vehicle{};
     v.active = true;
+    v.serial = ++nextSerial;
     v.skin = skin;
     v.cls = s.cls;
     v.pos = pos;

@@ -34,5 +34,8 @@ inline bool AIOnRail(const Vehicle& v) { return v.driver == DriverType::Traffic 
 // Rail car: its pose after driving 'ahead' px further along its planned path (people use
 // it to predict where a turning car will go).
 Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle);
+// Fixtures: put v on rails at its current pose and lane direction, with 'tail' px of
+// already-driven path behind it (a yielding driver can retrace that much).
+void AIStartRail(Game& g, Vehicle& v, float tail);
 // Places v on a random lane between minDist..maxDist from 'near' (optionally off-screen).
 bool AIPlaceOnRoad(Game& g, Vehicle& v, Vector2 near, float minDist, float maxDist, bool offscreen);

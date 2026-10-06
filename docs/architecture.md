@@ -31,9 +31,9 @@ The `Game` class owns the world and the rules. Subsystems are plain modules with
 | Procedural art | `sprite_gen.*` | Signed-distance-field painter for sprites no asset pack covers |
 | City | `city_map.*` | City generation, 3D structures, street furniture, spatial queries, traffic signals, minimap |
 | Vehicles | `vehicle.*`, `vehicle_types.*` | Vehicle classes, engine / brake / tyre model, vehicle drawing |
-| Measurements | `vehicle_tests.*`, `traffic_tests.*`, `traffic_clearance_tests.*` | Isolated CJ-002 handling/collision, frozen CJ-016 recovery scenes and separate nearby-box rejoin API regression, enabled only by screenshot scenarios |
+| Measurements | `vehicle_tests.*`, `traffic_tests.*`, `traffic_clearance_tests.*`, `traffic_conflict_tests.*`, `traffic_incident_tests.*` | Isolated CJ-002 handling/collision, frozen CJ-016 recovery scenes, the nearby-box rejoin API regression, cooperative yielding and driver incident scenes, enabled only by screenshot scenarios |
 | Physics | `physics.*` | Vehicle collision detection and the contact solver |
-| Traffic | `traffic.*`, `traffic_recovery.*` | Rail traffic and police AI; shared observations and bounded physical recovery for knocked traffic |
+| Traffic | `traffic.*`, `traffic_recovery.*`, `traffic_incidents.*` | Rail traffic, cooperative yielding and police AI; shared observations and budgeted physical recovery for knocked traffic; driver moods and collision incidents |
 | Pedestrians | `pedestrian.*` | Pedestrian AI, steering, the pedestrian grid and drawing |
 | Rendering | `render.*`, `lighting.*`, `particles.*` | Camera, render passes, day/night cycle, particles, decals |
 | Audio | `audio.*` | Procedural sound synthesis, positional playback |
@@ -60,12 +60,13 @@ Dependencies point downwards: `game` uses every other module; `traffic`, `physic
 | 2 | Signals, metro train, fountain and hydrant water | `CityMap::Update` |
 | 3 | Player input (on foot or driving) | `UpdatePlayerOnFoot` / `UpdatePlayerDriving` |
 | 4 | Vehicles: AI, physics, crash consequences, effects | `UpdateVehicles` (see below) |
-| 5 | Pedestrians (the pedestrian grid is rebuilt first) | `UpdatePeds` |
-| 6 | Police spawning and arrests | `UpdatePolice` |
-| 7 | Recycling far-away traffic and pedestrians | `UpdateSpawning` |
-| 8 | Missions and pickups | `UpdateMission`, `UpdatePickups` |
-| 9 | Particles | `Particles::Update` |
-| 10 | Wanted-level cool-down, camera, audio | inline in `UpdatePlaying` |
+| 5 | Driver incidents: stopping, getting out and back in | `IncidentsUpdate` |
+| 6 | Pedestrians (the pedestrian grid is rebuilt first) | `UpdatePeds` |
+| 7 | Police spawning and arrests | `UpdatePolice` |
+| 8 | Recycling far-away traffic and pedestrians | `UpdateSpawning` |
+| 9 | Missions and pickups | `UpdateMission`, `UpdatePickups` |
+| 10 | Particles | `Particles::Update` |
+| 11 | Wanted-level cool-down, camera, audio | inline in `UpdatePlaying` |
 
 After `Wasted` or `Busted`, the world keeps running in slow motion (35 % speed) for four seconds before the player respawns.
 
@@ -73,9 +74,9 @@ After `Wasted` or `Busted`, the world keeps running in slow motion (35 % speed) 
 
 `Game::UpdateVehicles` is the heart of the simulation. It keeps decision making, physics and consequences strictly separate:
 
-1. **Prepare and decide.** Advance vehicle fire, explosions and wreck cleanup before any driver decisions. Then rebuild the pedestrian grid, record frame-start poses and capture one common traffic observation snapshot. This includes any actors or velocity changes produced by an explosion, so later drivers cannot use observations captured before that event. Traffic and police AI then run. Traffic that is on its lane (a *rail car*) computes where it will be at the end of the frame; recovering traffic, police cars and the player only set controls. Recovery first checks safe, progressing lane feedback; otherwise it evaluates at most 20 candidate trajectories using the production forces, swept footprints and a stopping tail. It retains safe committed controls or holds.
+1. **Prepare and decide.** Advance vehicle fire, explosions and wreck cleanup before any driver decisions. Then rebuild the pedestrian grid, record frame-start poses and capture one common traffic observation snapshot. This includes any actors or velocity changes produced by an explosion, so later drivers cannot use observations captured before that event. Traffic and police AI then run. Traffic that is on its lane (a *rail car*) computes where it will be at the end of the frame; recovering traffic, police cars and the player only set controls. Recovery first checks safe, progressing lane feedback; otherwise it evaluates at most 20 candidate trajectories using the production forces, swept footprints and a stopping tail, sliced across frames under a shared step budget. It retains safe committed controls or holds. Rail cars detect mutual waits and take a stable yielding role.
 2. **Simulate.** `VehiclePhysics::Step` applies engine, brake and tyre forces, detects and solves all contacts in sub-steps, and moves every vehicle. Rail cars move kinematically along their path. The step produces a list of `ImpactEvent`s but applies no game rules.
-3. **Consequences.** `Game::HandleImpacts` turns impact events into damage, driver injury, motorbike rider ejection, sparks, sounds, camera shake and driver reactions. `VehiclePedCollisions` handles vehicles hitting people and driving over people on the ground.
+3. **Consequences.** `Game::HandleImpacts` turns impact events into damage, driver injury, motorbike rider ejection, sparks, sounds, camera shake and driver reactions, including a possible incident between the two drivers (`IncidentOnImpact`). `VehiclePedCollisions` handles vehicles hitting people and driving over people on the ground.
 4. **Effects.** Skid marks, tyre smoke, dust, engine sound state and damage smoke are updated from the final velocities.
 
 See [Physics](design/physics.md), [Vehicles](design/vehicles.md) and [Traffic](design/traffic.md) for the details.
@@ -114,4 +115,5 @@ Oriented boxes (`OBB`) have axis 0 = right and axis 1 = forward, matching how sp
 - The city is generated from a fixed seed, so every run has the same map.
 - In test mode (`--shot`) the frame time is fixed at 1/60 s, which makes runs comparable between code versions.
 - Isolated `traffic-recovery` cases retain the 1/60 s render clock while advancing AI and physics at either 1/60 s or 1/20 s. Their fixed seed, geometry and ownership checks are described in [Testing](testing.md#cj-016-recovery-measurements).
-- Recovery decisions read frame-start actor observations rather than another driver's already-updated pose. The first CJ-016 increment stays on one thread; broader vehicle spatial indexing, cooperative reservations and persistent on-foot actor handles remain planned work.
+- Recovery decisions read frame-start actor observations rather than another driver's already-updated pose. Recovery stays on one thread; its work is bounded per frame by a deterministic step budget, not by wall-clock time, so runs remain reproducible.
+- Vehicles and pedestrians carry a `serial` that changes whenever a slot is reused. Cross-references between a car and its driver on foot, a yielder and its priority car, and a fighter and their opponent store the index together with the serial and are checked before use.

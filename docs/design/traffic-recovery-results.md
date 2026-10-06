@@ -187,4 +187,6 @@ Other physical vehicles are forecast from their current linear and angular veloc
 
 The isolated fixture disables world-edge contacts. Rollouts check world-edge endpoints at each force sample, but a dedicated city-edge recovery acceptance fixture is still missing.
 
+The second increment's [yielding and incident report](traffic-yielding-incident-results.md) continues this work: it bounds the recovery CPU peaks and records the remaining city CPU failures, cooperative yielding and driver incidents.
+
 `no_feasible_manoeuvre` means no safe candidate was found within the bounded local planner, not that every possible global escape is impossible. Only the fully enclosed fixture has known impassable geometry. The first city suite completed but failed CPU acceptance and demonstrated no rejoins. The corrected full series above establishes isolated clearance/recovery and observed city rejoins, while retaining CPU failures. Full-population CPU acceptance, general city recovery and the user playtest remain open; [CJ-016](../backlog.md#cj-016-road-rage-and-traffic-incidents) remains In progress.

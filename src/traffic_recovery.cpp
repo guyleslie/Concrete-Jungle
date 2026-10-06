@@ -11,44 +11,24 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace {
+const char* gTrafficConfigPath = "assets/data/traffic.cfg";
 
-constexpr float PREDICT_STEP = 1.0f / 240.0f;
-constexpr float OBB_GROW_RADIUS = 1.414214f;  // rounded above sqrt(2): both half-extents grow
-constexpr int MAX_PATH_POINTS = 96;
-constexpr int MAX_NEARBY = 1024;
-constexpr int MAX_TIMINGS = 16384;
-constexpr int MAX_FORECAST_SAMPLES = 962;     // 4 s at 240 Hz, including the initial pose
-
-struct Settings {
-    float forwardSpeed = 75, reverseSpeed = 60;
-    float horizon = 2.4f, stopTail = 0.5f, clearance = 1;
-    float planningInterval = 0.25f, commitment = 0.45f, hysteresis = 6;
-    float stallTime = 1, nearbyRadius = 900;
-};
-
-const Settings& Tuning() {
-    static Settings settings;
-    static bool loaded = false;
-    if (loaded) return settings;
-    loaded = true;
-    struct Field { const char* name; float* value; float low, high; };
-    Field fields[] = {
-        { "forward_speed", &settings.forwardSpeed, 20, 100 },
-        { "reverse_speed", &settings.reverseSpeed, 15, 80 },
-        { "horizon", &settings.horizon, 1, 4 },
-        { "stop_tail", &settings.stopTail, 0.25f, 1 },
-        { "clearance", &settings.clearance, 0.25f, 1.6f },
-        { "planning_interval", &settings.planningInterval, 0.1f, 1 },
-        { "commitment", &settings.commitment, 0.15f, 1 },
-        { "hysteresis", &settings.hysteresis, 0, 30 },
-        { "stall_time", &settings.stallTime, 0.5f, 3 },
-        { "nearby_radius", &settings.nearbyRadius, 300, 1500 }
-    };
-    for (const DataRecord& r : ReadDataFile("assets/data/traffic.cfg")) {
+void LoadTrafficRecords(const char* type, TrafficField* fields, int count) {
+    static const char* const known[] = { "RECOVERY", "YIELD", "INCIDENT" };
+    for (const DataRecord& r : ReadDataFile(gTrafficConfigPath)) {
+        bool knownType = false;
+        for (const char* k : known) knownType = knownType || r.Is(k);
+        // Each record type is validated by its own loader; the RECOVERY loader also
+        // reports record types that no loader understands.
+        if (!knownType) {
+            if (TextIsEqual(type, "RECOVERY")) TraceLog(LOG_WARNING, "TRAFFIC DATA line %d: unknown record type", r.line);
+            continue;
+        }
+        if (!r.Is(type)) continue;
         bool found = false;
-        if (r.Is("RECOVERY") && r.size() == 3) {
-            for (Field& f : fields) {
+        if (r.size() == 3) {
+            for (int k = 0; k < count; k++) {
+                TrafficField& f = fields[k];
                 if (r[1] != f.name) continue;
                 found = true;
                 char* end = nullptr;
@@ -60,8 +40,48 @@ const Settings& Tuning() {
                 break;
             }
         }
-        if (!found) TraceLog(LOG_WARNING, "TRAFFIC DATA line %d: unknown or malformed recovery record", r.line);
+        if (!found) TraceLog(LOG_WARNING, "TRAFFIC DATA line %d: unknown or malformed %s record", r.line, type);
     }
+}
+
+namespace {
+
+constexpr float PREDICT_STEP = 1.0f / 240.0f;
+constexpr float OBB_GROW_RADIUS = 1.414214f;  // rounded above sqrt(2): both half-extents grow
+constexpr int MAX_PATH_POINTS = 96;
+constexpr int MAX_NEARBY = 1024;
+constexpr int MAX_TIMINGS = 16384;
+constexpr int MAX_FORECAST_SAMPLES = 962;     // 4 s at 240 Hz, including the initial pose
+constexpr float HOLD_RECHECK = 2.0f;          // s: a hold is searched again at least this often
+constexpr float COVER_TIME = 4.0f / 60.0f;     // s of extra moving time a full immediate check validates
+
+struct Settings {
+    float forwardSpeed = 75, reverseSpeed = 60;
+    float horizon = 2.4f, stopTail = 0.5f, clearance = 1;
+    float planningInterval = 0.25f, commitment = 0.45f, hysteresis = 6;
+    float stallTime = 1, nearbyRadius = 900;
+    float planningSteps = 1200;              // shared rollout force steps per 1/60 s frame
+};
+
+const Settings& Tuning() {
+    static Settings settings;
+    static bool loaded = false;
+    if (loaded) return settings;
+    loaded = true;
+    TrafficField fields[] = {
+        { "forward_speed", &settings.forwardSpeed, 20, 100 },
+        { "reverse_speed", &settings.reverseSpeed, 15, 80 },
+        { "horizon", &settings.horizon, 1, 4 },
+        { "stop_tail", &settings.stopTail, 0.25f, 1 },
+        { "clearance", &settings.clearance, 0.25f, 1.6f },
+        { "planning_interval", &settings.planningInterval, 0.1f, 1 },
+        { "commitment", &settings.commitment, 0.15f, 1 },
+        { "hysteresis", &settings.hysteresis, 0, 30 },
+        { "stall_time", &settings.stallTime, 0.5f, 3 },
+        { "nearby_radius", &settings.nearbyRadius, 300, 1500 },
+        { "planning_steps", &settings.planningSteps, 300, 20000 }
+    };
+    LoadTrafficRecords("RECOVERY", fields, (int)(sizeof(fields) / sizeof(fields[0])));
     settings.stopTail = std::min(settings.stopTail, settings.horizon * 0.5f);
     return settings;
 }
@@ -72,8 +92,14 @@ struct ObservedVehicle {
     Vector2 pos{}, vel{};
     float angle = 0, angVel = 0, width = 0, length = 0;
     float pathDistance = 0, speed = 0, shift = 0, radius = 0, routeGap = 0;
+    float minDistance = -1e9f;               // a yielding retreat stops here
+    float maxDistance = 1e9f;                // the planned stop: red light, queue, person
     float blend = 0, blendAngle = 0;
     Vector2 blendPos{};
+    // A stopped rail car or a (nearly) motionless body keeps one pose after the
+    // first forecast sample; 'drift' bounds any residual motion over 4 s.
+    bool stationary = false;
+    float drift = 0;
     int pathCount = 0;
     std::array<PathPoint, MAX_PATH_POINTS> path{};
 };
@@ -85,6 +111,8 @@ Game* observedGame = nullptr;
 struct ForecastSample { OBB box{}; float sweptPad = 0; };
 struct ForecastRow {
     int count = 0;
+    bool constantReady = false;
+    ForecastSample constant{};               // stationary actors: every sample after the first
     std::array<ForecastSample, MAX_FORECAST_SAMPLES> samples{};
 };
 std::vector<ForecastRow> vehicleForecasts;
@@ -97,7 +125,7 @@ void SetControlInterval(float dt) {
     // a bounded 240 Hz forecast cadence, never unbounded work as frame dt shrinks.
     float h = std::max(PREDICT_STEP, dt / substeps);
     if (fabsf(h - predictionStep) > 1e-7f)
-        for (ForecastRow& row : vehicleForecasts) row.count = 0;
+        for (ForecastRow& row : vehicleForecasts) { row.count = 0; row.constantReady = false; }
     predictionStep = h;
     predictionControlInterval = std::max(PREDICT_STEP, dt);
 }
@@ -108,15 +136,54 @@ struct Timing {
     double frameMs = 0, totalMs = 0, worstMs = 0;
     int frames = 0, samples = 0, cursor = 0;
     int plans = 0, rejected = 0, holds = 0;
+    int deferredFrames = 0, unchangedHolds = 0, maxWaitFrames = 0, coveredChecks = 0;
     std::array<double, MAX_TIMINGS> values{};
 } timing;
 Timing decisionTiming;
+
+// Deterministic work counters beside wall-clock timing: they identify which stage
+// produces a CPU spike without depending on the machine's timer resolution.
+struct WorkFrame {
+    double ms = 0, gatherMs = 0, immediateMs = 0, planMs = 0, rejoinMs = 0;
+    int recovering = 0, gathers = 0, immediate = 0, tracking = 0, candidates = 0, rejoins = 0;
+    long long steps = 0, actorTests = 0, overlaps = 0, forecasts = 0;
+    int nearbyMax = 0;
+};
+constexpr int WORST_WORK = 6;
+struct WorkProfile {
+    WorkFrame current, total;
+    std::array<WorkFrame, WORST_WORK> worst{};
+    int frames = 0;
+} work;
+// Shared planning budget of the current frame.
+struct PlanBudget {
+    long long steps = 0;                     // planning rollout force steps used
+    int oldestWait = 0;                      // longest wait among pending jobs at frame start
+} budget;
+
+void AddWork(WorkFrame& to, const WorkFrame& w) {
+    to.ms += w.ms; to.gatherMs += w.gatherMs; to.immediateMs += w.immediateMs;
+    to.planMs += w.planMs; to.rejoinMs += w.rejoinMs;
+    to.recovering += w.recovering; to.gathers += w.gathers; to.immediate += w.immediate;
+    to.tracking += w.tracking; to.candidates += w.candidates; to.rejoins += w.rejoins;
+    to.steps += w.steps; to.actorTests += w.actorTests; to.overlaps += w.overlaps; to.forecasts += w.forecasts;
+    to.nearbyMax = std::max(to.nearbyMax, w.nearbyMax);
+}
 
 double Milliseconds(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
 void FinishTimingFrame(Timing& record = timing) {
     if (!record.pending) return;
+    if (&record == &timing) {
+        work.current.ms = record.frameMs;
+        AddWork(work.total, work.current);
+        work.frames++;
+        int slot = 0;
+        for (int k = 1; k < WORST_WORK; k++) if (work.worst[k].ms < work.worst[slot].ms) slot = k;
+        if (work.current.ms > work.worst[slot].ms) work.worst[slot] = work.current;
+        work.current = WorkFrame{};
+    }
     record.totalMs += record.frameMs;
     record.worstMs = std::max(record.worstMs, record.frameMs);
     record.values[record.cursor] = record.frameMs;
@@ -130,11 +197,14 @@ Vector2 SampleObservedPath(const ObservedVehicle& o, float distance) {
     if (o.pathCount == 0) return o.pos;
     if (o.pathCount == 1) return o.path[0].pos;
     if (distance <= o.path[0].distance) return o.path[0].pos;
-    for (int k = 0; k + 1 < o.pathCount; k++) {
-        const PathPoint& a = o.path[k];
-        const PathPoint& b = o.path[k + 1];
-        if (distance <= b.distance)
-            return LerpV(a.pos, b.pos, Saturate((distance - a.distance) / std::max(0.001f, b.distance - a.distance)));
+    // Cumulative distances are non-decreasing: find the first point at or beyond
+    // the distance, which is the segment end the linear scan would have chosen.
+    const PathPoint* end = std::lower_bound(o.path.begin() + 1, o.path.begin() + o.pathCount, distance,
+        [](const PathPoint& p, float d) { return p.distance < d; });
+    if (end != o.path.begin() + o.pathCount) {
+        const PathPoint& a = *(end - 1);
+        const PathPoint& b = *end;
+        return LerpV(a.pos, b.pos, Saturate((distance - a.distance) / std::max(0.001f, b.distance - a.distance)));
     }
     // A snapshot cannot plan another junction. Extend only its final known tangent.
     const PathPoint& last = o.path[o.pathCount - 1];
@@ -143,7 +213,7 @@ Vector2 SampleObservedPath(const ObservedVehicle& o, float distance) {
 
 Vector2 ObservedRailCentre(const ObservedVehicle& o, float time, Vector2* heading = nullptr) {
     float axle = o.length * 0.32f;
-    float distance = o.pathDistance + o.speed * time;
+    float distance = Clampf(o.pathDistance + o.speed * time, o.minDistance, o.maxDistance);
     Vector2 front = SampleObservedPath(o, distance + axle);
     Vector2 rear = SampleObservedPath(o, distance - axle);
     Vector2 direction = Norm(front - rear);
@@ -179,8 +249,21 @@ float PoseMotionBound(const OBB& previous, const OBB& current, float radius) {
 
 const ForecastSample& ForecastAt(int actor, int step) {
     ForecastRow& row = vehicleForecasts[actor];
+    const ObservedVehicle& o = observedVehicles[actor];
+    if (o.stationary && step >= 2) {
+        if (row.count < 2) ForecastAt(actor, 1);
+        // Residual motion goes into the sweep pad, which bounds every later pose for the
+        // inflated clearance test; an existing contact keeps its exact depth reference.
+        if (!row.constantReady) {
+            row.constant.box = row.samples[1].box;
+            row.constant.sweptPad = o.drift;
+            row.constantReady = true;
+        }
+        return row.constant;
+    }
     while (row.count <= step) {
         ForecastSample& sample = row.samples[row.count];
+        work.current.forecasts++;
         sample.box = PredictObserved(observedVehicles[actor], row.count * predictionStep, 0);
         sample.sweptPad = row.count == 0 ? 0
             : PoseMotionBound(row.samples[row.count - 1].box, sample.box, observedVehicles[actor].radius);
@@ -200,6 +283,11 @@ struct Nearby {
     float centreSpeed = 0;                 // fixed observation, reused at every force sample
     Vector2 forecastOrigin{};
     bool released = true;
+    // Lower bound on (centre distance - cull reach) from an earlier step of the same
+    // rollout. While positive, the exact cull would also reject this static actor or
+    // person, so the per-step test is skipped with an identical result.
+    float margin = -1, marginOtherPad = 0;
+    bool follower = false;                 // behind, moving our way: responsible for the gap
 };
 std::array<Nearby, MAX_NEARBY> nearby;
 int nearbyCount = 0;
@@ -246,7 +334,15 @@ void AddNearby(Nearby value) {
     nearby[nearbyCount++] = value;
 }
 
+void GatherNearbyImpl(Game& g, const Vehicle& v, int self, float horizon);
 void GatherNearby(Game& g, const Vehicle& v, int self, float horizon = -1) {
+    auto start = Clock::now();
+    GatherNearbyImpl(g, v, self, horizon);
+    work.current.gatherMs += Milliseconds(start);
+    work.current.gathers++;
+    work.current.nearbyMax = std::max(work.current.nearbyMax, nearbyCount);
+}
+void GatherNearbyImpl(Game& g, const Vehicle& v, int self, float horizon) {
     nearbyCount = 0; nearbyComplete = true;
     const Settings& cfg = Tuning();
     if (horizon < 0) horizon = cfg.horizon;
@@ -294,9 +390,16 @@ void GatherNearby(Game& g, const Vehicle& v, int self, float horizon = -1) {
             if (o.blend > 0) incomingReach = std::max(incomingReach, Dist(o.blendPos, o.pos));
         }
         float reach = std::max(cfg.nearbyRadius, ownReach + radius + incomingReach);
-        if (Len2(o.pos - v.pos) > reach * reach) continue;
+        float distance2 = Len2(o.pos - v.pos);
+        if (distance2 > reach * reach) continue;
         Nearby n; n.kind = GeometryKind::Vehicle; n.observed = idx;
         n.centre = o.pos; n.velocity = o.vel; n.radius = radius;
+        // A vehicle behind us in our lane, moving our way, keeps its own distance (the
+        // rear-end rule): forward moves do not treat it as an obstacle. Forecasting it
+        // at constant speed into our stopping tail vetoed every move off a queue.
+        Vector2 rel = o.pos - v.pos, fwd = v.Fwd();
+        n.follower = Dot(rel, fwd) < -(v.length * 0.5f) && Dot(o.vel, fwd) > 5 &&
+                     fabsf(Dot(rel, Perp(fwd))) < (v.width + o.width) * 0.5f + 10;
         AddNearby(n);
     }
     for (int idx = 0; idx < (int)observedPeople.size(); idx++) {
@@ -304,7 +407,7 @@ void GatherNearby(Game& g, const Vehicle& v, int self, float horizon = -1) {
         if (!p.active) continue;
         float reach = ownReach + PED_RADIUS + Len(p.vel) * horizon;
         if (Len2(p.pos - v.pos) > reach * reach) continue;
-        Nearby n; n.kind = GeometryKind::Person; n.centre = p.pos;
+        Nearby n; n.kind = GeometryKind::Person; n.centre = p.pos; n.observed = idx;
         n.velocity = p.vel; n.radius = PED_RADIUS;
         AddNearby(n);
     }
@@ -362,14 +465,7 @@ VehicleInput Controls(const Vehicle& v, int gear, float steer, const RecoverySta
     return in;
 }
 
-struct Candidate {
-    int gear = 0;
-    float steer = 0, secondSteer = 0, switchTime = 0;
-    bool safe = false;
-    bool tracking = false;
-    bool terminalAligned = false;
-    float score = -1e9f, distance = 0, headingGain = 0, lateralGain = 0, laneImprovement = 0;
-};
+using Candidate = RecoveryCandidate;
 
 float LaneError(const Vehicle& v, const RecoveryState& state) {
     float lateral = fabsf(Dot(v.pos - state.origin, Perp(state.forward)));
@@ -390,10 +486,21 @@ bool InsideWorld(const OBB& box) {
            box.c.x + radiusX <= geometry.maxX + 0.025f && box.c.y + radiusY <= geometry.maxY + 0.025f;
 }
 
-bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float sweptPad) {
+int failedVehicle = -1;                      // observed vehicle that rejected the last rollout
+int failedPerson = -1;                       // observed person that rejected it
+int rolloutGear = 0;                         // gear of the rollout being checked
+// Optional capture of the ego pose at the next frame boundaries of a rollout.
+float captureDt = 0;
+int captureCount = 0;
+std::array<Vector2, 4> capturePos{};
+std::array<float, 4> captureAngle{};
+
+bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float sweptPad,
+                    float moved, float previousSweptPad) {
     const Settings& cfg = Tuning();
     OBB box = scratch.Box();
     if (!InsideWorld(box)) return false;
+    work.current.steps++; work.current.actorTests += nearbyCount;
     for (int idx = 0; idx < nearbyCount; idx++) {
         Nearby& n = nearby[idx];
         const OBB* observed = nullptr;
@@ -402,6 +509,15 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
         float otherPad = n.centreSpeed * h;
         float growScale = n.kind == GeometryKind::Person || n.kind == GeometryKind::ObjectCircle
             ? 1.0f : OBB_GROW_RADIUS;
+        if (n.follower && rolloutGear > 0) { n.released = true; continue; }
+        if (n.kind != GeometryKind::Vehicle && n.margin > 0) {
+            // Both centres move at most 'moved' and centreSpeed*h; the reach changes
+            // only through the two pads. A small constant absorbs float rounding.
+            n.margin -= moved + n.centreSpeed * h + growScale * (sweptPad - previousSweptPad)
+                      + growScale * (otherPad - n.marginOtherPad) + 0.01f;
+            n.marginOtherPad = otherPad;
+            if (n.margin > 0) { n.released = true; continue; }
+        }
         if (n.kind == GeometryKind::Vehicle) {
             const ObservedVehicle& actor = observedVehicles[n.observed];
             float baseReach = geometry.diagonal + n.radius + growScale * (cfg.clearance + sweptPad);
@@ -444,20 +560,43 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
         // OBB inflation increases both half-extents, so its enclosing circle
         // grows by up to sqrt(2)*grow. Circle inflation grows its radius once.
         float reach = geometry.diagonal + n.radius + growScale * (cfg.clearance + sweptPad + otherPad);
-        if (Len2(position - scratch.pos) > reach * reach) { n.released = true; continue; }
+        float distance2 = Len2(position - scratch.pos);
+        if (distance2 > reach * reach) {
+            n.released = true;
+            if (n.kind != GeometryKind::Vehicle) { n.margin = sqrtf(distance2) - reach; n.marginOtherPad = otherPad; }
+            continue;
+        }
+        n.margin = -1;
+        work.current.overlaps++;
         float depth = 0;
         bool hit = Overlap(n, box, time, cfg.clearance, depth, observed);
         if (!n.released && n.initialDepth > 0) {
-            if (!hit) n.released = true;
-            else {
-                if (depth > n.previousDepth + 0.025f) return false;
+            if (hit) {
+                if (depth > n.previousDepth + 0.025f) {
+                    failedVehicle = n.kind == GeometryKind::Vehicle ? n.observed : -1;
+                    failedPerson = n.kind == GeometryKind::Person ? n.observed : -1;
+                    return false;
+                }
                 n.previousDepth = std::min(n.previousDepth, depth);
                 continue;
             }
+            // Leaving an existing contact: the pose is already outside the clearance
+            // margin, but the sweep pad of this step can still reach back to it. Keep
+            // the no-deepening rule (no renewed contact at all) until the swept test
+            // clears too; otherwise every slow escape failed on its first clear step.
+            n.previousDepth = 0;
+            float sweptDepth = 0;
+            if (Overlap(n, box, time, cfg.clearance + sweptPad + otherPad, sweptDepth, observed)) continue;
+            n.released = true;
+            continue;
         }
         // Inflating the endpoint by its translation + corner rotation encloses the
         // intervening footprint; moving actors get the same conservative treatment.
-        if (Overlap(n, box, time, cfg.clearance + sweptPad + otherPad, depth, observed)) return false;
+        if (Overlap(n, box, time, cfg.clearance + sweptPad + otherPad, depth, observed)) {
+            failedVehicle = n.kind == GeometryKind::Vehicle ? n.observed : -1;
+            failedPerson = n.kind == GeometryKind::Person ? n.observed : -1;
+            return false;
+        }
     }
     return true;
 }
@@ -465,12 +604,16 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
 Candidate Predict(Game& g, const Vehicle& v, const RecoveryState& state, Candidate candidate, float horizon, bool stoppingTail,
                   RejoinCause* cause = nullptr) {
     if (cause) *cause = RejoinCause::UnsafeSweep;
+    failedVehicle = -1; failedPerson = -1;
+    rolloutGear = candidate.gear;
     static Vehicle scratch;
     CopyPhysics(v, scratch);
     for (int k = 0; k < nearbyCount; k++) {
         nearby[k].previousDepth = nearby[k].initialDepth;
         nearby[k].released = nearby[k].initialDepth <= 0;
+        nearby[k].margin = -1;
     }
+    float previousSweptPad = 0;
     float startError = LaneError(v, state), startHeading = fabsf(WrapAngle(v.angle - AngleOf(state.forward)));
     float movingTime = stoppingTail ? std::max(0.1f, horizon - Tuning().stopTail) : horizon;
     float travelled = 0;
@@ -498,8 +641,17 @@ Candidate Predict(Game& g, const Vehicle& v, const RecoveryState& state, Candida
         float moved = Dist(scratch.pos, previousPos);
         float sweptPad = moved + geometry.diagonal * fabsf(WrapAngle(scratch.angle - previousAngle));
         if (!std::isfinite(scratch.pos.x) || !std::isfinite(scratch.pos.y) || !std::isfinite(scratch.angle) ||
-            !FootprintClear(scratch, k + 1, time + h, h, sweptPad)) return candidate;
+            !FootprintClear(scratch, k + 1, time + h, h, sweptPad, moved, previousSweptPad)) {
+            candidate.blocker = failedVehicle;
+            return candidate;
+        }
+        previousSweptPad = sweptPad;
         travelled += moved;
+        while (captureDt > 0 && captureCount < (int)capturePos.size() &&
+               time + h >= (captureCount + 1) * captureDt - 1e-5f) {
+            capturePos[captureCount] = scratch.pos; captureAngle[captureCount] = scratch.angle;
+            captureCount++;
+        }
     }
     // An unfinished stop must not certify room to stop beyond the checked corridor.
     if (stoppingTail && scratch.Speed() > 2) {
@@ -537,6 +689,16 @@ void CommitCandidate(RecoveryState& state, const Candidate& candidate) {
     state.reason = state.gear > 0 ? RecoveryReason::Forward : RecoveryReason::Reverse;
 }
 
+// A stopped vehicle ahead in our lane corridor (a queue we may join, not an obstacle).
+bool QueuedAhead(const Vehicle& v, Vector2 forward, int observed) {
+    if (observed < 0 || observed >= (int)observedVehicles.size()) return false;
+    const ObservedVehicle& o = observedVehicles[observed];
+    float speed = std::max(Len(o.vel), o.rail ? fabsf(o.speed) : 0.0f);
+    Vector2 rel = o.pos - v.pos;
+    return o.active && speed < 8 && Dot(rel, forward) > 0 &&
+           fabsf(Dot(rel, Perp(forward))) < (v.width + o.width) * 0.5f + 6;
+}
+
 bool MakesLaneProgress(const Candidate& candidate) {
     // A long vehicle must temporarily turn across the lane; its initial heading cost
     // must not veto genuine lateral progress. Driving straight back into a dead end
@@ -547,77 +709,264 @@ bool MakesLaneProgress(const Candidate& candidate) {
            candidate.lateralGain > 2 || candidate.headingGain > 0.03f;
 }
 
-void SelectPlan(Game& g, Vehicle& v, RecoveryState& state) {
+// Fixed arc order of a planning job; indices match the original candidate array.
+Candidate ArcCandidate(int arc) {
     const Settings& cfg = Tuning();
-    state.plans++; timing.plans++;
-    Candidate tracking; tracking.gear = 1; tracking.tracking = true;
-    tracking = Predict(g, v, state, tracking, cfg.horizon, true);
-    // Normal lane convergence does not need an escape search. It receives the same
-    // complete swept check; unsuccessful or stalled tracking still evaluates all arcs.
-    if (tracking.safe && tracking.distance > 2 && MakesLaneProgress(tracking) && state.stalled <= cfg.stallTime) {
-        CommitCandidate(state, tracking);
-        return;
-    }
-    std::array<Candidate, 20> candidates{};
-    int count = 0;
-    // Preserve index zero for the original hold-first score tie breaker.
-    // Its full rollout is unnecessary when the winning moving candidate
-    // already implies hold (none safe, filtered out, or distance <= 2).
-    candidates[count++] = Candidate{};
-    candidates[count++] = tracking;
-    for (int gear : { 1, -1 }) {
-        for (float steer : { 0.0f, -0.5f, 0.5f, -1.0f, 1.0f }) {
-            Candidate c; c.gear = gear; c.steer = steer;
-            candidates[count++] = Predict(g, v, state, c, cfg.horizon, true);
-        }
+    static const float constant[5] = { 0.0f, -0.5f, 0.5f, -1.0f, 1.0f };
+    static const float unwinding[4] = { -0.5f, 0.5f, -1.0f, 1.0f };
+    Candidate c; c.gear = arc < 9 ? 1 : -1;
+    int k = arc % 9;
+    if (k < 5) c.steer = constant[k];
+    else {
         // Unwinding after an initial arc can clear a corner that a constant-steer
         // rollout would hit. Execution only commits the first, validated segment.
-        for (float steer : { -0.5f, 0.5f, -1.0f, 1.0f }) {
-            Candidate c; c.gear = gear; c.steer = steer;
-            c.switchTime = std::max(cfg.commitment, (cfg.horizon - cfg.stopTail) * 0.5f);
-            c.secondSteer = 0;
-            candidates[count++] = Predict(g, v, state, c, cfg.horizon, true);
-        }
+        c.steer = unwinding[k - 5];
+        c.switchTime = std::max(cfg.commitment, (cfg.horizon - cfg.stopTail) * 0.5f);
+        c.secondSteer = 0;
     }
-    bool forwardAvailable = false;
-    for (int k = 1; k < count; k++) {
-        if (!candidates[k].safe) { state.rejected++; timing.rejected++; }
-        if (candidates[k].safe && candidates[k].gear == 1 && candidates[k].distance > 5 && MakesLaneProgress(candidates[k]))
-            forwardAvailable = true;
+    return c;
+}
+
+void VoteBlocker(RecoveryState& state, const Candidate& c) {
+    if (c.safe || (failedVehicle < 0 && failedPerson < 0)) return;
+    int id = failedVehicle >= 0 ? failedVehicle + 1 : RECOVERY_PERSON_ID + failedPerson + 1, slot = -1;
+    for (int k = 0; k < (int)state.blockIds.size(); k++) {
+        if (state.blockIds[k] == id) { slot = k; break; }
+        if (state.blockIds[k] == 0 && slot < 0) slot = k;
     }
+    if (slot < 0) return;
+    state.blockIds[slot] = id; state.blockVotes[slot]++;
+}
+
+uint64_t HoldSignature(const Vehicle& v, const RecoveryState& state);
+
+void FinishHold(const Vehicle& v, RecoveryState& state) {
     int best = -1;
-    for (int k = 1; k < count; k++) {
-        Candidate& c = candidates[k];
-        if (!c.safe) continue;
-        if (state.gear < 0 && c.gear > 0 && !MakesLaneProgress(c)) continue;
-        if (c.gear == -1 && !forwardAvailable) c.score += std::min(c.distance, v.length * 2) * 0.3f;
-        if (c.gear == 0) c.score -= 3;
-        if (state.stalled > cfg.stallTime && c.gear == state.gear && fabsf(c.steer - state.steer) < 0.2f) c.score -= 20;
-        if (best < 0 || c.score > candidates[best].score) best = k;
+    for (int k = 0; k < (int)state.blockIds.size(); k++)
+        if (state.blockIds[k] && state.blockIds[k] <= RECOVERY_PERSON_ID && state.blockVotes[k] >= 3 &&
+            (best < 0 || state.blockVotes[k] > state.blockVotes[best])) best = k;
+    state.blockedBy = best >= 0 ? state.blockIds[best] - 1 : -1;
+    state.gear = 0; state.steer = 0;
+    state.tracking = false;
+    state.reason = RecoveryReason::NoFeasibleManoeuvre;
+    state.holds++; timing.holds++;
+    state.holdSignature = HoldSignature(v, state);
+    state.holdAge = 0;
+    state.planning = false;
+}
+
+void FinishMove(RecoveryState& state, const Candidate& candidate) {
+    CommitCandidate(state, candidate);
+    state.blockedBy = -1;
+    state.holdSignature = 0;
+    state.planning = false;
+}
+
+// One unit of a planning job: a single rollout, or the cheap selection step.
+// Candidate order, scores and the hold-first tie are those of the one-frame planner.
+void PlanUnit(Game& g, Vehicle& v, RecoveryState& state) {
+    const Settings& cfg = Tuning();
+    auto& candidates = state.candidates;
+    const int arcs = RECOVERY_CANDIDATES - 2;
+    if (state.planNext == 0) {
+        Candidate tracking; tracking.gear = 1; tracking.tracking = true;
+        work.current.tracking++;
+        tracking = Predict(g, v, state, tracking, cfg.horizon, true);
+        VoteBlocker(state, tracking);
+        state.planNext = 1;
+        // Normal lane convergence does not need an escape search. It receives the same
+        // complete swept check; unsuccessful or stalled tracking still evaluates all arcs.
+        if (tracking.safe && tracking.distance > 2 && MakesLaneProgress(tracking) && state.stalled <= cfg.stallTime) {
+            FinishMove(state, tracking);
+            return;
+        }
+        candidates[0] = Candidate{};
+        candidates[1] = tracking;
+        return;
+    }
+    if (state.planNext <= arcs) {
+        work.current.candidates++;
+        candidates[state.planNext + 1] = Predict(g, v, state, ArcCandidate(state.planNext - 1), cfg.horizon, true);
+        VoteBlocker(state, candidates[state.planNext + 1]);
+        state.planNext++;
+        return;
+    }
+    if (state.planNext == arcs + 1) {
+        // Aligned in the lane and every forward move blocked by a stopped vehicle ahead
+        // that we do not touch: wait in the queue instead of reversing away from it.
+        bool aligned = fabsf(Dot(v.pos - state.origin, Perp(state.forward))) <= 4 &&
+                       fabsf(WrapAngle(v.angle - AngleOf(state.forward))) <= 0.12f && v.Speed() < 5;
+        bool queued = aligned;
+        for (int k = 1; k < RECOVERY_CANDIDATES && queued; k++) {
+            const Candidate& c = candidates[k];
+            if (c.gear != 1) continue;
+            if (c.safe || !QueuedAhead(v, state.forward, c.blocker)) queued = false;
+            for (int n = 0; queued && n < nearbyCount; n++)
+                if (nearby[n].kind == GeometryKind::Vehicle && nearby[n].observed == c.blocker && nearby[n].initialDepth > 0) queued = false;
+        }
+        if (queued) {
+            state.nextPlan = cfg.planningInterval; state.commit = cfg.commitment;
+            for (int k = 1; k < RECOVERY_CANDIDATES; k++) if (!candidates[k].safe) { state.rejected++; timing.rejected++; }
+            // Touched from behind (a rear-end): creep forward into the gap until the
+            // contact is released, checked like any rollout, then wait in the queue.
+            bool touchedBehind = false;
+            for (int n = 0; n < nearbyCount; n++)
+                if (nearby[n].kind == GeometryKind::Vehicle && nearby[n].initialDepth > 0 &&
+                    Dot(nearby[n].centre - v.pos, state.forward) < 0) touchedBehind = true;
+            if (touchedBehind) {
+                Candidate creep; creep.gear = 1;
+                work.current.candidates++;
+                creep = Predict(g, v, state, creep, cfg.stopTail + 0.15f, true);
+                if (creep.safe && creep.distance > 0.5f) {
+                    FinishMove(state, creep);
+                    state.commit = 0.2f; state.nextPlan = 0.2f;
+                    return;
+                }
+            }
+            FinishHold(v, state);
+            state.reason = RecoveryReason::Queued;
+            return;
+        }
+        bool forwardAvailable = false;
+        for (int k = 1; k < RECOVERY_CANDIDATES; k++) {
+            if (!candidates[k].safe) { state.rejected++; timing.rejected++; }
+            if (candidates[k].safe && candidates[k].gear == 1 && candidates[k].distance > 5 && MakesLaneProgress(candidates[k]))
+                forwardAvailable = true;
+        }
+        int best = -1;
+        for (int k = 1; k < RECOVERY_CANDIDATES; k++) {
+            Candidate& c = candidates[k];
+            if (!c.safe) continue;
+            if (state.gear < 0 && c.gear > 0 && !MakesLaneProgress(c)) continue;
+            if (c.gear == -1 && !forwardAvailable) c.score += std::min(c.distance, v.length * 2) * 0.3f;
+            if (c.gear == 0) c.score -= 3;
+            if (state.stalled > cfg.stallTime && c.gear == state.gear && fabsf(c.steer - state.steer) < 0.2f) c.score -= 20;
+            if (best < 0 || c.score > candidates[best].score) best = k;
+        }
+        state.planBest = best;
+        state.nextPlan = cfg.planningInterval;
+        state.commit = cfg.commitment;
+        // Hold kept index zero for the original tie breaker. Its rollout is needed
+        // only when the winning moving candidate does not already imply hold.
+        if (best >= 0 && candidates[best].distance > 2) { state.planNext++; return; }
+        FinishHold(v, state);
+        return;
+    }
+    int best = state.planBest;
+    Candidate& hold = candidates[0];
+    work.current.candidates++;
+    hold = Predict(g, v, state, hold, cfg.horizon, true);
+    if (!hold.safe) { state.rejected++; timing.rejected++; }
+    else {
+        hold.score -= 3;
+        if (state.stalled > cfg.stallTime && hold.gear == state.gear &&
+            fabsf(hold.steer - state.steer) < 0.2f) hold.score -= 20;
+        // Equality still favours hold, while all moving ties retain their order.
+        if (hold.score >= candidates[best].score) best = 0;
     }
     state.nextPlan = cfg.planningInterval;
     state.commit = cfg.commitment;
-    if (best >= 0 && candidates[best].distance > 2) {
-        Candidate& hold = candidates[0];
-        hold = Predict(g, v, state, hold, cfg.horizon, true);
-        if (!hold.safe) { state.rejected++; timing.rejected++; }
-        else {
-            hold.score -= 3;
-            if (state.stalled > cfg.stallTime && hold.gear == state.gear &&
-                fabsf(hold.steer - state.steer) < 0.2f) hold.score -= 20;
-            // Hold came first in the original candidate array: equality must
-            // still favour hold, while all moving ties retain their order.
-            if (hold.score >= candidates[best].score) best = 0;
+    if (candidates[best].gear == 0 || candidates[best].distance <= 2) FinishHold(v, state);
+    else FinishMove(state, candidates[best]);
+}
+
+uint64_t Mix(uint64_t hash, int64_t value) {
+    hash ^= (uint64_t)value;
+    return hash * 1099511628211ull;
+}
+
+// What a hold depends on: the quantized own pose, the static obstacles around and the
+// actors that rejected the rollouts. Actors that did not block cannot open a way by
+// moving; static geometry only changes when furniture breaks. A changed signature, or
+// the periodic re-check, replans the hold.
+uint64_t HoldSignature(const Vehicle& v, const RecoveryState& state) {
+    uint64_t hash = 1469598103934665603ull;
+    hash = Mix(hash, (int64_t)floorf(v.pos.x)); hash = Mix(hash, (int64_t)floorf(v.pos.y));
+    hash = Mix(hash, (int64_t)floorf(v.angle * 100)); hash = Mix(hash, (int64_t)floorf(v.Speed() / 2));
+    int statics = 0;
+    for (int k = 0; k < nearbyCount; k++)
+        if (nearby[k].kind != GeometryKind::Vehicle && nearby[k].kind != GeometryKind::Person) statics++;
+    hash = Mix(hash, statics);
+    for (int id : state.blockIds) {
+        if (id <= 0) continue;
+        hash = Mix(hash, id);
+        Vector2 c{}, vel{};
+        float angle = 0;
+        bool active = false;
+        if (id <= RECOVERY_PERSON_ID) {
+            int idx = id - 1;
+            if (idx < (int)observedVehicles.size()) {
+                const ObservedVehicle& o = observedVehicles[idx];
+                active = o.active; c = o.pos; vel = o.vel; angle = o.angle;
+                hash = Mix(hash, (int64_t)floorf(o.speed / 4) * 2 + (o.rail ? 1 : 0));
+            }
+        } else {
+            int idx = id - RECOVERY_PERSON_ID - 1;
+            if (idx < (int)observedPeople.size()) {
+                const ObservedPerson& p = observedPeople[idx];
+                active = p.active; c = p.pos; vel = p.vel;
+            }
         }
+        hash = Mix(hash, active);
+        hash = Mix(hash, (int64_t)floorf(c.x / 2)); hash = Mix(hash, (int64_t)floorf(c.y / 2));
+        hash = Mix(hash, (int64_t)floorf(vel.x / 4)); hash = Mix(hash, (int64_t)floorf(vel.y / 4));
+        hash = Mix(hash, (int64_t)floorf(angle * 50));
     }
-    if (best < 0 || candidates[best].gear == 0 || candidates[best].distance <= 2) {
-        state.gear = 0; state.steer = 0;
-        state.tracking = false;
-        state.reason = RecoveryReason::NoFeasibleManoeuvre;
-        state.holds++; timing.holds++;
-        return;
+    return hash | 1;                         // zero means "no recorded hold"
+}
+
+// Dynamic actors that could reach the car within the immediate horizon: they decide
+// whether a later frame may reuse the extended check.
+template <class F> void ForEachRelevantActor(const Vehicle& v, F&& f) {
+    float own = std::max(v.Speed(), Tuning().forwardSpeed) * Tuning().horizon + geometry.diagonal + 30;
+    for (int k = 0; k < nearbyCount; k++) {
+        const Nearby& n = nearby[k];
+        if (n.kind != GeometryKind::Vehicle && n.kind != GeometryKind::Person) continue;
+        Vector2 pos = n.centre, vel = n.velocity;
+        if (n.kind == GeometryKind::Vehicle) {
+            const ObservedVehicle& o = observedVehicles[n.observed];
+            pos = o.pos; vel = o.vel;
+        }
+        float reach = own + n.radius + Len(vel) * Tuning().horizon;
+        if (Len2(pos - v.pos) > reach * reach) continue;
+        f(n.kind == GeometryKind::Vehicle ? n.observed + 1 : RECOVERY_PERSON_ID + n.observed + 1, pos, vel);
     }
-    CommitCandidate(state, candidates[best]);
+}
+
+void RecordCheck(const Vehicle& v, RecoveryState& state, int frames) {
+    int count = 0;
+    bool overflow = false;
+    ForEachRelevantActor(v, [&](int id, Vector2 pos, Vector2 vel) {
+        if (count >= (int)state.checkId.size()) { overflow = true; return; }
+        state.checkId[count] = id; state.checkActorPos[count] = pos; state.checkActorVel[count] = vel;
+        count++;
+    });
+    if (overflow) return;                    // a crowd: check every frame
+    state.checkActors = count;
+    state.checkFrames = frames; state.checkStep = 0;
+    state.checkGear = state.gear; state.checkSteer = state.steer; state.checkTracking = state.tracking;
+    state.checkPos = capturePos; state.checkAngle = captureAngle;
+}
+
+bool CheckCovered(const Vehicle& v, const RecoveryState& state) {
+    if (state.checkFrames <= 0 || state.checkGear != state.gear || state.checkTracking != state.tracking ||
+        fabsf(state.checkSteer - state.steer) > 1e-4f) return false;
+    int j = state.checkStep;                 // the pose predicted for this frame boundary
+    if (j >= (int)state.checkPos.size() || Dist(v.pos, state.checkPos[j]) > 1.0f ||
+        fabsf(WrapAngle(v.angle - state.checkAngle[j])) > 0.02f) return false;
+    float elapsed = (j + 1) * predictionControlInterval;
+    int count = 0;
+    bool same = true;
+    ForEachRelevantActor(v, [&](int id, Vector2 pos, Vector2) {
+        if (!same) return;
+        int k = 0;
+        while (k < state.checkActors && state.checkId[k] != id) k++;
+        if (k == state.checkActors) { same = false; return; }       // a newcomer
+        Vector2 expected = state.checkActorPos[k] + state.checkActorVel[k] * elapsed;
+        if (Dist(pos, expected) > 2.0f) same = false;               // not moving as forecast
+        count++;
+    });
+    return same && count == state.checkActors;
 }
 
 } // namespace
@@ -633,6 +982,7 @@ const char* RecoveryReasonText(RecoveryReason reason) {
     case RecoveryReason::NoFeasibleManoeuvre: return "no_feasible_manoeuvre";
     case RecoveryReason::Hazard: return "immediate_hazard";
     case RecoveryReason::Disabled: return "disabled";
+    case RecoveryReason::Queued: return "queued_behind_vehicle";
     }
     return "unknown";
 }
@@ -647,6 +997,7 @@ const char* RejoinCauseText(RejoinCause cause) {
     case RejoinCause::UnsafeSweep: return "unsafe_sweep";
     case RejoinCause::IncompleteStop: return "incomplete_stop";
     case RejoinCause::Clear: return "clear";
+    case RejoinCause::QueuedBehind: return "queued_behind";
     }
     return "unknown";
 }
@@ -656,11 +1007,16 @@ void RecoveryBeginFrame(Game& g) {
     auto start = Clock::now();
     Tuning();
     bool recovering = false;
+    budget = PlanBudget{};
     for (const Vehicle& v : g.vehicles)
-        if (v.active && v.driver == DriverType::Traffic && !v.ai.rail && !v.wrecked && !v.burning) recovering = true;
+        if (v.active && v.driver == DriverType::Traffic && !v.ai.rail && !v.wrecked && !v.burning) {
+            recovering = true;
+            if (v.ai.recovery.planning || v.ai.recovery.planWait > 0)
+                budget.oldestWait = std::max(budget.oldestWait, v.ai.recovery.planWait);
+        }
     observedVehicles.resize(g.vehicles.size());
     if (recovering && vehicleForecasts.size() < g.vehicles.size()) vehicleForecasts.resize(g.vehicles.size());
-    for (ForecastRow& forecast : vehicleForecasts) forecast.count = 0;
+    for (ForecastRow& forecast : vehicleForecasts) { forecast.count = 0; forecast.constantReady = false; }
     for (int idx = 0; idx < (int)g.vehicles.size(); idx++) {
         const Vehicle& v = g.vehicles[idx];
         ObservedVehicle& o = observedVehicles[idx];
@@ -668,9 +1024,18 @@ void RecoveryBeginFrame(Game& g) {
         o.angle = v.angle; o.angVel = v.angVel; o.width = v.width; o.length = v.length;
         float halfWidth = v.width * 0.5f, halfLength = v.length * 0.5f;
         o.radius = sqrtf(halfWidth * halfWidth + halfLength * halfLength);
-        o.rail = AIOnRail(v); o.speed = v.ai.speed; o.pathDistance = v.ai.s; o.shift = v.ai.laneShift;
+        // A yielding rail car retraces its path: its path speed is negative.
+        o.rail = AIOnRail(v); o.speed = v.ai.yieldTo >= 0 ? -v.ai.speed : v.ai.speed;
+        o.minDistance = v.ai.yieldTo >= 0 ? v.ai.s - std::max(0.0f, v.ai.retreatLeft) : -1e9f;
+        // A rail driver does not pass its planned stop (the line, a person, a stopped or
+        // knocked car ahead): forecasting it beyond made a car queued behind a recovering
+        // one look like an incoming collision each time the recovering car moved off.
+        o.maxDistance = o.rail && v.ai.yieldTo < 0 && v.ai.stopDist < 1e8f ? v.ai.s + std::max(0.0f, v.ai.stopDist) : 1e9f; o.pathDistance = v.ai.s; o.shift = v.ai.laneShift;
         o.blend = v.ai.blend; o.blendPos = v.ai.blendPos; o.blendAngle = v.ai.blendAng;
         o.pathCount = 0;
+        // 4 s is the longest forecast; the drift bound encloses the residual motion.
+        o.drift = o.rail ? 0.0f : (Len(o.vel) + o.radius * fabsf(o.angVel)) * 4.0f;
+        o.stationary = o.rail ? ((o.speed == 0 || o.maxDistance <= o.pathDistance) && o.blend <= 0) : o.drift <= 0.05f;
         if (recovering && o.rail) {
             for (const Waypoint& p : v.ai.path) {
                 if (o.pathCount == MAX_PATH_POINTS) break;
@@ -718,9 +1083,10 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
     state.lastLaneError = LaneError(v, state);
     state.lastPos = v.pos;
     state.stalled = state.gear != 0 && moved < 2 * dt ? state.stalled + dt : 0;
-    state.nextPlan -= dt; state.commit -= dt;
+    state.nextPlan -= dt; state.commit -= dt; state.holdAge += dt;
     if (v.wrecked || v.burning || v.driver != DriverType::Traffic) {
         state.gear = 0; state.reason = RecoveryReason::Disabled;
+        state.planning = false; state.planWait = 0;
         v.in = Controls(v, 0, 0);
         timing.frameMs += Milliseconds(start);
         return;
@@ -728,6 +1094,7 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
     GatherNearby(g, v, idx);
     if (!nearbyComplete) {
         state.gear = 0; state.reason = RecoveryReason::NoFeasibleManoeuvre;
+        state.planning = false; state.planWait = 0;
         v.in = Controls(v, 0, 0);
         timing.frameMs += Milliseconds(start);
         return;
@@ -735,19 +1102,63 @@ void RecoveryDrive(Game& g, int idx, Vector2 laneOrigin, Vector2 laneForward, fl
     // A committed move is checked through stopping, not just until the next update.
     // An actor entering its sweep invalidates it immediately, even between plans.
     bool urgent = false;
-    if (state.gear != 0) {
+    work.current.recovering++;
+    bool covered = state.gear != 0 && CheckCovered(v, state);
+    if (covered) { state.checkFrames--; state.checkStep++; timing.coveredChecks++; }
+    else if (state.gear != 0) {
+        auto immediateStart = Clock::now();
+        work.current.immediate++;
         Candidate c; c.gear = state.gear; c.steer = state.steer;
         c.tracking = state.tracking;
         float immediate = std::max(0.3f, fabsf(Dot(v.vel, v.Fwd())) / 160 + dt + 0.12f);
-        c = Predict(g, v, state, c, std::min(Tuning().horizon, immediate + Tuning().stopTail), true);
+        // Validate a few frames more of moving time, so the next frames can reuse it.
+        int extra = std::clamp((int)lroundf(COVER_TIME / dt), 0, (int)state.checkPos.size());
+        captureDt = dt; captureCount = 0;
+        c = Predict(g, v, state, c, std::min(Tuning().horizon, immediate + extra * dt + Tuning().stopTail), true);
+        captureDt = 0;
+        state.checkFrames = 0;
+        if (c.safe && captureCount >= extra) RecordCheck(v, state, extra);
         if (!c.safe) {
             state.gear = 0; state.steer = 0; state.commit = 0; state.nextPlan = 0;
             state.tracking = false;
             state.reason = RecoveryReason::Hazard;
             urgent = true;
         }
+        work.current.immediateMs += Milliseconds(immediateStart);
     }
-    if (state.nextPlan <= 0 && (state.commit <= 0 || state.gear == 0 || urgent)) SelectPlan(g, v, state);
+    // A hazard restarts any job: earlier rollouts did not foresee the new conflict.
+    if (urgent) state.planning = false;
+    if (!state.planning && state.nextPlan <= 0 && (state.commit <= 0 || state.gear == 0 || urgent)) {
+        bool holding = state.reason == RecoveryReason::NoFeasibleManoeuvre || state.reason == RecoveryReason::Queued;
+        if (state.gear == 0 && holding && state.holdAge < HOLD_RECHECK && HoldSignature(v, state) == state.holdSignature) {
+            // Same pose, statics and blockers: the previous search still applies.
+            state.nextPlan = Tuning().planningInterval;
+            timing.unchangedHolds++;
+        } else {
+            state.planning = true; state.planNext = 0; state.planBest = -1;
+            state.blockIds.fill(0); state.blockVotes.fill(0);
+            state.plans++; timing.plans++;
+        }
+    }
+    if (state.planning) {
+        auto planStart = Clock::now();
+        // Rollouts share a deterministic per-frame step budget, scaled to the frame
+        // interval. Only the longest-waiting jobs may use it, so none starves.
+        long long frameBudget = (long long)(Tuning().planningSteps * std::clamp(dt * 60.0f, 1.0f, 3.0f));
+        if (state.planWait >= budget.oldestWait) {
+            while (state.planning && budget.steps < frameBudget) {
+                long long before = work.current.steps;
+                PlanUnit(g, v, state);
+                budget.steps += work.current.steps - before;
+            }
+        }
+        if (state.planning) {
+            state.planWait++;
+            timing.deferredFrames++;
+            timing.maxWaitFrames = std::max(timing.maxWaitFrames, state.planWait);
+        } else state.planWait = 0;
+        work.current.planMs += Milliseconds(planStart);
+    }
     v.in = Controls(v, state.gear, state.steer, state.tracking ? &state : nullptr);
     float speed = Dot(v.vel, v.Fwd());
     if ((state.gear > 0 && speed < -6) || (state.gear < 0 && speed > 6)) state.reason = RecoveryReason::GearChange;
@@ -759,7 +1170,7 @@ bool RecoveryCanRejoin(Game& g, int idx, float dt) {
     auto finish = [&](RejoinCause cause) {
         if (idx >= 0 && idx < (int)g.vehicles.size()) g.vehicles[idx].ai.recovery.rejoinCause = cause;
         timing.frameMs += Milliseconds(start);
-        return cause == RejoinCause::Clear;
+        return cause == RejoinCause::Clear || cause == RejoinCause::QueuedBehind;
     };
     if (idx < 0 || idx >= (int)g.vehicles.size() || !std::isfinite(dt) || dt <= 0)
         return finish(RejoinCause::Unavailable);
@@ -789,17 +1200,27 @@ bool RecoveryCanRejoin(Game& g, int idx, float dt) {
     RecoveryState state; state.origin = v.pos; state.forward = v.Fwd();
     Candidate forward; forward.gear = 1;
     RejoinCause cause;
-    Predict(g, v, state, forward, horizon, true, &cause);
+    auto rejoinStart = Clock::now();
+    work.current.rejoins++;
+    Candidate checked = Predict(g, v, state, forward, horizon, true, &cause);
+    work.current.rejoinMs += Milliseconds(rejoinStart);
+    // A stopped car ahead in the lane is a queue, not an obstacle course: the rail
+    // driver waits behind it (or passes it) under the ordinary rail rules. Static
+    // geometry ahead still vetoes the handoff.
+    if (cause == RejoinCause::UnsafeSweep && v.Speed() < 5 && QueuedAhead(v, v.Fwd(), checked.blocker))
+        cause = RejoinCause::QueuedBehind;
     return finish(cause);
 }
 
-void RecoveryResetStats() { timing = Timing{}; decisionTiming = Timing{}; }
+void RecoveryResetStats() { timing = Timing{}; decisionTiming = Timing{}; work = WorkProfile{}; }
 
 static RecoveryStats ReadTimingStats(Timing& record) {
     FinishTimingFrame(record);
     RecoveryStats stats;
     stats.frames = record.frames; stats.plans = record.plans;
     stats.rejected = record.rejected; stats.holds = record.holds;
+    stats.deferredFrames = record.deferredFrames; stats.unchangedHolds = record.unchangedHolds;
+    stats.maxWaitFrames = record.maxWaitFrames; stats.coveredChecks = record.coveredChecks;
     stats.averageMs = record.totalMs / std::max(1, record.frames);
     stats.worstMs = record.worstMs; stats.percentileSamples = record.samples;
     std::array<double, MAX_TIMINGS> sorted{};
@@ -823,8 +1244,23 @@ void RecoveryRecordDecisionTime(double ms) {
 
 void RecoveryLogStats() {
     RecoveryStats s = RecoveryGetStats();
-    TraceLog(LOG_INFO, "RECOVERY CPU: avg %.4f ms p95 %.4f ms worst %.4f ms | frames %d percentile samples %d | plans %d rejected %d holds %d",
-             s.averageMs, s.p95Ms, s.worstMs, s.frames, s.percentileSamples, s.plans, s.rejected, s.holds);
+    TraceLog(LOG_INFO, "RECOVERY CPU: avg %.4f ms p95 %.4f ms worst %.4f ms | frames %d percentile samples %d | plans %d rejected %d holds %d | deferred job-frames %d longest wait %d frames | unchanged holds kept %d | covered immediate checks %d",
+             s.averageMs, s.p95Ms, s.worstMs, s.frames, s.percentileSamples, s.plans, s.rejected, s.holds,
+             s.deferredFrames, s.maxWaitFrames, s.unchangedHolds, s.coveredChecks);
+    const WorkFrame& t = work.total;
+    double f = std::max(1, work.frames);
+    TraceLog(LOG_INFO, "RECOVERY WORK per frame: recovering %.2f gathers %.2f immediate %.2f tracking %.2f candidates %.2f rejoins %.2f steps %.0f actor_tests %.0f overlaps %.0f forecasts %.0f nearby_max %d | ms gather %.4f immediate %.4f plan %.4f rejoin %.4f",
+             t.recovering / f, t.gathers / f, t.immediate / f, t.tracking / f, t.candidates / f, t.rejoins / f,
+             t.steps / f, t.actorTests / f, t.overlaps / f, t.forecasts / f, t.nearbyMax,
+             t.gatherMs / f, t.immediateMs / f, t.planMs / f, t.rejoinMs / f);
+    std::array<WorkFrame, WORST_WORK> worst = work.worst;
+    std::sort(worst.begin(), worst.end(), [](const WorkFrame& a, const WorkFrame& b) { return a.ms > b.ms; });
+    for (const WorkFrame& w : worst) {
+        if (w.ms <= 0) continue;
+        TraceLog(LOG_INFO, "  RECOVERY WORST %.4f ms: recovering %d gathers %d immediate %d tracking %d candidates %d rejoins %d steps %lld actor_tests %lld overlaps %lld forecasts %lld nearby_max %d | ms gather %.4f immediate %.4f plan %.4f rejoin %.4f",
+                 w.ms, w.recovering, w.gathers, w.immediate, w.tracking, w.candidates, w.rejoins, w.steps, w.actorTests,
+                 w.overlaps, w.forecasts, w.nearbyMax, w.gatherMs, w.immediateMs, w.planMs, w.rejoinMs);
+    }
     RecoveryStats d = RecoveryGetDecisionStats();
     TraceLog(LOG_INFO, "DRIVER DECISION CPU (includes police and cleanup): avg %.4f ms p95 %.4f ms worst %.4f ms | frames %d percentile samples %d",
              d.averageMs, d.p95Ms, d.worstMs, d.frames, d.percentileSamples);

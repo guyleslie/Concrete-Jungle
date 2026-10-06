@@ -2,7 +2,7 @@
 
 How the people in the streets behave: walking their block, crossing at the lights, noticing vehicles and getting out of their way, fleeing, fighting back, and what happens when they are hit. The player on foot is covered in [Gameplay](gameplay.md).
 
-Source: `src/pedestrian.h`, `src/pedestrian.cpp`; population, injuries and diagnostics in `src/game.cpp`. The steering model is recorded in [ADR-0006](../adr/0006-pedestrian-steering.md).
+Source: `src/pedestrian.h`, `src/pedestrian.cpp`; drivers on foot in `src/traffic_incidents.*`; population, injuries and diagnostics in `src/game.cpp`. The steering model is recorded in [ADR-0006](../adr/0006-pedestrian-steering.md).
 
 ## Contents
 
@@ -12,6 +12,7 @@ Source: `src/pedestrian.h`, `src/pedestrian.cpp`; population, injuries and diagn
 - [Perception and dodging](#perception-and-dodging)
 - [Fleeing and panic](#fleeing-and-panic)
 - [Fighting back](#fighting-back)
+- [Drivers on foot](#drivers-on-foot)
 - [Locomotion and avoidance](#locomotion-and-avoidance)
 - [Injury and death](#injury-and-death)
 - [Population](#population)
@@ -29,7 +30,9 @@ Source: `src/pedestrian.h`, `src/pedestrian.cpp`; population, injuries and diagn
 | `Flee` | Runs from a threat along the sidewalk |
 | `Rejoin` | Pauses, then returns to the nearest point of its sidewalk ring |
 | `Dodge` | Jumps (or, for a slow vehicle, steps) sideways out of a vehicle's path |
-| `Fight` | Hits the player back after being punched |
+| `Fight` | Hits the player back after being punched; a driver in an incident may fight the other driver instead |
+| `Confront` | A driver out of their car walks to the other party and argues |
+| `ToCar` | A driver walks back to the door of their own car |
 | `Down` | Knocked down; gets up after 2.5–4 s |
 | `Dead` | Lies where it came to rest; fades out after 24–27 s |
 
@@ -78,6 +81,16 @@ A fleeing person runs at about 5.2 m/s. Every 0.3–0.5 s it chooses among 16 di
 
 About 15 % of people are tough (courage above 0.85). Punched by the player on foot, a tough person does not run but fights: it walks up to the player and punches every 0.8–1.2 s for 5–9 damage. It gives up after 10–16 s, when the player gets more than 12 m away, and flees when it drops below 45 health or the player gets into a vehicle. Knocked down, it comes back for more once it is on its feet again, if the player is within 6 m. Fighters are not scared off by the commotion around them.
 
+## Drivers on foot
+
+A traffic driver who gets out after a collision is a pedestrian with an owner's handle to their car and an explicit opponent: another driver on foot, the player, or the other car's door. The [incident rules](traffic.md#driver-incidents) decide the transitions; the pedestrian AI walks and punches.
+
+- `Confront`: walks at 1.3 times the walking speed to the opponent and faces them; arguing shows the punch frame as a raised fist every 0.9–1.4 s.
+- `Fight` against another driver: the same punches as against the player (every 0.8–1.2 s), for 6–10 damage with a 12 % chance to knock the other down; a driver who is hit while still arguing fights back.
+- `ToCar`: walks to the driver's door, or the passenger door when the driver's side is blocked, facing it to start; within 16 px the person gets back in.
+
+Both new states turn the body towards the target before walking: the gait cannot start walking backwards, and without a facing target a person who stood with their back to the goal never set off. Drivers on foot are not recycled by the population manager while they own a car, and second-hand panic does not affect them. Scared, injured or knocked down, they react like anyone else, then walk back to their car.
+
 ## Locomotion and avoidance
 
 People walk where their body faces. The steering produces a desired velocity; the body turns towards it at a limited rate, and only the part of the desired velocity along the body is walked, plus a side step of at most 0.3 m/s. Someone who wants to go the other way turns on the spot first, stepping round as it turns. There is no sliding sideways.
@@ -88,6 +101,7 @@ People walk where their body faces. The steering produces a desired velocity; th
 | Fleeing | 6 m/s² | 8 rad/s | 8 m/s² |
 | Dodging | 12 m/s² | 20 rad/s | 3 m/s² |
 | Fighting | 6 m/s² | 8 rad/s | 4 m/s² |
+| Confronting, returning to a car | 3 m/s² | 4.5 rad/s | 4 m/s² |
 
 The desired velocity combines the goal (relaxation time 0.5 s) with anticipatory avoidance based on the time to collision, after Karamouzas, Skinner and Guy (2014), *Universal power law governing pedestrian interactions*. For every person within 5 m, the player on foot, and street furniture within 3 m, the interaction energy is *E(τ) = k / τ² · e^(−τ/τ₀)* with *k* = 1.5 m² and *τ₀* = 3 s, where *τ* is the time until the two discs would touch; collisions further than 4 s away are ignored. People lying on the ground are avoided like furniture. A box-shaped object acts as a post at its nearest point.
 

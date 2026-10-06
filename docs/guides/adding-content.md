@@ -6,7 +6,7 @@ Vehicles, characters, weapons, foliage and sounds are data-driven: you add them 
 
 - [Data file format](#data-file-format)
 - [Vehicles](#vehicles)
-- [Traffic recovery](#traffic-recovery)
+- [Traffic behaviour](#traffic-behaviour)
 - [Characters](#characters)
 - [Weapons](#weapons)
 - [Foliage](#foliage)
@@ -78,15 +78,19 @@ Generators: `car_hatch`, `car_sedan`, `car_coupe`, `car_suv`, `car_limo`, `bus`,
 
 Named colours: `red blue white black silver green darkgreen beige teal maroon yellow orange cream grey darkgrey navy brown purple pink`, or `r,g,b`.
 
-## Traffic recovery
+## Traffic behaviour
 
-File: `assets/data/traffic.cfg`. The first CJ-016 increment configures physical recovery after a car is knocked from its lane. It does not yet define driver personality or incident profiles. See [Traffic](../design/traffic.md#knocked-off-the-lane) for the behaviour contract.
+File: `assets/data/traffic.cfg`. It configures physical recovery after a car is knocked from its lane, cooperative yielding and driver incidents. See [Traffic](../design/traffic.md#knocked-off-the-lane) for the behaviour contract.
 
 ```text
 RECOVERY <name> <value>
+YIELD    <name> <value>
+INCIDENT <name> <value>
 ```
 
-Use these lowercase parameter names. The record type is case-insensitive, and `#` starts a comment. Values must be finite and within the listed inclusive range. Unknown names, malformed records and invalid values emit a warning and retain the prior validated value. Missing parameters use the built-in defaults; the shipped file is the reference for current tuning. Settings load once per process, so restart the game after changing the file.
+Use these lowercase parameter names. The record type is case-insensitive, and `#` starts a comment. Values must be finite and within the listed inclusive range. Unknown names, unknown record types, malformed records and invalid values emit a warning and retain the prior validated value. Missing parameters use the built-in defaults; the shipped file is the reference for current tuning. Settings load once per process, so restart the game after changing the file. Measurement runs may read another file with `--traffic-config <path>`.
+
+### Recovery
 
 | Name | Unit and valid range | Meaning |
 |---|---|---|
@@ -100,8 +104,41 @@ Use these lowercase parameter names. The record type is case-insensitive, and `#
 | `hysteresis` | 0–30 score units | Penalty for changing between forward and reverse |
 | `stall_time` | 0.5–3 s | Poor-progress duration before penalising repetition of the same move |
 | `nearby_radius` | 300–1,500 px | Search extent for potential nearby recovery obstacles |
+| `planning_steps` | 300–20,000 force steps | Shared rollout budget per 1/60 s of frame time; planning jobs beyond it continue in later frames ([planning budget](../design/traffic.md#planning-budget)) |
 
-The predictor uses the current production vehicle forces. It matches the measured 60 Hz/20 Hz frame intervals with 240 Hz/160 Hz force steps respectively, and caps faster-frame forecasts at 240 Hz. Control refreshes follow the actual frame interval, rounded to the next forecast sample, with the same cap. Tuning does not bypass class dimensions, steering limits or physical contacts. Lowering a safety margin changes the accepted clearance, so compare the [frozen recovery scenarios](../testing.md#cj-016-recovery-measurements) before and after tuning.
+The predictor uses the current production vehicle forces. It matches the measured 60 Hz/20 Hz frame intervals with 240 Hz/160 Hz force steps respectively, and caps faster-frame forecasts at 240 Hz. Control refreshes follow the actual frame interval, rounded to the next forecast sample, with the same cap. Tuning does not bypass class dimensions, steering limits or physical contacts. Lowering a safety margin changes the accepted clearance, so compare the [frozen recovery scenarios](../testing.md#cj-016-recovery-measurements) before and after tuning. A smaller `planning_steps` lowers the CPU peak but delays decisions when many cars recover at once.
+
+### Yielding
+
+See [Cooperative yielding](../design/traffic.md#cooperative-yielding).
+
+| Name | Unit and valid range | Meaning |
+|---|---|---|
+| `enabled` | 0–1 | 0 restores the earlier stand-off: nobody gives way (baseline measurements) |
+| `detect_time` | 0.1–3 s | How long two drivers must wait on each other before one gives way |
+| `clear_time` | 0.2–5 s | How long the conflict must look resolved before the yielder drives on |
+| `retreat_speed` | 20–120 px/s | Reversing speed along the driven path |
+| `retreat_accel` | 40–400 px/s² | Reversing acceleration |
+| `retreat_extra` | 0–200 px | Room beyond a knocked car's length that the rail car backs up |
+| `max_chain` | 1–6 drivers | Longest chain of queued drivers backing up together |
+
+### Incidents
+
+See [Driver incidents](../design/traffic.md#driver-incidents). For a playtest, a temporary `INCIDENT aggressive_share 1` makes every driver aggressive.
+
+| Name | Unit and valid range | Meaning |
+|---|---|---|
+| `enabled` | 0–1 | 0: drivers never react to a collision (baseline measurements) |
+| `aggressive_share` | 0–1 | Share of new traffic drivers who are aggressive |
+| `calm_share` | 0–1 | Share who are calm; the rest are normal (honk). Reduced if the shares exceed 1 |
+| `min_impact` | 10–400 px/s | Closing speed that a driver takes personally |
+| `serious_dv` | 50–1,000 px/s | Delta-V above which the crash is serious and nobody starts an argument |
+| `confront_chance` | 0–1 | Probability that an aggressive driver gets out after such an impact |
+| `argue_time` | 0.5–15 s | Face-to-face argument before it escalates or ends |
+| `give_up_distance` | 100–2,000 px | The other party has gone beyond this distance |
+| `fight_time` | 2–60 s | Typical length of a fight (±20 %) |
+| `exit_wait` | 0.5–15 s | Time to wait for a safe side to get out before driving on |
+| `pair_memory` | 0–600 s | One incident per pair of cars within this time |
 
 ## Characters
 

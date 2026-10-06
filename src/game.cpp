@@ -2,6 +2,7 @@
 //  Game rules & world simulation - see game.h. HUD / menus live in hud.cpp.
 // =====================================================================================
 #include "game.h"
+#include "traffic_incidents.h"
 #include "traffic.h"
 #include "rlgl.h"
 #include <algorithm>
@@ -48,11 +49,12 @@ void Game::DebugScenario(const char* name) {
 
 void Game::LogTrafficStats() const {
     RecoveryLogStats();
-    int n = 0, stopped = 0, blocked = 0; float speed = 0; int reasons[7] = {};
+    IncidentLogStats();
+    int n = 0, stopped = 0, blocked = 0; float speed = 0; int reasons[8] = {};
     for (const Vehicle& v : vehicles) {
         if (!v.active || v.driver != DriverType::Traffic || v.wrecked) continue;
         n++; speed += fabsf(v.speedFwd);
-        if (fabsf(v.speedFwd) < 5) { stopped++; reasons[std::clamp(v.ai.reason, 0, 6)]++; }
+        if (fabsf(v.speedFwd) < 5) { stopped++; reasons[std::clamp(v.ai.reason, 0, 7)]++; }
         if (v.ai.blocked > 3.0f) blocked++;
     }
     TraceLog(LOG_INFO, "TRAFFIC: %d cars, avg %.0f km/h, %d stopped, %d blocked>3s, %.1f AI contacts/s",
@@ -69,8 +71,23 @@ void Game::LogTrafficStats() const {
                  v.ai.blocker, b ? b->S().name.c_str() : "ped/player", b ? (int)b->driver : -1, b ? b->ai.reason : -1,
                  b ? b->angle * RAD2DEG : 0.0f, b ? b->speedFwd : 0.0f, b ? Dist(b->pos, v.pos) : 0.0f);
     }
-    TraceLog(LOG_INFO, "TRAFFIC stopped because: moving %d, red light %d, queue %d, person %d, yield %d, static %d",
-             reasons[0], reasons[1], reasons[2], reasons[3], reasons[4], reasons[5]);
+    TraceLog(LOG_INFO, "TRAFFIC stopped because: moving %d, red light %d, queue %d, person/held %d, yield %d, static %d, junction box %d, giving way %d",
+             reasons[0], reasons[1], reasons[2], reasons[3], reasons[4], reasons[5], reasons[6], reasons[7]);
+    // Mutual pairs still stopped behind each other at the end are unresolved conflicts.
+    int mutualPairs = 0, yielding = 0;
+    for (size_t i = 0; i < vehicles.size(); i++) {
+        const Vehicle& v = vehicles[i];
+        if (!v.active || v.driver != DriverType::Traffic || v.wrecked) continue;
+        if (v.ai.yieldTo >= 0) yielding++;
+        int b = v.ai.rail ? v.ai.waitingOn : v.ai.recovery.gear == 0 ? v.ai.recovery.blockedBy : -1;
+        if (b > (int)i && b < (int)vehicles.size()) {
+            const Vehicle& o = vehicles[b];
+            int back = o.ai.rail ? o.ai.waitingOn : o.ai.recovery.gear == 0 ? o.ai.recovery.blockedBy : -1;
+            if (back == (int)i && v.ai.yieldTo < 0 && o.ai.yieldTo < 0) mutualPairs++;
+        }
+    }
+    TraceLog(LOG_INFO, "TRAFFIC yielding: roles taken %d (chain %d), yielding at end %d, unresolved mutual pairs at end %d",
+             statYields, statChainYields, yielding, mutualPairs);
 }
 
 // Scripted driving for the --shot physics tests.
@@ -376,14 +393,16 @@ void Game::LogPedStats() const {
              d.trafficHits, d.playerHits, d.threatened, d.threatHits,
              d.threatened ? 100.0f * (d.threatened - d.threatHits) / d.threatened : 0.0f);
     int byState[(int)PedState::Dead + 1] = {}, near30 = 0, near60 = 0, near110 = 0;
+    static_assert((int)PedState::Dead == 12, "update the PEDS state log below");
     for (const Pedestrian& p : peds) {
         if (!p.active) continue;
         byState[(int)p.state]++;
         float dd = Dist(p.pos, PlayerPos());
         near30 += dd < 30 * M; near60 += dd < 60 * M; near110 += dd < 110 * M;
     }
-    TraceLog(LOG_INFO, "PEDS at the end: walk %d wait %d cross %d idle %d wander %d flee %d rejoin %d dodge %d fight %d down %d dead %d | within 30 m %d, 60 m %d, 110 m %d",
-             byState[0], byState[1], byState[2], byState[3], byState[4], byState[5], byState[6], byState[7], byState[8], byState[9], byState[10], near30, near60, near110);
+    TraceLog(LOG_INFO, "PEDS at the end: walk %d wait %d cross %d idle %d wander %d flee %d rejoin %d dodge %d fight %d confront %d to-car %d down %d dead %d | within 30 m %d, 60 m %d, 110 m %d",
+             byState[0], byState[1], byState[2], byState[3], byState[4], byState[5], byState[6], byState[7], byState[8], byState[9], byState[10],
+             byState[11], byState[12], near30, near60, near110);
     TraceLog(LOG_INFO, "PEDS: fought back %d times, landed %d punches on the player (player health %.0f)", pedFights, pedPunches, player.health);
     float cf = (float)std::max(1, cpuFrames);
     TraceLog(LOG_INFO, "TIMING: CPU per frame - vehicles %.3f ms, pedestrians %.3f ms, world drawing %.3f ms",
@@ -418,6 +437,7 @@ int Game::SpawnPed(Vector2 pos, int skin, bool fleeing) {
 
 void Game::NewGame() {
     RecoveryResetStats();
+    IncidentsReset();
     Rng& r = GRng();
     vehicles.clear(); vehicles.reserve(256);
     deathSpots.clear();
@@ -692,6 +712,7 @@ void Game::UpdatePlaying(float dt) {
     UpdateVehicles(dt);
     double t1 = GetTime();
     if (debugContacts) PhysDiagnostics(dt);
+    IncidentsUpdate(*this, dt);                    // drivers stopping, getting out and back in
     double t2 = GetTime();
     UpdatePeds(dt);
     if (debugContacts) {
@@ -1147,6 +1168,9 @@ void Game::HandleImpacts(float dt) {
             if (involvesPlayer && GRng().Chance(dt * 5)) audio.Play(Sfx::CrashSmall, e.point, 0.18f, GRng().Range(1.5f, 1.9f));
         }
 
+        // ---- the drivers' reaction: an aggressive one may get out (traffic_incidents) ----
+        if (b) IncidentOnImpact(*this, e);
+
         // ---- diagnostics ----
         if (b && (a.driver == DriverType::Traffic || a.driver == DriverType::Police) &&
             (b->driver == DriverType::Traffic || b->driver == DriverType::Police) && impact > 5) aiContacts++;
@@ -1286,7 +1310,7 @@ void Game::UpdateSpawning(float dt) {
         if (v.driver == DriverType::Traffic) {
             traffic++;
             // recycle cars far from the player so the city around you stays busy
-            if (AIOnRail(v) && !v.recoveryTracked && v.ai.blocked <= 0 && !v.missionTarget && Dist(v.pos, pp) > 3400 && !OnScreen(v.pos, 200)) {
+            if (AIOnRail(v) && !v.recoveryTracked && v.ai.blocked <= 0 && v.ai.yieldTo < 0 && !v.missionTarget && Dist(v.pos, pp) > 3400 && !OnScreen(v.pos, 200)) {
                 int skin = gAssets.RandomTrafficSkin();
                 InitVehicle(v, skin, v.pos, v.angle);
                 v.driver = DriverType::Traffic;
@@ -1302,6 +1326,7 @@ void Game::UpdateSpawning(float dt) {
     }
     for (Pedestrian& p : peds) {
         if (!p.active) continue;
+        if (p.ownVehicle >= 0 && p.state != PedState::Dead) continue;      // a driver on foot keeps their identity
         bool dead = p.state == PedState::Dead;
         bool far = Dist(p.pos, pp) > PED_KEEP_RADIUS;
         bool gone = dead && p.deadTime > PED_BODY_GONE;                  // the body has faded out

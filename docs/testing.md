@@ -10,6 +10,8 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Baseline](#baseline)
 - [CJ-002 measurements](#cj-002-measurements)
 - [CJ-016 recovery measurements](#cj-016-recovery-measurements)
+- [Cooperative yielding fixture](#cooperative-yielding-fixture)
+- [Driver incident fixture](#driver-incident-fixture)
 - [Workflow](#workflow)
 
 ## Running a scenario
@@ -57,7 +59,9 @@ The run ends by logging:
 | `SHOT` | Average frames per second | ≈ 75 (vsync-limited on the development machine) |
 | `TRAFFIC` | Number of traffic cars, average speed, stopped and blocked cars, AI-to-AI contacts per second | Few blocked cars; AI contacts close to 0 in `drive` |
 | `TRAFFIC jolts` | Sudden velocity jumps per second, split into rail, knocked and police cars | Rail jolts close to 0 |
-| `TRAFFIC stopped because` | Why stopped cars are stopped: red light, queue, person, yield, static obstacle | Mostly red lights and queues |
+| `TRAFFIC stopped because` | Why stopped cars are stopped: red light, queue, person (or a knocked car holding), yield at a junction, static obstacle, full junction box, giving way to another driver | Mostly red lights and queues |
+| `TRAFFIC yielding` | Cooperative yielding roles taken (and how many were chain roles), cars still giving way at the end, and mutual pairs still stopped behind each other without a role | Unresolved pairs 0 |
+| `INCIDENTS` | Collision incidents started, drivers out, confrontations, fights, drivers back in their own car; interruptions by reason (no safe exit, car lost, driver dead, other); impacts that nobody took personally | Every driver out is back in their car or has a logged reason |
 | `PHYS` jitter | Frames where a physics body's position or heading reverses direction frame after frame | Close to 0 per body-second |
 | `PHYS` penetration | Deepest overlap with buildings or solid furniture, and frames deeper than 3 px | Under 3 px; no deep frames |
 | `PHYS` stuck | Times the player pressed on without moving for 2.5 s | Expected in `crash` (pushing into walls on purpose) |
@@ -75,7 +79,8 @@ The run ends by logging:
 | `PEDS at the end` | People per state and within 30, 60 and 110 m of the player | Most people walking; everyone within 110 m |
 | `PEDS` fights | People who fought back and punches they landed (`brawl`) | Some in `brawl` |
 | `TIMING` | CPU time per frame of the vehicle update, the pedestrian update and the world drawing (CPU side only) | Pedestrians at most 0.5 ms |
-| `RECOVERY CPU` | Recovery snapshot/planning average, 95th percentile, worst time, plans, rejected candidates and holds | Bounded candidate work; assess together with full driver decisions |
+| `RECOVERY CPU` | Recovery snapshot/planning average, 95th percentile, worst time, plans, rejected candidates and holds; job-frames deferred by the [planning budget](design/traffic.md#planning-budget), the longest wait in frames, holds kept because no blocker moved and immediate checks covered by an earlier extended check | Bounded candidate work; assess together with full driver decisions |
+| `RECOVERY WORK`, `RECOVERY WORST` | Per frame: recovering cars, neighbourhood gathers, immediate checks, tracking and candidate rollouts, rejoin checks, force steps, actor tests, overlap tests and forecast samples, with milliseconds per stage; then the six most expensive frames | Identifies which stage causes a CPU peak |
 | `DRIVER DECISION CPU` | Vehicle preparation/fire/explosions/wreck cleanup, pedestrian grid build, shared snapshot and traffic/police AI; an upper bound on traffic decisions, excluding physics, pedestrian AI and drawing | CJ-016 target: average at most 0.5 ms/frame, 95th percentile at most 1.0 ms/frame |
 | `LONG-REJOIN` | Terminal readiness diagnostics for initialized traffic recovery lasting at least 12 s: tracking mode, lane/heading errors, lateral/forward velocity, angular velocity, upcoming-junction distance/entry limit, last forecast status and `RejoinCause` | Diagnose unresolved recovery; speed alone does not establish a safe rejoin |
 
@@ -133,7 +138,7 @@ Keep the existing `crash`, `derby` and `chase` scripts; their run-up speeds depe
 
 ## CJ-016 recovery measurements
 
-The first increment of the [approved traffic specification](design/traffic-behaviour-proposal.md) replaces knocked-vehicle timeout abandonment with physical recovery or a persistent hold. It does not establish acceptance for ordinary passing, mutual yielding, driver identities on foot or confrontations. The frozen `cj016-recovery-v1` scene calls production traffic AI and `VehiclePhysics::Step` on uniform road, with world-edge contacts disabled. Damage consequences, pedestrian AI and population spawning do not run. The original driver, skin, class and active vehicle are checked on every physics step.
+The first increment of the [approved traffic specification](design/traffic-behaviour-proposal.md) replaces knocked-vehicle timeout abandonment with physical recovery or a persistent hold. It does not cover mutual yielding or incidents; see the [cooperative yielding](#cooperative-yielding-fixture) and [driver incident](#driver-incident-fixture) fixtures. The frozen `cj016-recovery-v1` scene calls production traffic AI and `VehiclePhysics::Step` on uniform road, with world-edge contacts disabled. Damage consequences, pedestrian AI and population spawning do not run. The original driver, skin, class and active vehicle are checked on every physics step.
 
 ```bash
 python tools/run_cj016.py --phase before --run-name baseline-20261005
@@ -180,7 +185,7 @@ Read terminal `LONG-REJOIN` values against the readiness limits: lateral error a
 
 The initial pre-change run on 2026-10-05 completed all three classes with **14 failed checks per class**. It exposed the legacy abandonment and blend behaviour. Its long result messages truncated timing fields, so the original evidence is retained. The `before/complete-timing` rerun preserved the geometry and checks and reproduced those failures. The pre-fix physical `after/final-recovery` run completed all three classes and **passed all 156 checks**. Its pre-fix first city run completed all six scenarios but exceeded CPU targets in crash, chase and rampage and recorded no completed rejoins. The [result report](design/traffic-recovery-results.md) retains both attempts, all 18 phase comparisons, exact manifest paths and hashes, complete timings and their limits: one seed, three classes, mostly static geometry and no dedicated world-edge fixture. Those runs preceded the false-depth contact fix. The complete corrected `after/final-fixed-recovery` series also passed all 156 checks, with garage rejoins at 10.833/10.600 s for Taxi, 20.967/21.100 s for Bus and 13.767/13.900 s for BoxTruck (60/20 Hz). The matching six-city series is complete; its CPU failures remain explicit in the result report.
 
-Before CPU costs are artificially low once a driver abandons the car, so they do not represent equal completed work. Evaluate the explicit after cost and measured planner optimization attempts. The user recovery playtest and full 50-car/300-pedestrian CPU acceptance remain pending; isolated fixture acceptance does not close CJ-016.
+Before CPU costs are artificially low once a driver abandons the car, so they do not represent equal completed work. Evaluate the explicit after cost and measured planner optimization attempts. The user recovery playtest and full 50-car/300-pedestrian CPU acceptance remain pending; isolated fixture acceptance does not close CJ-016. The second increment's re-run of this fixture on the final build, with unchanged rejoin times, is in the [yielding and incident report](design/traffic-yielding-incident-results.md#recovery-regression).
 
 ### Nearby-box clearance regression
 
@@ -198,6 +203,41 @@ Each rate runs four Taxi cases, in order: `clear-nearby-boxes`, `actual-overlap`
 Every case checks the expected API result, unchanged ego position/angle/linear/angular velocity across explicit API calls and preserved active vehicle/driver/driver skin/vehicle skin/class. Changes to planner diagnostics are allowed. The two clear cases additionally check actual rejoin time, giving **26 checks across eight cases**. The 60 Hz render clock totals 420 frames and 7 s elapsed fixture time, with 280 explicit API calls and 160 actual physics steps over the clear cases' 4 s. At 20 Hz, API/AI/physics advance once per three rendered frames. Actors reset only between cases; frame-start kinematic poses are recorded before clear-case AI/physics to measure a real rail handoff. `CJ016C` records and captures must cover every scheduled case.
 
 The pre-fix `before/depth-contract/manifest-20261005T170722846100Z-35064.json` completed every case, count and capture with **four failed checks**: clear API expectation and actual rejoin at both rates. All six obstacle guard cases and all body/ownership checks passed. Exit status 1 is retained as failed acceptance with complete evidence. The after `depth-contract` manifest completed all 26 checks with zero failures; both clear cases rejoined at 0.700 s and all six obstacle guards still rejected handoff. It matches the corrected full recovery/city executable. See the [result report](design/traffic-recovery-results.md#corrected-build-verification) for the exact manifests, fingerprints and retained city CPU failures.
+
+## Cooperative yielding fixture
+
+`cj016-conflict-v1` freezes three mutual blockages that the earlier rules left as permanent stand-offs and runs them with production traffic AI and physics on uniform road (world-edge contacts disabled):
+
+| Situation | Set-up | Resolved when |
+|---|---|---|
+| `passing-head-on` | A Taxi passing a parked car in the oncoming lane meets an oncoming Taxi (seeds 0–4) or Bus (5–9) | The oncoming car has passed the passing car's start (at most 20 s), and the passing car has then passed the parked car back in its lane |
+| `knocked-needs-room` | A knocked Taxi, nose 3–5 px from a kerb wall, can only reverse into the rail Taxi or Bus stopped 6–10 px behind it; a parked car in the oncoming lane prevents passing | The knocked car is back on its lane, and the car behind has driven on |
+| `knocked-queue` | The same, with a second rail Taxi queued 10–16 px behind | As above; a role needs a chain role too |
+
+```bash
+python tools/run_cj016_conflict.py --phase before --run-name yielding-20261006
+python tools/run_cj016_conflict.py --phase after --run-name yielding-20261006
+```
+
+Ten seeds vary the gaps, angles, speeds and classes; every case runs at 60 Hz and 20 Hz physics on the 1/60 s render clock: 60 cases in one process, each ending 2 s after success or after 30 s. Every case checks unchanged ownership, finite state, no pose jump, static penetration and vehicle overlap at most 3 px, no rail car knocked, no role flip, exactly one role for the passing car (at most one for a car behind a knocked car, which some seeded poses do not need), none for the priority driver, and the resolution times. The before phase uses a copy of `traffic.cfg` with `YIELD enabled 0`; the after phase uses the shipped file. `CJ_TEST_CASE=<substring>` narrows a diagnostic run. Results: [yielding and incident report](design/traffic-yielding-incident-results.md#cooperative-yielding).
+
+## Driver incident fixture
+
+`cj016-incident-v1` stages a rear-end in a queue: a parked Taxi, a rail Taxi (seeds 0–4) or Bus (5–9) stopped behind it, and a third car placed 3–6 px behind that at 170–200 px/s, the instant before a late-braking rear-end. Production physics solves the contact; production traffic, impact, incident and pedestrian AI run in the game's order.
+
+| Situation | Drivers | Expected |
+|---|---|---|
+| `aggressive-pair` | Both aggressive | One incident; both get out, approach, argue and fight (the fight starts at most 48 px apart, at least 0.5 s after the first exit); each survivor gets back into their own car |
+| `calm-pair` | Both calm | No incident, nobody out; the knocked car rejoins its lane within 30 s |
+| `aggressive-player` | The player's car hits an aggressive driver; the player stops, gets out 1 s after the contact and stands still | The driver gets out, confronts and fights the player (punches land), then drives the same car on |
+| `interrupted` | Both aggressive; the first car catches fire once its driver fights | That driver ends with `car_lost`; the other drives on |
+
+```bash
+python tools/run_cj016_incident.py --phase before --run-name incidents-20261006
+python tools/run_cj016_incident.py --phase after --run-name incidents-20261006
+```
+
+80 cases (4 situations, 10 seeds, 60/20 Hz) run in one process, each ending 2 s after every drivable traffic car has its driver back and its lane, or after 60 s. Every case checks that no vehicle is removed or teleported, that every car–driver handle points back (`ownership_violations`), that a car is never both occupied and owned by a person on foot (`duplicate_drivers`), one incident per pair, a contact within 1 s and the settle time. Both phases run a copy of `traffic.cfg` with `INCIDENT confront_chance 1` (scripted aggressive drivers); the before phase also sets `INCIDENT enabled 0`. The per-0.5 s `CJ016I state` and `CJ016I vehicle` lines show every person's and car's state. Results: [yielding and incident report](design/traffic-yielding-incident-results.md#driver-incidents).
 
 ## Workflow
 

@@ -23,6 +23,8 @@
 #include "vehicle_tests.h"
 #include "traffic_tests.h"
 #include "traffic_clearance_tests.h"
+#include "traffic_conflict_tests.h"
+#include "traffic_incident_tests.h"
 #include "rlgl.h"
 
 static void LoadingScreen(const char* msg) {
@@ -47,6 +49,8 @@ int main(int argc, char** argv) {
         else if (TextIsEqual(argv[i], "--scenario") && i + 1 < argc) scenario = argv[++i];
         else if (TextIsEqual(argv[i], "--vehicle") && i + 1 < argc) testVehicle = argv[++i];
         else if (TextIsEqual(argv[i], "--uncapped")) uncapped = true;
+        // Measurement runs may read an alternative traffic data file (e.g. a baseline).
+        else if (TextIsEqual(argv[i], "--traffic-config") && i + 1 < argc) gTrafficConfigPath = argv[++i];
     }
     SetConfigFlags(((shot && uncapped) ? 0u : FLAG_VSYNC_HINT) | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
     InitWindow(cfg::SCREEN_W, cfg::SCREEN_H, cfg::WINDOW_TITLE);
@@ -75,16 +79,21 @@ int main(int argc, char** argv) {
     VehicleTests tests;
     TrafficTests trafficTests;
     TrafficClearanceTests clearanceTests;
+    TrafficConflictTests conflictTests;
+    TrafficIncidentTests incidentTests;
     bool vehicleFixture = shot && (TextIsEqual(scenario, "handling") || TextIsEqual(scenario, "crash-handling"));
     bool trafficFixture = shot && TextIsEqual(scenario, "traffic-recovery");
     bool clearanceFixture = shot && TextIsEqual(scenario, "traffic-clearance");
-    bool fixture = vehicleFixture || trafficFixture || clearanceFixture;
+    bool conflictFixture = shot && TextIsEqual(scenario, "traffic-conflict");
+    bool incidentFixture = shot && TextIsEqual(scenario, "traffic-incident");
+    bool fixture = vehicleFixture || trafficFixture || clearanceFixture || conflictFixture || incidentFixture;
     if ((vehicleFixture && !tests.Init(game, scenario, testVehicle)) || (trafficFixture && !trafficTests.Init(game, testVehicle)) ||
-        (clearanceFixture && !clearanceTests.Init(game))) {
+        (clearanceFixture && !clearanceTests.Init(game)) || (conflictFixture && !conflictTests.Init(game)) ||
+        (incidentFixture && !incidentTests.Init(game))) {
         game.Unload(); gAssets.Unload(); CloseWindow(); return 2;
     }
     if (shot && !fixture) { game.DebugScenario(scenario); game.debugContacts = true; }
-    if (trafficFixture || clearanceFixture) game.debugContacts = true;
+    if (trafficFixture || clearanceFixture || conflictFixture) game.debugContacts = true;
     int frame = 0;
 
     while (!WindowShouldClose() && !game.quit) {
@@ -94,19 +103,26 @@ int main(int argc, char** argv) {
         if (vehicleFixture) tests.Update(game, dt);
         else if (trafficFixture) trafficTests.Update(game, dt);
         else if (clearanceFixture) clearanceTests.Update(game, dt);
+        else if (conflictFixture) conflictTests.Update(game, dt);
+        else if (incidentFixture) incidentTests.Update(game, dt);
         else game.Update(dt);
         BeginDrawing();
         ClearBackground(BLACK);
         if (vehicleFixture) tests.Draw(game);
         else if (trafficFixture) trafficTests.Draw(game);
         else if (clearanceFixture) clearanceTests.Draw(game);
+        else if (conflictFixture) conflictTests.Draw(game);
+        else if (incidentFixture) incidentTests.Draw(game);
         else game.Draw();
-        bool lastShot = shot && ++frame >= shotFrames;
+        bool lastShot = shot && (++frame >= shotFrames || (conflictFixture && conflictTests.Finished()) ||
+                                (incidentFixture && incidentTests.Finished()));
         if (lastShot) {
             rlDrawRenderBatchActive(); TakeScreenshot(shot);
             if (vehicleFixture) tests.Log();
             else if (trafficFixture) trafficTests.Log();
             else if (clearanceFixture) clearanceTests.Log();
+            else if (conflictFixture) conflictTests.Log();
+            else if (incidentFixture) incidentTests.Log();
             else { game.LogTrafficStats(); game.LogPhysStats(); game.LogPedStats(); }
         }
         else if (shot && every > 0 && frame % every == 0) {
@@ -116,7 +132,8 @@ int main(int argc, char** argv) {
             TakeScreenshot(TextFormat("%.*s_%04d.png", stem, shot, frame));
         }
         const char* captureLabel = vehicleFixture ? tests.CaptureLabel() : trafficFixture ? trafficTests.CaptureLabel()
-            : clearanceFixture ? clearanceTests.CaptureLabel() : nullptr;
+            : clearanceFixture ? clearanceTests.CaptureLabel() : conflictFixture ? conflictTests.CaptureLabel()
+            : incidentFixture ? incidentTests.CaptureLabel() : nullptr;
         if (captureLabel) {
             rlDrawRenderBatchActive();
             const char* ext = GetFileExtension(shot);
@@ -124,7 +141,9 @@ int main(int argc, char** argv) {
             TakeScreenshot(TextFormat("%.*s_%s.png", stem, shot, captureLabel));
             if (vehicleFixture) tests.ClearCaptureRequest();
             else if (trafficFixture) trafficTests.ClearCaptureRequest();
-            else clearanceTests.ClearCaptureRequest();
+            else if (clearanceFixture) clearanceTests.ClearCaptureRequest();
+            else if (conflictFixture) conflictTests.ClearCaptureRequest();
+            else incidentTests.ClearCaptureRequest();
         }
         EndDrawing();
         if (lastShot) break;
@@ -137,5 +156,7 @@ int main(int argc, char** argv) {
     if (vehicleFixture) return (!tests.Finished() || tests.Failed()) ? 1 : 0;
     if (trafficFixture) return (!trafficTests.Finished() || trafficTests.Failed()) ? 1 : 0;
     if (clearanceFixture) return (!clearanceTests.Finished() || clearanceTests.Failed()) ? 1 : 0;
+    if (conflictFixture) return (!conflictTests.Finished() || conflictTests.Failed()) ? 1 : 0;
+    if (incidentFixture) return (!incidentTests.Finished() || incidentTests.Failed()) ? 1 : 0;
     return 0;
 }

@@ -23,10 +23,12 @@
 class Game;
 class CityMap;
 
-enum class PedState : uint8_t { Walk, Wait, Cross, Idle, Wander, Flee, Rejoin, Dodge, Fight, Down, Dead };
+// Confront: a driver walks to the other party and argues; ToCar: back to their own car.
+enum class PedState : uint8_t { Walk, Wait, Cross, Idle, Wander, Flee, Rejoin, Dodge, Fight, Confront, ToCar, Down, Dead };
 
 struct Pedestrian {
     bool     active = false;
+    uint32_t serial = 0;             // unique per spawn: handles check it before use
     Vector2  pos{}, vel{};
     float    angle = 0;              // body heading
     float    walkSpeed = 24;         // px/s (1.2 - 1.7 m/s)
@@ -67,6 +69,13 @@ struct Pedestrian {
     float    turnRate = 0;           // rad/s, for stepping round on the spot
     float    stuckT = 0;
     Vector2  lastPos{};
+    // --- a traffic driver on foot during an incident (traffic_incidents.h) ---
+    int      incident = -1;
+    int      ownVehicle = -1;  uint32_t ownSerial = 0;          // the car they return to
+    int      foe = -1;         uint32_t foeSerial = 0;          // opponent on foot
+    bool     foePlayer = false;                                  // the opponent is the player
+    int      foeVehicle = -1;  uint32_t foeVehicleSerial = 0;   // opponent still in this car
+    float    argue = 0;                                          // s spent arguing face to face
 };
 
 constexpr float PED_RADIUS = 0.32f * 16.0f * 1.35f;   // keep in sync with cfg::CHAR_SCALE

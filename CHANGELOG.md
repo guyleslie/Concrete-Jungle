@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Cooperative yielding: two traffic drivers stopped behind each other get stable roles; the one giving way backs up along its own driven path (still on rails), tucks back into its lane if it was passing, and a car queued close behind backs up too. `YIELD` tuning in `assets/data/traffic.cfg`.
+- Driver incidents: every traffic driver is calm, normal or (about 10 %) aggressive. After a collision with another car or the player's car, an aggressive driver may stop, get out on a safe side, confront and argue, fight the other driver or the player, and then drive the same car on. A lost car or a dead driver ends the incident with a logged reason; nobody is replaced or moved. `INCIDENT` tuning in `traffic.cfg`.
+- `traffic-conflict` (60 cases) and `traffic-incident` (80 cases) fixtures with before/after evidence runners. Yielding: 6 → 60 resolved cases; incidents: 20 → 80 accepted cases, with no ownership violation or duplicate driver. See the [yielding and incident report](docs/design/traffic-yielding-incident-results.md).
+- `RECOVERY WORK`, `RECOVERY WORST`, `TRAFFIC yielding` and `INCIDENTS` lines in the test log; `--traffic-config <path>` for measurement runs.
 - Approved CJ-016 specification for human-like traffic: persistent recovery, cooperative manoeuvres, driver identities and incidents, with test and CPU targets. Proposed ADR-0008 records the replacement constraints for rail traffic; ordinary traffic remains on rails in the first recovery increment.
 - Isolated `traffic-recovery --vehicle Taxi|Bus|BoxTruck` fixtures: enclosed holding, open-road recovery and reverse garage escape at 60 Hz and 20 Hz, with 52 checks per class, rendered checkpoints and separate decision/physics timings. The sequential CJ-016 runner retains before/after manifests and failed baseline evidence. The [result report](docs/design/traffic-recovery-results.md) records 14 failed checks per class before the change and all 156 checks passing on a physical recovery build, with exact hashes and preserved intermediate attempts. Its pre-fix city suite exceeded CPU targets; the corrected build passed all 156 recovery checks and 26 separate clearance checks. Six city regressions completed with observed rejoins and zero recovery give-ups, while their remaining CPU failures stay open.
 - Terminal `LONG-REJOIN` diagnostics for persistent recovery, including alignment/velocity/block-position guards, the most recent rejoin forecast status and `RejoinCause` for actual contact, clearance-only contact, unsafe sweep or incomplete stop.
@@ -30,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Recovery planning no longer runs simultaneous full searches in one frame: jobs are sliced under a shared step budget (`RECOVERY planning_steps`), holds replan only when a blocking actor moves, and immediate checks are reused while every nearby actor moves as forecast. A follower behind a recovering car is trusted to keep its distance and rail cars are forecast to stop where they plan to, which ends the start-stop oscillation of cars moving off a queue. The worst city decision frame fell from 11.6 ms to 2.5 ms; `crash` meets the decision CPU targets, `chase` and `rampage` do not yet.
+- A recovering car aligned behind a stopped car joins the queue instead of reversing away, creeping forward first if it was hit from behind; a car pressed against a wall or another car can now move off.
 - Knocked traffic plans bounded physical forward, reverse or hold moves from a shared actor snapshot, checking swept vehicle footprints and stopping room. Safe lane feedback avoids unnecessary escape searches; full planning evaluates at most 20 candidates. No safe local candidate retains the driver and car; elapsed recovery time and low health no longer trigger abandonment or relocation. Lane rejoin requires physical alignment without a pose blend. All 182 isolated checks pass and six city regressions are recorded; city CPU acceptance and the user recovery playtest remain pending. Mutual yielding/reservations and on-foot incidents follow in later CJ-016 increments.
 - Recovery geometry caches actor radius, speed and initial oriented boxes, uses conservative travel/rotation bounds before detailed forecasts, and omits hold prediction when it cannot change the selected controls. Controller, tuning and candidate tie order are preserved; complete corrected measurements are recorded in the result report, with simultaneous-recovery CPU failures retained.
 - 300 pedestrians live within 110 m of the player instead of 220 spread over the island.
@@ -41,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A traffic car whose mid-block U-turn was refused lost its route and jumped to the map origin. A refused U-turn keeps the route, and the swept turn must now miss other vehicles.
+- A person standing with their back to their target could not start walking in the new driver states; they now turn towards it first.
 - Traffic path scanning no longer ignores an occupied vehicle because both drivers block each other; junction right-of-way rules still apply.
 - Recovery forecasts retain legacy rail pose blends and use the actual observed body at time zero. Distance culls include the `sqrt(2)` corner-radius growth of inflated oriented boxes.
 - Recovery records initial penetration only when the overlap query returns true. Previously a positive output left by a false box-overlap result made separated nearby boxes veto rejoin. The regression reproduced this before the fix; all 182 isolated checks pass after it, and matching city measurements are preserved.

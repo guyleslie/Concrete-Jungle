@@ -121,6 +121,7 @@ public:
     std::vector<PhysDiag> diag;
     int   diagPosFlips = 0, diagAngFlips = 0, diagDeepPen = 0, diagStuck = 0;
     int   statKnocks = 0, statRejoins = 0, statAbandons = 0;   // traffic knocked off / back on the lane / given up
+    int   statYields = 0, statChainYields = 0;                 // cooperative yielding roles taken (direct + chain)
     float diagMaxPen = 0, diagBodySeconds = 0, diagPlayerSlow = 0;
     void  PhysDiagnostics(float dt);
     void  LogPhysStats() const;
@@ -160,18 +161,19 @@ public:
     void Big(const char* text, Color c, float dur);
     int  SpawnVehicle(int skin, Vector2 pos, float angle, DriverType d);
     int  SpawnPed(Vector2 pos, int skin, bool fleeing = false);
+    // Also driven directly by measurement fixtures.
+    void HandleImpacts(float dt);                  // physics events -> damage, sparks, sounds, reactions
+    void EnterVehicle(int idx);
+    void ExitVehicle();
 
 private:
     void NewGame();
     void UpdatePlaying(float dt);
     void UpdatePlayerOnFoot(float dt);
     void UpdatePlayerDriving(float dt);
-    void EnterVehicle(int idx);
-    void ExitVehicle();
     void FireWeapon();
     void MeleeHit();
     void UpdateVehicles(float dt);                 // AI, physics step, impacts, effects
-    void HandleImpacts(float dt);                  // physics events -> damage, sparks, sounds, reactions
     void VehiclePedCollisions();
     void ThrowRider(int idx, float severity);      // motorbike crash: the rider comes off
     void UpdatePeds(float dt);

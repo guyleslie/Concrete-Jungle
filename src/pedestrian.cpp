@@ -2,6 +2,7 @@
 //  Pedestrian AI & drawing - see pedestrian.h
 // =====================================================================================
 #include "pedestrian.h"
+#include "traffic_incidents.h"
 #include "game.h"
 #include "traffic.h"
 #include "assets.h"
@@ -190,6 +191,7 @@ void ScarePed(Pedestrian& p, Vector2 from, float duration) {
 
 void AlarmPed(Pedestrian& p, Vector2 from, float duration, bool secondHand) {
     if (p.state == PedState::Down || p.state == PedState::Dead || p.state == PedState::Fight) return;
+    if (secondHand && p.incident >= 0) return;                     // a driver in a row knows why the other one runs
     if (p.state == PedState::Flee) {                                // already running: just refresh
         p.threat = from;
         p.timer = std::max(p.timer, duration * 0.8f);
@@ -229,6 +231,7 @@ void ProvokePed(Pedestrian& p, const Game& g) {
     }
     if (p.courage < 0.85f || p.health < 45) return;                 // most people run; the tough ones hit back
     p.state = PedState::Fight;
+    p.foe = -1; p.foePlayer = true;                                 // a driver on foot turns on the player
     p.timer = GRng().Range(10.0f, 16.0f);                           // then they have had enough
     p.punchCd = GRng().Range(0.1f, 0.25f);
     p.alarm = -1; p.alarmVehicle = -1;
@@ -324,8 +327,10 @@ static Vector2 PickFleeDir(const Pedestrian& p, const Game& g) {
 // -------------------------------------------------------------------------------------
 void InitPed(Pedestrian& p, Vector2 pos, int skin, const CityMap& map) {
     Rng& r = GRng();
+    static uint32_t nextSerial = 0;
     p = Pedestrian{};
     p.active = true;
+    p.serial = ++nextSerial;
     p.skin = skin;
     p.walkSpeed = r.Range(19.0f, 27.0f);
     p.laneOffset = r.Range(-9.0f, 9.0f);
@@ -607,18 +612,29 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
         break;
     case PedState::Fight: {
         p.timer -= dt; p.punchCd -= dt; p.punchT -= dt;
-        Vector2 to = g.player.pos - p.pos;
+        // A driver in an incident may fight the other driver; everyone else fights the player.
+        bool pedFoe = p.foe >= 0;
+        Vector2 foePos = g.player.pos;
+        if (pedFoe) {
+            float reach = 0, x = 0, y = 0;
+            if (!IncidentFoePos(g, p, &reach, &x, &y)) { p.state = PedState::Rejoin; p.timer = r.Range(0.5f, 1.5f); break; }
+            foePos = V2(x, y);
+        }
+        Vector2 to = foePos - p.pos;
         float d = Len(to);
-        if (g.player.inVehicle) { StartFlee(p, g.player.pos, r.Range(2.0f, 4.0f), false); break; }
+        if (!pedFoe && g.player.inVehicle) { StartFlee(p, g.player.pos, r.Range(2.0f, 4.0f), false); break; }
         if (p.timer <= 0 || d > 12 * M || g.state != GameState::Playing) { p.state = PedState::Rejoin; p.timer = r.Range(0.5f, 1.5f); break; }
         if (d < PED_RADIUS * 3.5f && p.punchCd <= 0 && fabsf(WrapAngle(AngleOf(to) - p.angle)) < 0.7f) {
             p.punchCd = r.Range(0.8f, 1.2f);
             p.punchT = 0.25f;
             g.audio.Play(Sfx::Punch, p.pos, 0.7f, r.Range(0.9f, 1.1f));
-            g.DamagePlayer(r.Range(5.0f, 9.0f), to);
-            g.pedPunches++;
+            if (pedFoe) IncidentPunch(g, (int)(&p - &g.peds[0]));
+            else { g.DamagePlayer(r.Range(5.0f, 9.0f), to); g.pedPunches++; }
         }
     } break;
+    case PedState::Confront: case PedState::ToCar:
+        p.punchT -= dt;                                             // the incident controller decides
+        break;
     default: break;
     }
 
@@ -646,9 +662,30 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
     case PedState::Flee:   goal = p.moveDir * (RUN_SPEED * p.walkSpeed / 24.0f); break;
     case PedState::Dodge:  goal = p.moveDir * p.moveSpeed; break;
     case PedState::Fight: {
-        float d = Dist(p.pos, g.player.pos);
-        if (d > PED_RADIUS * 2.6f) goal = towards(g.player.pos, p.walkSpeed * 1.6f);
-        faceTo = AngleOf(g.player.pos - p.pos);
+        Vector2 foePos = g.player.pos;
+        float reach = 0, x = 0, y = 0;
+        if (p.foe >= 0 && IncidentFoePos(g, p, &reach, &x, &y)) foePos = V2(x, y);
+        float d = Dist(p.pos, foePos);
+        if (d > PED_RADIUS * 2.6f) goal = towards(foePos, p.walkSpeed * 1.6f);
+        faceTo = AngleOf(foePos - p.pos);
+    } break;
+    case PedState::Confront: {
+        float reach = 0, x = 0, y = 0;
+        if (IncidentFoePos(g, p, &reach, &x, &y)) {
+            Vector2 foePos = V2(x, y);
+            if (Dist(p.pos, foePos) > reach * 0.8f) goal = towards(foePos, p.walkSpeed * 1.3f);
+            faceTo = AngleOf(foePos - p.pos);
+        }
+    } break;
+    case PedState::ToCar: {
+        float x = 0, y = 0;
+        if (IncidentCarDoor(g, p, &x, &y)) {
+            Vector2 door = V2(x, y);
+            float l = Dist(p.pos, door);
+            goal = towards(door, std::min(p.walkSpeed * 1.1f, l * 3.0f));
+            // Turn towards the car first: the gait cannot walk backwards to start.
+            faceTo = l < 24 && p.ownVehicle >= 0 ? AngleOf(g.vehicles[p.ownVehicle].pos - p.pos) : AngleOf(door - p.pos);
+        }
     } break;
     default: break;
     }
@@ -739,7 +776,7 @@ void DrawPed(const Pedestrian& p) {
     int frame;
     bool lying = p.state == PedState::Down || p.state == PedState::Dead;
     if (lying) frame = spritegen::PED_FRAME_DOWN;
-    else if (p.state == PedState::Fight && p.punchT > 0) frame = spritegen::PED_FRAME_PUNCH + (p.punchT > 0.12f ? 0 : 1);
+    else if ((p.state == PedState::Fight || p.state == PedState::Confront) && p.punchT > 0) frame = spritegen::PED_FRAME_PUNCH + (p.punchT > 0.12f ? 0 : 1);
     else if (Len(p.vel) < 4 && fabsf(p.turnRate) < 1.0f) frame = spritegen::PED_FRAME_IDLE;
     else frame = (int)p.anim % spritegen::PED_WALK_FRAMES;
     const float F = (float)spritegen::PED_FRAME;

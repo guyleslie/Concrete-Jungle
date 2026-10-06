@@ -3,6 +3,7 @@
 // =====================================================================================
 #include "traffic.h"
 #include "game.h"
+#include "traffic_incidents.h"
 
 using namespace cfg;
 
@@ -127,29 +128,46 @@ void AIResetPath(Vehicle& v, const CityMap& map) {
     ai.ti = std::clamp(ti, 0, INTER_X - 1); ai.tj = std::clamp(tj, 0, INTER_Y - 1);
 }
 
-// U-turn in the middle of a block: swing across into the opposite lane.
+// U-turn in the middle of a block: swing across into the opposite lane. A failed check
+// leaves the current route untouched (it used to clear it, sending the car to the map
+// origin), and the whole swept turn must be clear of other vehicles.
 static bool PlanUTurn(Game& g, Vehicle& v) {
     const CityMap& map = g.map;
     DriverAI& ai = v.ai;
+    DriverAI saved = ai;
+    auto fail = [&]() { ai = saved; return false; };
     AIResetPath(v, map);
     int d = ai.dir;
     Vector2 c = map.InterCenter(ai.ti, ai.tj);
     float along = Dot(v.pos - c, DirVec(d));
-    if (along > -ROAD_HALF - 90) return false;                  // too close to the junction
+    if (along > -ROAD_HALF - 90) return fail();                 // too close to the junction
     int od = (d + 2) & 3;
     int bi = ai.ti - DX(d), bj = ai.tj - DY(d);                 // junction behind us
-    if (!map.ValidInter(bi, bj)) return false;
+    if (!map.ValidInter(bi, bj)) return fail();
     Vector2 start = c + DirVec(d) * along + RightV(d) * LANE_OFFSET;
     Vector2 end = start - RightV(d) * (LANE_OFFSET * 2);
     // is the opposite lane clear?
     for (const Vehicle& o : g.vehicles) {
         if (!o.active || &o == &v) continue;
         Vector2 rel = o.pos - end;
-        if (fabsf(Dot(rel, RightV(d))) < 40 && Dot(rel, DirVec(od)) > -80 && Dot(rel, DirVec(od)) < 260) return false;
+        if (fabsf(Dot(rel, RightV(d))) < 40 && Dot(rel, DirVec(od)) > -80 && Dot(rel, DirVec(od)) < 260) return fail();
     }
     StartPath(v, start, DirVec(d));
     Vector2 ctrl = start + DirVec(d) * 70.0f - RightV(d) * LANE_OFFSET;
     for (int k = 1; k <= 12; k++) { Waypoint t; t.p = QuadBezier(start, ctrl, end, k / 12.0f); t.turn = true; Push(ai, t); }
+    // Every pose along the turn, plus a body length beyond it, must miss other cars.
+    float axle = v.length * 0.32f, turnEnd = ai.path.back().cum + v.length;
+    for (float s = ai.s; s <= turnEnd; s += 8) {
+        Vector2 fp = Sample(ai, s + axle), rp = Sample(ai, s - axle);
+        Vector2 dir = Norm(fp - rp);
+        if (Len2(dir) < 0.5f) continue;
+        OBB pose = MakeOBB((fp + rp) * 0.5f, AngleOf(dir), v.width * 0.5f + 3, v.length * 0.5f + 3);
+        for (const Vehicle& o : g.vehicles) {
+            if (!o.active || &o == &v || Len2(o.pos - pose.c) > 200 * 200) continue;
+            Vector2 n; float depth;
+            if (OBBOverlap(pose, o.Box(), n, depth)) return fail();
+        }
+    }
     ai.dir = od; ai.ti = bi; ai.tj = bj;
     PlanNext(v, map, nullptr);
     ai.blend = 0.6f; ai.blendPos = v.pos; ai.blendAng = v.angle;
@@ -166,6 +184,8 @@ void AIKnock(Vehicle& v) {
     ai.dynTimer = 0;
     ai.blend = 0;
     ai.shove = ai.recover = ai.gearTimer = ai.jammed = ai.retry = 0;
+    // A role in a rail conflict ends with the rail: the physical car plans for itself.
+    ai.yieldTo = -1; ai.retreatLeft = 0; ai.mutualTime = ai.yieldClear = 0; ai.yieldDepth = 0; ai.waitingOn = -1;
     v.in = VehicleInput{};
 }
 
@@ -297,6 +317,236 @@ static bool SideClear(Game& g, int self, float shift, float len, bool sidewalk) 
 }
 
 // -------------------------------------------------------------------------------------
+//  Cooperative yielding: two drivers stopped behind each other get stable roles. The
+//  yielder retraces its own path (still on rails, checked behind) and, if it was
+//  passing, tucks back into its lane; the other driver proceeds through the space.
+// -------------------------------------------------------------------------------------
+namespace {
+struct YieldSettings {
+    float enabled = 1;            // 0 restores the pre-yielding stand-off (baseline runs)
+    float detect = 0.5f;          // s a mutual wait must persist before roles are taken
+    float clear = 1.0f;           // s the conflict must look resolved before resuming
+    float speed = 60;             // px/s reversing speed
+    float accel = 120;            // px/s^2 reversing acceleration
+    float extra = 40;             // px beyond a knocked car's length to retreat
+    float chain = 3;              // longest chain of drivers backing up together
+};
+
+const YieldSettings& YieldTuning() {
+    static YieldSettings s;
+    static bool loaded = false;
+    if (loaded) return s;
+    loaded = true;
+    TrafficField fields[] = {
+        { "enabled", &s.enabled, 0, 1 },
+        { "detect_time", &s.detect, 0.1f, 3 },
+        { "clear_time", &s.clear, 0.2f, 5 },
+        { "retreat_speed", &s.speed, 20, 120 },
+        { "retreat_accel", &s.accel, 40, 400 },
+        { "retreat_extra", &s.extra, 0, 200 },
+        { "max_chain", &s.chain, 1, 6 }
+    };
+    LoadTrafficRecords("YIELD", fields, (int)(sizeof(fields) / sizeof(fields[0])));
+    return s;
+}
+
+// Path kept behind a rail car, beyond its own body, so it can back up.
+float RetreatKeep(const Vehicle& v) { return std::max(240.0f, v.length * 3.0f); }
+} // namespace
+
+// Does 'o' wait on vehicle 'idx'? A rail car waits on the car it is stopped behind; a
+// holding knocked car on any vehicle that rejected at least two of its rollouts (it may
+// be hemmed in by several). A yielder is acting, not waiting.
+static bool WaitsOn(const Vehicle& o, int idx) {
+    if (!o.active || o.driver != DriverType::Traffic || o.wrecked || o.burning || o.ai.yieldTo >= 0) return false;
+    if (o.ai.rail) return o.ai.waitingOn == idx;
+    const RecoveryState& r = o.ai.recovery;
+    if (r.gear != 0 || r.reason != RecoveryReason::NoFeasibleManoeuvre) return false;
+    for (size_t k = 0; k < r.blockIds.size(); k++)
+        if (r.blockIds[k] == idx + 1 && r.blockVotes[k] >= 2) return true;
+    return false;
+}
+
+// Free distance the rail car can reverse along its path: limited by the retained path
+// (the rear axle sample must stay on it) and by people or vehicles behind, 14 px short.
+static float RetreatRoom(Game& g, int self, int* blocker = nullptr) {
+    const Vehicle& v = g.vehicles[self];
+    const DriverAI& ai = v.ai;
+    if (blocker) *blocker = -1;
+    if (ai.path.size() < 2) return 0;
+    float tail = ai.s - v.length * 0.32f - ai.path.front().cum - 2;
+    float limit = std::clamp(tail, 0.0f, RetreatKeep(v));
+    float rear = ai.s - v.length * 0.5f, halfW = v.width * 0.5f + 4;
+    for (float d = 0; d <= limit + 14; d += 8) {
+        float hd = 0;
+        Vector2 p = Sample(ai, rear - d, &hd) + Perp(Forward(hd)) * ai.laneShift;
+        for (int k = 0; k < (int)g.vehicles.size(); k++) {
+            if (k == self || !g.vehicles[k].active) continue;
+            const Vehicle& o = g.vehicles[k];
+            if (Len2(o.pos - p) > 160 * 160 || !PointInOBB(o.Box(), p, halfW)) continue;
+            if (blocker) *blocker = k;
+            return std::clamp(d - 14, 0.0f, limit);
+        }
+        bool person = false;
+        g.pedGrid.Query(p, halfW + PED_RADIUS, [&](int k) {
+            const Pedestrian& pd = g.peds[k];
+            if (pd.active && pd.state != PedState::Dead && Len2(pd.pos - p) < (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) person = true;
+        });
+        if (!g.player.inVehicle && Len2(g.player.pos - p) < (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) person = true;
+        if (person) return std::clamp(d - 14, 0.0f, limit);
+    }
+    return limit;
+}
+
+// Is the body's full length, shifted to 'shift', free of other vehicles and people?
+static bool LaneBesideClear(Game& g, int self, float shift) {
+    const Vehicle& v = g.vehicles[self];
+    float halfW = v.width * 0.5f + 4;
+    for (float d = -v.length * 0.5f - 10; d <= v.length * 0.5f + 10; d += 8) {
+        float hd = 0;
+        Vector2 p = Sample(v.ai, v.ai.s + d, &hd) + Perp(Forward(hd)) * shift;
+        for (int k = 0; k < (int)g.vehicles.size(); k++) {
+            if (k == self || !g.vehicles[k].active) continue;
+            const Vehicle& o = g.vehicles[k];
+            if (Len2(o.pos - p) < 160 * 160 && PointInOBB(o.Box(), p, halfW)) return false;
+        }
+        bool person = false;
+        g.pedGrid.Query(p, halfW + PED_RADIUS, [&](int k) {
+            const Pedestrian& pd = g.peds[k];
+            if (pd.active && pd.state != PedState::Dead && Len2(pd.pos - p) < (halfW + PED_RADIUS) * (halfW + PED_RADIUS)) person = true;
+        });
+        if (person) return false;
+    }
+    return true;
+}
+
+// Stable role choice for a mutual pair: a knocked car gets room from the rail car;
+// between rail cars the one further out of its lane (passing) backs up; then the one
+// with retreat space; then a fixed index order.
+static bool ShouldYield(Game& g, int a, int b) {
+    const Vehicle& A = g.vehicles[a];
+    const Vehicle& B = g.vehicles[b];
+    if (!AIOnRail(A)) return false;
+    if (!AIOnRail(B)) return true;
+    float sa = fabsf(A.ai.laneShift), sb = fabsf(B.ai.laneShift);
+    if (sa > sb + 4) return true;
+    if (sb > sa + 4) return false;
+    float ra = RetreatRoom(g, a), rb = RetreatRoom(g, b);
+    if (ra < 20 && rb >= 60) return false;
+    if (rb < 20 && ra >= 60) return true;
+    return a > b;
+}
+
+static void StartYield(Game& g, int self, int priority, float need, int depth, const char* why) {
+    Vehicle& v = g.vehicles[self];
+    DriverAI& ai = v.ai;
+    ai.yieldTo = priority; ai.yieldSerial = g.vehicles[priority].serial;
+    ai.retreatLeft = need; ai.yieldClear = 0; ai.mutualTime = 0;
+    ai.waitingOn = -1;
+    ai.yieldDepth = depth;
+    g.statYields++;
+    if (depth > 0) g.statChainYields++;
+    if (g.debugContacts)
+        TraceLog(LOG_INFO, "YIELD #%d %s gives way to #%d %s: %s, retreat %.0f px, shift %.1f, depth %d t=%.2f",
+                 self, v.S().name.c_str(), priority, g.vehicles[priority].S().name.c_str(), why, need, ai.laneShift, depth, g.time);
+}
+
+static void EndYield(Game& g, int self, const char* why) {
+    DriverAI& ai = g.vehicles[self].ai;
+    if (g.debugContacts)
+        TraceLog(LOG_INFO, "YIELD #%d ends (%s) after giving way to #%d t=%.2f", self, why, ai.yieldTo, g.time);
+    ai.yieldTo = -1; ai.retreatLeft = 0; ai.yieldClear = 0; ai.mutualTime = 0; ai.yieldDepth = 0;
+    ai.speed = 0;
+    ai.blocked = 0;
+}
+
+// Pose from the path at ai.s (front/rear axle samples), velocity from the pose change.
+static void PoseOnPath(Vehicle& v, float dt) {
+    DriverAI& ai = v.ai;
+    float axle = v.length * 0.32f;
+    Vector2 fp = Sample(ai, ai.s + axle), rp = Sample(ai, ai.s - axle);
+    Vector2 dir = Norm(fp - rp);
+    if (Len2(dir) < 0.5f) dir = Forward(v.angle);
+    Vector2 pos = (fp + rp) * 0.5f + Perp(dir) * ai.laneShift;
+    float ang = AngleOf(dir);
+    if (ai.blend > 0) {
+        ai.blend = std::max(0.0f, ai.blend - dt * 1.4f);
+        float t = SmoothStep(0, 1, ai.blend);
+        pos = LerpV(pos, ai.blendPos, t);
+        ang = ang + WrapAngle(ai.blendAng - ang) * t;
+    }
+    float idt = dt > 1e-5f ? 1.0f / dt : 0.0f;
+    v.vel = (pos - v.pos) * idt;
+    if (Len(v.vel) > ai.speed * 1.5f + 60) v.vel = dir * (ai.yieldTo >= 0 ? -ai.speed : ai.speed);   // no velocity spikes when re-attaching
+    v.angVel = WrapAngle(ang - v.angle) * idt;
+    v.pos = pos;
+    v.angle = ang;
+}
+
+// Runs the yielding role; false when the role ended and normal driving resumes.
+static bool UpdateYield(Game& g, int idx, float dt) {
+    Vehicle& v = g.vehicles[idx];
+    DriverAI& ai = v.ai;
+    const YieldSettings& y = YieldTuning();
+    int b = ai.yieldTo;
+    if (b < 0 || b >= (int)g.vehicles.size() || !g.vehicles[b].active || g.vehicles[b].serial != ai.yieldSerial) {
+        EndYield(g, idx, "priority_gone"); return false;
+    }
+    const Vehicle& B = g.vehicles[b];
+    // Resolved once the priority driver no longer waits on us and is no longer in our
+    // way: passed, tucked away from, back on its lane and gone, or out of the picture.
+    bool clear;
+    if (B.driver != DriverType::Traffic || B.wrecked || B.burning) clear = true;
+    else {
+        Obstacle ahead = ScanPath(g, idx, B.length * 2 + 80, ai.laneShift, false);
+        clear = !WaitsOn(B, idx) && ahead.vehicle != b;
+    }
+    ai.yieldClear = clear ? ai.yieldClear + dt : 0;
+    if (ai.yieldClear >= y.clear) { EndYield(g, idx, "resolved"); return false; }
+
+    float speed = ai.speed;
+    float want = 0;
+    if (ai.retreatLeft > 0) {
+        int behind = -1;
+        float room = RetreatRoom(g, idx, &behind);
+        // A driver queued close behind backs up too (a short wait-for chain).
+        if (room < ai.retreatLeft && behind >= 0 && ai.yieldDepth + 1 < (int)y.chain) {
+            Vehicle& q = g.vehicles[behind];
+            if (AIOnRail(q) && q.ai.yieldTo < 0 && q.ai.waitingOn == idx)
+                StartYield(g, behind, idx, ai.retreatLeft - room + 14, ai.yieldDepth + 1, "chain");
+        }
+        float stopIn = std::min(room, ai.retreatLeft);
+        want = std::min(y.speed, sqrtf(2 * COMFORT_DECEL * std::max(0.0f, stopIn - 1)));
+        if (room <= 1 && behind < 0 && speed < 1) ai.retreatLeft = 0;      // retained path exhausted
+    }
+    if (want > speed) speed = std::min(want, speed + y.accel * dt);
+    else speed = std::max(want, speed - COMFORT_DECEL * 1.6f * dt);
+    float ds = std::min(speed * dt, std::max(0.0f, ai.retreatLeft));
+    ai.s -= ds; ai.retreatLeft -= ds;
+    ai.speed = speed;
+    // Passing drivers tuck back into their own lane as soon as it is free beside them,
+    // reversing on until the lateral move is complete (it needs rolling travel).
+    if (ai.laneShiftTarget != 0 && fabsf(ai.laneShift) > 1 && LaneBesideClear(g, idx, 0)) ai.laneShiftTarget = 0;
+    if (ai.laneShiftTarget == 0 && fabsf(ai.laneShift) > 3) ai.retreatLeft = std::max(ai.retreatLeft, 30.0f);
+    bool wasShifted = fabsf(ai.laneShift) > 3;
+    // Lateral motion only while rolling: a stopped car does not slide sideways.
+    ai.laneShift = Lerpf(ai.laneShift, ai.laneShiftTarget, Damp(2.2f * Saturate(speed / 30.0f), dt));
+    if (wasShifted && ai.laneShiftTarget == 0 && fabsf(ai.laneShift) <= 3) ai.retreatLeft = 0;   // tucked in
+    PoseOnPath(v, dt);
+    v.speedFwd = -speed;
+    v.slip = 0;
+    v.reversing = speed > 1;
+    v.braking = speed < 1;
+    v.in = VehicleInput{};
+    ai.reason = 7;
+    ai.waitingOn = -1;
+    ai.blocker = -1;
+    ai.stopDist = 0;
+    v.rpm = Lerpf(v.rpm, 0.25f + 0.4f * Saturate(speed / 60.0f), Damp(4, dt));
+    return true;
+}
+
+// -------------------------------------------------------------------------------------
 //  Traffic update
 // -------------------------------------------------------------------------------------
 //  Physical recovery: stabilise, plan a checked manoeuvre, or hold indefinitely.
@@ -309,7 +559,9 @@ static void UpdateKnocked(Game& g, int idx, float dt) {
     ai.dynTimer += dt;
     v.in = VehicleInput{};
     float speed = Dot(v.vel, v.Fwd());
-    if (ai.recover <= 0 && (ai.dynTimer < 0.7f || (v.Speed() > 18 && ai.dynTimer < 3.0f))) {
+    // Stopping to get out after an incident: brake and hold; no manoeuvre meanwhile.
+    bool incidentStop = IncidentHoldsVehicle(v);
+    if (incidentStop || (ai.recover <= 0 && (ai.dynTimer < 0.7f || (v.Speed() > 18 && ai.dynTimer < 3.0f)))) {
         // At low speed the arcade pedals engage the opposite gear; hold instead.
         v.in.brake = speed > 40 ? 1.0f : 0.0f;
         v.in.throttle = speed < -40 ? 1.0f : 0.0f;
@@ -382,13 +634,15 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
         if (ai.path.empty()) StartPath(v, v.pos, Forward(v.angle));
         PlanNext(v, map, nullptr);
     }
-    while (ai.path.size() > 3 && ai.path[1].cum < ai.s - v.length - 60) {
+    // Keep the driven path behind the car as well: a yielding driver retraces it.
+    while (ai.path.size() > 3 && ai.path[1].cum < ai.s - v.length - 60 - RetreatKeep(v)) {
         float base = ai.path[1].cum;
         ai.path.pop_front();
         for (Waypoint& w : ai.path) w.cum -= base;
         ai.s -= base;
     }
     ai.uturnCooldown = std::max(0.0f, ai.uturnCooldown - dt);
+    if (ai.yieldTo >= 0 && UpdateYield(g, idx, dt)) return;
     // now and then a driver looks at their phone... (accidents happen)
     if (ai.distracted > 0) ai.distracted -= dt;
     else if (r.Chance(dt * 0.004f * ai.temper)) ai.distracted = r.Range(1.0f, 2.5f);
@@ -424,6 +678,22 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
     float look = 40 + ai.speed * 1.1f + v.length * 0.5f;
     Obstacle ob = ScanPath(g, idx, look, ai.laneShift, ai.distracted <= 0);
     ai.blocker = ob.gap < 30 ? ob.vehicle : -1;
+    // Wait-for edge, and a mutual blockage: the two drivers stopped behind each other.
+    ai.waitingOn = ob.vehicle >= 0 && ob.gap < 30 && ai.speed < 5 ? ob.vehicle : -1;
+    if (ai.waitingOn >= 0) {
+        int b = ai.waitingOn;
+        const Vehicle& B = g.vehicles[b];
+        bool mutual = WaitsOn(B, idx) && B.ai.yieldTo != idx;
+        ai.mutualTime = mutual ? ai.mutualTime + dt : 0;
+        if (YieldTuning().enabled >= 0.5f && ai.mutualTime >= YieldTuning().detect && ShouldYield(g, idx, b)) {
+            bool knocked = !AIOnRail(B);
+            float need = knocked ? B.length + YieldTuning().extra
+                : fabsf(ai.laneShift) > 4 ? RetreatKeep(v) : B.length * 0.5f + YieldTuning().extra;
+            StartYield(g, idx, b, need, 0, knocked ? "knocked_car_needs_room" : fabsf(ai.laneShift) > 4 ? "passing_head_on" : "head_on");
+            UpdateYield(g, idx, dt);
+            return;
+        }
+    } else ai.mutualTime = 0;
     if (ob.gap < 1e8f) {
         float lim = std::max(0.0f, ob.gap - 10) * 2.0f + std::max(0.0f, ob.speed) * 0.8f;
         if (ob.gap < 14) lim = 0;
@@ -456,6 +726,8 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
         if (!beside && fabsf(ai.laneShift - ai.laneShiftTarget) < 6) ai.laneShiftTarget = 0;
     }
     ai.laneShift = Lerpf(ai.laneShift, ai.laneShiftTarget, Damp(2.2f, dt));
+    // An incident: pull up where we are, then the driver gets out (traffic_incidents).
+    if (IncidentHoldsVehicle(v)) { desired = 0; ai.reason = 3; ai.stopDist = 0; }
     // horn: at the player, at people in the road, and at anyone blocking us for too long
     ai.honk -= dt;
     bool annoyed = (ob.isPlayer && ob.gap < 40) || (ob.isPed && ob.gap < 30 && ai.speed < 20) || (ai.blocked > 2.5f / ai.temper);
@@ -474,24 +746,7 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
     ai.s += ai.speed * dt;
 
     // ---- pose from two points on the path (front / rear axle) ----
-    float axle = v.length * 0.32f;
-    Vector2 fp = Sample(ai, ai.s + axle), rp = Sample(ai, ai.s - axle);
-    Vector2 dir = Norm(fp - rp);
-    if (Len2(dir) < 0.5f) dir = Forward(v.angle);
-    Vector2 pos = (fp + rp) * 0.5f + Perp(dir) * ai.laneShift;
-    float ang = AngleOf(dir);
-    if (ai.blend > 0) {
-        ai.blend = std::max(0.0f, ai.blend - dt * 1.4f);
-        float t = SmoothStep(0, 1, ai.blend);
-        pos = LerpV(pos, ai.blendPos, t);
-        ang = ang + WrapAngle(ai.blendAng - ang) * t;
-    }
-    float idt = dt > 1e-5f ? 1.0f / dt : 0.0f;
-    v.vel = (pos - v.pos) * idt;
-    if (Len(v.vel) > ai.speed * 1.5f + 60) v.vel = dir * ai.speed;   // no velocity spikes when re-attaching
-    v.angVel = WrapAngle(ang - v.angle) * idt;
-    v.pos = pos;
-    v.angle = ang;
+    PoseOnPath(v, dt);
     v.speedFwd = ai.speed;
     v.slip = 0;
     v.braking = ai.speed < prevSpeed - 0.5f || (ai.speed < 1 && desired < 1);
@@ -593,6 +848,16 @@ void AIUpdatePolice(Game& g, int idx, float dt) {
 // -------------------------------------------------------------------------------------
 //  Spawning
 // -------------------------------------------------------------------------------------
+void AIStartRail(Game& g, Vehicle& v, float tail) {
+    AIResetPath(v, g.map);
+    Vector2 dir = DirVec(v.ai.dir);
+    StartPath(v, v.pos - dir * tail, dir);
+    PlanNext(v, g.map, nullptr);
+    v.ai.s += tail;
+    v.ai.rail = true;
+    v.ai.blend = 0;
+}
+
 bool AIPlaceOnRoad(Game& g, Vehicle& v, Vector2 near, float minDist, float maxDist, bool offscreen) {
     const CityMap& map = g.map;
     Rng& r = GRng();
@@ -617,6 +882,7 @@ bool AIPlaceOnRoad(Game& g, Vehicle& v, Vector2 near, float minDist, float maxDi
         v.ai.tj = fwd ? (horizontal ? j : j + 1) : j;
         v.ai.cruise = (v.S().large() ? r.Range(170, 205) : r.Range(215, 265));   // ~48-60 km/h
         v.ai.temper = r.Range(0.6f, 1.5f);
+        IncidentAssignMood(v);
         if (v.driver == DriverType::Traffic) {
             StartPath(v, p, DirVec(d));
             PlanNext(v, map, nullptr);

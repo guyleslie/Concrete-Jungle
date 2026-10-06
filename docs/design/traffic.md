@@ -2,9 +2,9 @@
 
 How traffic and police vehicles drive. Traffic follows its lane kinematically ("on rails") until something knocks it into physics; police cars are always physics-driven. The rationale is recorded in [ADR-0004](../adr/0004-kinematic-rail-traffic.md).
 
-Source: `src/traffic.h`, `src/traffic.cpp`, `src/traffic_recovery.*`; recovery tuning in `assets/data/traffic.cfg`; population management in `Game::UpdateSpawning` and `Game::UpdatePolice` (`src/game.cpp`).
+Source: `src/traffic.h`, `src/traffic.cpp`, `src/traffic_recovery.*`, `src/traffic_incidents.*`; recovery, yielding and incident tuning in `assets/data/traffic.cfg`; population management in `Game::UpdateSpawning` and `Game::UpdatePolice` (`src/game.cpp`).
 
-The user approved the [CJ-016 specification](traffic-behaviour-proposal.md) on 2026-10-05. Its first increment covers knocked-vehicle recovery and persistent holding. Ordinary rail following, passing and junction right-of-way rules remain; path scanning no longer ignores a vehicle solely because both drivers block each other. Shared yielding roles, physical ordinary traffic, persistent on-foot drivers and confrontations are later increments. [ADR-0004](../adr/0004-kinematic-rail-traffic.md) remains Accepted and [ADR-0008](../adr/0008-human-like-traffic.md) remains Proposed.
+The user approved the [CJ-016 specification](traffic-behaviour-proposal.md) on 2026-10-05. Its first increment covers knocked-vehicle recovery and persistent holding. The second increment (2026-10-06) adds a shared CPU budget for recovery planning, [cooperative yielding](#cooperative-yielding) for two drivers stopped behind each other, queue-aware rejoining and [driver incidents](#driver-incidents): stopping, getting out, confronting, fighting and returning to the same car. Ordinary traffic stays on rails: a yielding driver retraces its own path kinematically. [ADR-0004](../adr/0004-kinematic-rail-traffic.md) remains Accepted and [ADR-0008](../adr/0008-human-like-traffic.md) remains Proposed. Measured results are in the [yielding and incident report](traffic-yielding-incident-results.md).
 
 ## Contents
 
@@ -13,7 +13,9 @@ The user approved the [CJ-016 specification](traffic-behaviour-proposal.md) on 2
 - [Speed control](#speed-control)
 - [Junction rules](#junction-rules)
 - [Obstacles and impatience](#obstacles-and-impatience)
+- [Cooperative yielding](#cooperative-yielding)
 - [Knocked off the lane](#knocked-off-the-lane)
+- [Driver incidents](#driver-incidents)
 - [Police](#police)
 - [Population](#population)
 
@@ -60,10 +62,25 @@ Directional right-of-way rules allow compatible movements through a junction and
 | Situation | Reaction |
 |---|---|
 | Stopped behind a static vehicle for 1 s (scaled by the driver's temper) | Overtakes through the oncoming lane if it is clear; otherwise, except for large vehicles, mounts the kerb if the sidewalk is free of furniture and buildings. |
-| Blocked for 6 s | Makes a U-turn in the middle of the block, if it is far enough from the junction and the opposite lane is clear (not for large vehicles). |
+| Two drivers stopped behind each other | One of them gives way and backs up; see [Cooperative yielding](#cooperative-yielding). |
+| Blocked for 6 s | Makes a U-turn in the middle of the block, if it is far enough from the junction, the opposite lane is clear and every pose of the swept turn misses other vehicles (not for large vehicles). A refused U-turn keeps the current route. |
 | Blocked, or someone standing in the road | Honks; impatient drivers honk sooner. |
 | Distracted (random, about once every few minutes per driver) | Ignores pedestrians for 1–2.5 s — accidents happen. |
 | Scared (gunfire, explosions, hit by the player) | Panics: drives faster and runs red lights. |
+
+## Cooperative yielding
+
+Each traffic driver keeps a *wait-for* edge: a rail car waits on the vehicle it is stopped behind (within 30 px, below 5 px/s); a knocked car holding with `no_feasible_manoeuvre` waits on every vehicle that rejected at least two of its rollouts. When two drivers wait on each other for `detect_time`, one takes the yielding role:
+
+| Pair | Who gives way |
+|---|---|
+| A rail car and a knocked (physical) car | The rail car: the knocked car needs room to manoeuvre |
+| Two rail cars, one further out of its lane (passing) | The one further out of its lane |
+| Two rail cars otherwise | The one with retreat space when the other has none; then a fixed index order |
+
+The role is stable: the other driver never takes the opposite role for the same pair, and the role ends only after the conflict has looked resolved for `clear_time` (the priority driver no longer waits on the yielder and is no longer in its way within two of its lengths). The yielder stays on rails and retraces its own driven path at up to `retreat_speed`, with comfortable braking, stopping 14 px short of any vehicle, person or the player behind it. Traffic keeps the driven path behind each car (at least 240 px or three lengths) for this. A passing driver tucks back into its own lane as soon as the lane beside its whole body is free, reversing on until the lateral move is complete; a car giving room to a knocked car backs up that car's length plus `retreat_extra`. If a car queued close behind blocks the retreat, it backs up too (a chain of at most `max_chain` drivers).
+
+Other drivers' recovery forecasts see a yielding car's negative path speed and its retreat end. Yielding cars are not recycled. Two physical (knocked) cars blocking each other are not yet given roles; each one's planner treats the other as an obstacle. `TRAFFIC yielding` in the test log reports roles taken, chains and unresolved mutual pairs at the end of a run. See the [conflict fixture](../testing.md#cooperative-yielding-fixture).
 
 ## Knocked off the lane
 
@@ -74,7 +91,30 @@ A hard hit, an explosion, or pushing on something for a moment turns a rail car 
 3. **Drive or hold.** Issue throttle, brake, steering and handbrake controls; the physics solver owns the actual position and angle. Keep a committed move with hysteresis, replan after poor progress, and check for an immediate hazard between planning jobs. Stop before changing gear. If no safe candidate is found within the bounded local planner, hold with `no_feasible_manoeuvre` and retain the same vehicle and driver. This diagnosis is not proof that every possible global escape is impossible; the enclosed fixture has known impassable geometry. There is no recovery-time or low-health exit, replacement pedestrian or relocation.
 4. **Rejoin without correction.** Physically align with the lane before resuming the existing rail route. Rejoining must not blend, snap or move the car into a lane pose. Damage, fire and driver injury remain separate game consequences; a low health percentage alone does not abandon a blocked car.
 
-Tuning is data-driven in `assets/data/traffic.cfg` ([format](../guides/adding-content.md#traffic-recovery)). The controller explicitly uses the current arcade model: its low-speed brake pedal engages reverse, so stationary holding uses the handbrake. CJ-002's axle model and class calibration remain pending; this increment does not claim that the arcade forces are calibrated human driving.
+### Queues and contact
+
+- **Queued behind a vehicle.** An aligned, stopped car whose every forward candidate is rejected by a stopped vehicle ahead in its lane corridor (below 8 px/s, not touching it) holds with `queued_behind_vehicle` instead of reversing away. Its rejoin check returns `queued_behind`: the car resumes its rail route at rest and the ordinary rail rules make it wait, pass or yield. Static geometry ahead still vetoes the rejoin, and any actual or clearance-margin contact still does.
+- **Touched from behind.** A queued car in contact with a vehicle behind it (a rear-end) first creeps forward with a short checked rollout (0.15 s of drive plus the stopping tail) to release the contact, then waits.
+- **Leaving an existing contact.** A rollout that starts in contact may escape it but never deepen it. Once the pose is outside the clearance margin, the no-deepening rule stays in force until the swept test of that step also clears; previously the conservative sweep pad rejected every slow escape on its first clear step, so a car pressed against a wall or another car could never move off.
+
+### Planning budget
+
+Rollouts are the cost of recovery: each force step costs about 0.25 µs for the vehicle forces and 0.3–0.6 µs for the swept checks and other drivers' forecasts on the reference machine. Recovery therefore schedules its work instead of letting simultaneous plans pile into one frame:
+
+- **Sliced jobs.** A planning job runs its rollouts (lane tracking first, then the 18 arcs, then the conditional hold) one unit at a time across frames. All jobs share `planning_steps` force steps per 1/60 s of frame time; only the longest-waiting jobs may use it, so none starves. Candidate order, scores and the hold-first tie are unchanged; a hazard restarts the job. While a job is pending the car continues its committed move only while the per-frame immediate check passes, otherwise it holds.
+- **Event-driven holds.** Each job records the vehicles and people that rejected its rollouts. A holding car (no feasible manoeuvre, or queued) replans only when its quantized pose, the number of static obstacles around it or the state of one of those blockers changes, and at least every 2 s. An actor that did not block cannot open a way by moving.
+- **Covered immediate checks.** A full immediate check validates four extra frames (1/15 s) of the committed move and records the predicted poses at those frame boundaries and every vehicle or person that could reach the car within the horizon. The next frames reuse it only while the car stays within 1 px and 0.02 rad of its prediction and every such actor within 2 px of its linear forecast, with no newcomer and no more than 12 of them; otherwise the full check runs at once.
+- **Stationary forecasts.** A stopped rail car or a motionless body has one forecast pose after its first sample; residual motion is added to its sweep pad, which keeps contact depths exact.
+- **Margins.** Static actors and people skip their per-step cull test while a conservative distance margin from an earlier step remains positive (identical results).
+
+Two forecast rules removed spurious hazards that made recovering cars start, stop and replan every few frames (one car did so 453 times in `rampage`):
+
+- **The rear-end rule.** A vehicle behind the car in its lane corridor, moving its way, keeps its own distance; forward rollouts and immediate checks do not treat it as an obstacle. Reverse rollouts still do. Forecast at constant speed, such a follower (a queued rail car or a patrolling police car) always ran into the stopping tail of a car moving off.
+- **Planned stops.** A rail car is forecast no further than its planned stop (`DriverAI::stopDist`: the stop line, a person, a stopped or knocked car ahead), as pedestrians already predict it; a rail car stopped there is a stationary forecast.
+
+`RECOVERY CPU` reports deferred job-frames, the longest wait, holds kept unchanged and covered immediate checks; `RECOVERY WORK` and `RECOVERY WORST` report per-frame rollouts, force steps, actor tests and forecasts, and the six most expensive frames with their stage times.
+
+Tuning is data-driven in `assets/data/traffic.cfg` ([format](../guides/adding-content.md#recovery)). The controller explicitly uses the current arcade model: its low-speed brake pedal engages reverse, so stationary holding uses the handbrake. CJ-002's axle model and class calibration remain pending; this increment does not claim that the arcade forces are calibrated human driving.
 
 The forecast matches production force substeps in the measured 60 Hz and 20 Hz cases: respectively 240 Hz and 160 Hz. At faster frame rates it caps the forecast at 240 Hz to bound work, so it does not claim identical discretization at every frame rate. Predicted controls refresh at the elapsed actual frame interval, rounded to the next forecast sample, also bounded to 240 Hz. A full 4 s candidate uses at most 960 force steps. Moving-actor forecasts are cached and reused across candidates; complete swept and stopping checks also apply to the lane-tracking fast path.
 
@@ -87,6 +127,24 @@ The separate [nearby-box regression](../testing.md#nearby-box-clearance-regressi
 City profiling separates recovery planning from the full driver decision span. `DRIVER DECISION CPU` conservatively includes vehicle preparation, fire, explosions and wreck cleanup, pedestrian grid construction, the shared snapshot and traffic/police AI. It is an upper bound on traffic decision cost; physics, pedestrian AI, rendering and screenshot capture are outside that measured span. Isolated fixture timings cover their single driver and physics separately; they do not substitute for the 50-car/300-pedestrian CPU acceptance test.
 
 The [recovery fixture](../testing.md#cj-016-recovery-measurements) covers Taxi, Bus and BoxTruck in open, enclosed and reverse-escape geometry at 60 Hz and 20 Hz. The [result report](traffic-recovery-results.md) preserves a pre-fix physical recovery build with all 156 isolated checks passing, compared with 14 failures per class before implementation. Its pre-fix first city run completed but exceeded CPU targets in crash, chase and rampage and recorded no completed rejoins. The complete corrected clearance/recovery/city series is recorded in that report: all 182 isolated checks pass, city rejoins occur and recovery give-ups remain zero. City CPU acceptance and the user playtest remain open. These one-seed isolated cases do not establish moving-gap negotiations, simultaneous recovery intent reservations, city-edge acceptance or incident interruptions.
+
+## Driver incidents
+
+Every traffic driver has a mood drawn when the car is placed: `aggressive_share` aggressive, `calm_share` calm, the rest normal. A vehicle–vehicle contact with a closing speed of at least `min_impact` and a delta-V below `serious_dv` may start one incident per pair of cars (`pair_memory` prevents repeats); the player's car counts as a party.
+
+| Driver | Reaction |
+|---|---|
+| Calm | Carries on (a knocked car recovers as usual) |
+| Normal | Honks |
+| Aggressive | With probability `confront_chance`: stops, waits a personal 0.8–1.6 s, gets out and confronts the other party |
+
+1. **Stop.** A rail car pulls up where it is; a knocked car holds with the handbrake. Nothing else plans meanwhile.
+2. **Get out on a safe side.** The driver's (left) door first, otherwise the right one: not into a building, a car or the path of a vehicle moving towards that point. With no safe side for `exit_wait`, the driver stays in and drives on (`no_safe_exit`). The person who gets out is the same driver: the car keeps a handle (index and serial) to them and they keep one to the car, which waits with the handbrake on and is protected from recycling.
+3. **Confront.** The driver walks to the other driver if they are out, to the player on foot, or otherwise to the other car's door, and argues face to face for `argue_time`, shaking a fist; at a car door the blows land on the door.
+4. **Escalate or end.** Two drivers who both came to argue fight; so does a driver facing the player on foot. Otherwise the argument ends. A fight lasts at most about `fight_time`; a person below 45 health backs off for 1.5–2.5 s. If the other party leaves by more than `give_up_distance`, the driver gives up.
+5. **Return.** Fight over, flight over or interrupted, the driver walks back to the door of the same car, gets in and recovers to the lane physically. The car is never moved and nobody is replaced.
+
+Interruptions end a driver's part with a logged reason instead of a duplicate or stale reference: `car_lost` when the car is destroyed, burning or taken (for example by the player), `driver_dead`, `driver_gone`, `no_safe_exit`. The empty car is then an ordinary abandoned car. Drivers on foot keep their identity: population recycling and second-hand panic leave them alone, so the winner does not run because the loser does. `INCIDENTS` in the test log counts starts, exits, confrontations, fights, returns and each interruption reason. See the [incident fixture](../testing.md#driver-incident-fixture) and, for the on-foot behaviour, [Pedestrians](pedestrians.md#drivers-on-foot).
 
 ## Police
 
@@ -102,6 +160,6 @@ Arrests, the number of police cars and when they give up are game rules — see 
 
 ## Population
 
-- 50 traffic cars drive at all times. Ordinary rail cars more than about 210 m from the player and off-screen are recycled to a random lane 55–160 m away, off-screen, so the city around the player stays busy. Knocked/recovering or persistently held cars must keep their vehicle and driver when the camera turns away.
+- 50 traffic cars drive at all times. Ordinary rail cars more than about 210 m from the player and off-screen are recycled to a random lane 55–160 m away, off-screen, so the city around the player stays busy. Knocked/recovering, persistently held, yielding and incident cars keep their vehicle and driver when the camera turns away.
 - Up to 40 parked cars stand on parking spots, including police cars at the police station and ambulances at the hospital.
 - Abandoned vehicles are removed once they are far away and off-screen.

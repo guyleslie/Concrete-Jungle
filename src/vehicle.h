@@ -72,12 +72,26 @@ struct DriverAI {
     float temper = 1;        // 0.5 calm .. 1.5 impatient (honking, overtaking)
     int   blocker = -1;      // vehicle we are waiting for (-1 none / person)
     float stopDist = 1e9f;   // rail: how far the front can still go before a planned stop (people read it)
+    // --- cooperative yielding: a stable role in a mutual blockage (see traffic.h) ---
+    int   waitingOn = -1;    // wait-for edge: the vehicle this driver is stopped behind
+    int   yieldTo = -1;      // vehicle given priority; -1 none
+    uint32_t yieldSerial = 0;// its serial when the role was taken (slot reuse guard)
+    float retreatLeft = 0;   // rail distance still to reverse along the driven path
+    float mutualTime = 0;    // how long the mutual wait has persisted
+    float yieldClear = 0;    // how long the conflict has looked resolved
+    int   yieldDepth = 0;    // 0: direct role, >0: backing up for the driver ahead (chain)
+    // --- incidents (traffic_incidents.h) ---
+    uint8_t mood = 1;        // DriverMood: calm / normal / aggressive
+    int   incident = -1;     // incident this driver is stopping for; -1 none
+    int   driverPed = -1;    // the driver on foot while out of the car
+    uint32_t driverPedSerial = 0;
     Vector2 lastVel{};       // diagnostics (jolt detection)
     int   reason = 0;        // diagnostics: 0 cruise, 1 red light, 2 queue, 3 blocked, 4 yield, 5 static, 6 box
 };
 
 struct Vehicle {
     bool    active = false;
+    uint32_t serial = 0;     // unique per spawn/recycle: handles check it before use
     int     skin = 0;
     VClass  cls = 0;
     Vector2 pos{}, vel{};
