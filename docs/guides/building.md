@@ -8,6 +8,7 @@ How to set up the toolchain, build the game and fix common build problems.
 - [Build options](#build-options)
 - [Running](#running)
 - [Adding a source file](#adding-a-source-file)
+- [Packaging a release](#packaging-a-release)
 - [Troubleshooting](#troubleshooting)
 
 ## Requirements
@@ -69,6 +70,22 @@ For automated test runs, see [Testing](../testing.md).
 ## Adding a source file
 
 `build.sh` picks up every `src/*.cpp` automatically. Add new files to `build.bat` and to the `SOURCES` list in `CMakeLists.txt` as well.
+
+## Packaging a release
+
+A release is a zip file with the executable, the `assets/` folder, the licence, credits, readme and changelog, attached to a [GitHub release](https://github.com/guyleslie/Concrete-Jungle/releases).
+
+1. Move the *Unreleased* entries of the [changelog](../../CHANGELOG.md) into a new section, `## [X.Y.Z] - YYYY-MM-DD`, and commit.
+2. Tag the commit: `git tag -a vX.Y.Z -m "Concrete Jungle X.Y.Z"`.
+3. In a fresh clone of the tag, build with `build.bat` and package:
+
+   ```bash
+   python tools/package_release.py --version X.Y.Z
+   ```
+
+   The script writes `build/release/ConcreteJungle-X.Y.Z-windows-x64.zip` and prints its SHA-256. It refuses a console executable from `build.sh`, which is meant for test runs, and a version without a changelog section.
+4. Extract the zip to a new folder and start the game from there.
+5. Push the commit and the tag (`git push origin main vX.Y.Z`). Create a GitHub release from the tag, with the changelog section as its notes, and attach the zip. Mark it as a pre-release while playtests of its changes are open.
 
 ## Troubleshooting
 

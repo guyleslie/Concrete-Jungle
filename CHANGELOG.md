@@ -2,13 +2,18 @@
 
 All notable changes to Concrete Jungle are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). There are no public releases yet; version numbers mark development milestones.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version 0.3.0 is the first public release, published on [GitHub](https://github.com/guyleslie/Concrete-Jungle/releases); earlier version numbers mark development milestones.
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-10-06
+
+First public release: the source on GitHub and a playable Windows build. Pedestrian behaviour (CJ-010), full screen (CJ-013) and the third traffic increment (CJ-016) still await playtest acceptance.
 
 ### Added
 
 - MIT licence for the project's own code (`LICENSE`, CJ-009); third-party assets keep the licences listed in CREDITS. A screenshot at the top of the README, ready for publishing on GitHub.
+- `tools/package_release.py` packages a playable Windows build as a zip; the [build guide](docs/guides/building.md#packaging-a-release) describes the release steps.
 - A CJ-008 note: the `drive` autopilot now locks up with a traffic taxi in the first junction.
 - Angry drivers shout: three synthesised voices ("hey!", "oi!", "hah!") at a personal pitch, every second or so from the moment they walk up; `shout1.wav`–`shout3.wav` in `assets/sounds/` replace them. Arguing, they raise and shake a fist (two new civilian atlas frames); the punch frame is now only for blows.
 - `TRAFFIC slip` in the test log: the rear-axle slip of rail cars during lane changes, turns and straight driving. New backlog item CJ-020 for the turning slip it found.

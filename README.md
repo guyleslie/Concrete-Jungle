@@ -21,10 +21,26 @@ A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C+
 
 ## Quick start
 
-There is no prebuilt release yet: build the game from source. You need 64-bit Windows with a graphics card that supports OpenGL 3.3, and about 2 GB of disk space for raylib and its tools.
+### Play
+
+You need 64-bit Windows and a graphics card that supports OpenGL 3.3.
+
+1. Download `ConcreteJungle-<version>-windows-x64.zip` from the [latest release](https://github.com/guyleslie/Concrete-Jungle/releases/latest) and extract it.
+2. Double-click `ConcreteJungle.exe` in the extracted folder. The executable is not signed, so Windows SmartScreen may warn about it: choose *More info › Run anyway*.
+
+The game runs full screen at your monitor's resolution. Press Enter on the title screen, F1 for help, Esc to pause and Q in the pause menu to quit. Keep the executable next to the `assets/` folder: the game loads its data, textures and fonts from there.
+
+### Build from source
+
+You need the same, and about 2 GB of disk space for raylib and its tools.
 
 1. **Install raylib 6.0.** Download the *raylib 6.0 Windows Installer (64bit)* from [itch.io](https://raysan5.itch.io/raylib) and run it. It installs raylib together with the w64devkit GCC compiler the game is built with, by default into `C:\raylib`.
-2. **Get the source.** Clone this repository with Git, or download it from GitHub as a ZIP (*Code › Download ZIP*) and extract it.
+2. **Get the source.** Clone the repository, or download it from GitHub as a ZIP (*Code › Download ZIP*) and extract it:
+
+   ```bash
+   git clone https://github.com/guyleslie/Concrete-Jungle.git
+   ```
+
 3. **Build.** Open a Command Prompt in the project folder (in File Explorer, type `cmd` into the address bar and press Enter), tell the build script where raylib is installed, and build:
 
    ```bat
@@ -38,9 +54,9 @@ There is no prebuilt release yet: build the game from source. You need 64-bit Wi
    The build takes about a minute and ends with `Built ConcreteJungle.exe`; the game is then in the project folder. If the build cannot find raylib, it says so: check `RAYLIB_DIR`.
 
    In PowerShell (the default of Windows Terminal), the same two commands are `$env:RAYLIB_DIR = "C:\raylib"` and `.\build.bat`. In Git Bash, run `RAYLIB_DIR=/c/raylib sh build.sh`: it recompiles only the changed files, and the game it builds opens a console window with its log.
-4. **Play.** Double-click `ConcreteJungle.exe`. The game runs full screen at your monitor's resolution; press Enter on the title screen, F1 for help, Esc to pause and Q in the pause menu to quit. Keep the executable next to the `assets/` folder: the game loads its data, textures and fonts from there.
+4. **Play.** Double-click `ConcreteJungle.exe` in the project folder, as in [Play](#play).
 
-Other build options (debug builds, CMake, Linux and macOS) and troubleshooting are in the [build guide](docs/guides/building.md).
+Other build options (debug builds, CMake, Linux and macOS), packaging a release and troubleshooting are in the [build guide](docs/guides/building.md).
 
 ## Controls
 
@@ -98,7 +114,7 @@ Other build options (debug builds, CMake, Linux and macOS) and troubleshooting a
 assets/   data files (assets/data/*.cfg), textures, sprites, fonts
 docs/     project documentation
 src/      C++ sources, one module per subsystem
-tools/    helper scripts: derived art, sprite export, documentation check
+tools/    helper scripts: derived art, sprite export, documentation check, release packaging
 ```
 
 ## Credits and licensing
