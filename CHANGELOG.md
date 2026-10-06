@@ -40,7 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- `build.sh` reads `RAYLIB_DIR` like `build.bat`, so it builds with raylib installed anywhere.
+- `build.sh` reads `RAYLIB_DIR` like `build.bat`, so it builds with raylib installed anywhere. Both build scripts report a missing raylib installation and end with `BUILD FAILED` on any error; `build.sh` no longer fails silently when a compiler error does not contain the word "error".
+- The README quick start is a step-by-step guide: installing raylib, getting the source, building from the Command Prompt, PowerShell or Git Bash, and starting the game. Tested on a fresh clone with a clean `PATH`.
 - Rail cars change lane by steering instead of sliding sideways: the lateral offset follows an S-curve along the path, the rear axle traces it and the body points along it. Overtaking and mounting the kerb check the whole swept curve first, backing up a little when the car stands too close behind the obstacle; a driver giving way reverses back into its lane the same way.
 - Driver decisions now meet the CJ-016 CPU targets in every city scenario (`chase` 0.69 / 1.41 → 0.32 / 0.82 ms, `rampage` 0.73 / 1.55 → 0.38 / 0.86 ms average / 95th percentile): the rail look-ahead tests only cars and people that can reach its sampled path, recovery rollouts let distant actors sleep and skip rail forecast boxes out of reach, and force steps share their trigonometry. These leave every decision unchanged; covered immediate checks record up to 32 actors instead of 12. `DRIVER DECISION STAGES` in the test log splits the decision time. See the [third increment report](docs/design/traffic-third-increment-results.md).
 - On-foot test runs use the screen centre instead of the mouse cursor for the camera look-ahead, so `foot`, `day` and `brawl` no longer depend on where the cursor rests.

@@ -36,7 +36,9 @@ Recompiles only changed sources (or all of them after a header change) and links
 build.bat
 ```
 
-Add `debug` for a build with debug symbols and no optimisation. A full rebuild takes about 45 seconds.
+Add `debug` for a build with debug symbols and no optimisation. A full rebuild takes about a minute. In PowerShell, set the folder with `$env:RAYLIB_DIR = "C:\raylib"` and run `.\build.bat`.
+
+Both scripts stop with `raylib not found in <folder>` when `RAYLIB_DIR` does not contain `raylib\src\raylib.h`, and end with `BUILD FAILED` on any error; `build.sh` also names the source file that failed and its log.
 
 ### CMake
 
@@ -75,5 +77,7 @@ For automated test runs, see [Testing](../testing.md).
 | `build.bat` behaves strangely or fails to parse | The file must use CRLF line endings. `.gitattributes` enforces this on checkout; editors must not convert it. |
 | CMake with MinGW Make fails with path errors | The project path contains `á`. Use the Ninja generator. |
 | An image does not load | This raylib build has no JPG support. Convert the image to PNG. |
-| `assets/ folder not found` warning | The game was started from another folder. Start it from the project folder. |
-| Link errors about raylib | `RAYLIB_DIR` does not point at the raylib installation. `build.sh` needs the Git Bash form (`/c/raylib`), `build.bat` the Windows form (`C:\raylib`). |
+| `assets/ folder not found` warning | Neither the working folder nor the executable's folder contains `assets/`. Keep the executable next to the `assets/` folder. |
+| `raylib not found in <folder>` | `RAYLIB_DIR` is not set, or does not point at the raylib installation (the folder that contains `raylib\src\raylib.h`). `build.sh` needs the Git Bash form (`/c/raylib`), `build.bat` the Windows form (`C:\raylib`). |
+| `'build.bat' is not recognized` in PowerShell | PowerShell does not run scripts from the current folder by name. Use `.\build.bat`. |
+| Link errors about raylib | `RAYLIB_DIR` points at an incomplete raylib installation: `raylib\src\libraylib.a` is missing. |

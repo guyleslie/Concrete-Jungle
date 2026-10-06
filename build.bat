@@ -7,6 +7,11 @@ rem  Adjust RAYLIB_DIR if raylib is installed somewhere else (default installer:
 rem ==================================================================================
 setlocal
 if "%RAYLIB_DIR%"=="" set RAYLIB_DIR=E:\Apps\raylib
+if not exist "%RAYLIB_DIR%\raylib\src\raylib.h" (
+    echo raylib not found in %RAYLIB_DIR% - set RAYLIB_DIR to the raylib installation, e.g. set RAYLIB_DIR=C:\raylib
+    echo BUILD FAILED
+    exit /b 1
+)
 set PATH=%RAYLIB_DIR%\w64devkit\bin;%PATH%
 set CXXFLAGS=-std=c++17 -O2 -DNDEBUG
 if /I "%1"=="debug" set CXXFLAGS=-std=c++17 -O0 -g
