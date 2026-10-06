@@ -317,7 +317,7 @@ Smaller improvements left after the collision rewrite:
 
 The `drive` autopilot never reverses, so it stays stuck once it drives into something (since 2026-09-27 it ends up against a building corner). It should back out like the `derby` autopilot. Handling scenarios for [CJ-002](#cj-002-vehicle-handling-model) will need scripted manoeuvres as well.
 
-**Observed on 2026-10-06** (`drive`, 1,800 frames, build `d37e456`): the run now stops in the first junction. At t = 1.65 s a traffic taxi (#44, normal driver) hits the Stinger at an approach speed of 221 px/s; 0.05 s later the Stinger hits two pieces of street furniture. From then on the car stays at 0 km/h until the end of the run (11 player stuck events, health 61/100). The taxi stays knocked for more than 12 s (`LONG-REJOIN reason=no_feasible_manoeuvre`), so neither car frees the other, and every screenshot after the first two seconds shows the same junction.
+**Observed on 2026-10-06** (`drive`, 1,800 frames, build `a3da34f`): the run now stops in the first junction. At t = 1.65 s a traffic taxi (#44, normal driver) hits the Stinger at an approach speed of 221 px/s; 0.05 s later the Stinger hits two pieces of street furniture. From then on the car stays at 0 km/h until the end of the run (11 player stuck events, health 61/100). The taxi stays knocked for more than 12 s (`LONG-REJOIN reason=no_feasible_manoeuvre`), so neither car frees the other, and every screenshot after the first two seconds shows the same junction.
 
 ## Done
 

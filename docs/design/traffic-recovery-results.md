@@ -67,7 +67,7 @@ Fixture `cj016-recovery-v1`, seed `0x000c0016`, runs Taxi, Bus and BoxTruck thro
 | Before | `build/shots/cj016/before/complete-timing/manifest-20261005T094031217478Z-31016.json` | All 18 phases complete; 14 failed checks per class |
 | Pre-fix passing physical after | `build/shots/cj016/after/final-recovery/manifest-20261005T160936155397Z-52148.json` | All 18 phases complete; all 156 isolated checks passed; all three fixture cases accepted; precedes the separated-box contact fix and does not establish city acceptance |
 
-Both manifests record dirty revision `1021abecdc18cb1b2e03cc2bda9917b56ce857a0`; the exact input fingerprints distinguish their measurement builds from the committed production code. The fixture implementation and vehicle configuration hashes match before/after. Logs and labelled screenshots remain beside each manifest in `build/`. Each pre-fix after class completed 52 checks with zero failures, no invalid/incomplete flag, exit status 0 and its final screenshot present.
+Both manifests record dirty revision `1021abecdc18cb1b2e03cc2bda9917b56ce857a0` (commit `3f3c8e7` since the commit e-mail rewrite of 2026-10-06; the code is unchanged); the exact input fingerprints distinguish their measurement builds from the committed production code. The fixture implementation and vehicle configuration hashes match before/after. Logs and labelled screenshots remain beside each manifest in `build/`. Each pre-fix after class completed 52 checks with zero failures, no invalid/incomplete flag, exit status 0 and its final screenshot present.
 
 | Input SHA-256 | Before | Pre-fix passing physical after |
 |---|---|---|

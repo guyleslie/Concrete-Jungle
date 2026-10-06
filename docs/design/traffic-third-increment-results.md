@@ -19,7 +19,7 @@ The third CJ-016 increment (2026-10-06) brings the driver decision CPU of every 
 
 | Run | Manifest | Build |
 |---|---|---|
-| City, before | `build/shots/cj002/after/cj016-s3-base-20261006/manifest-20261006T075116130257Z-city-47256.json` | Revision `04093f9` with the stage profiler |
+| City, before | `build/shots/cj002/after/cj016-s3-base-20261006/manifest-20261006T075116130257Z-city-47256.json` | Revision `95ea8ad` (`04093f9` in the manifests, before the commit e-mail rewrite of 2026-10-06; the code is unchanged) with the stage profiler |
 | City, after | `build/shots/cj002/after/cj016-s3-cpu2-20261006/manifest-20261006T092919634939Z-city-18980.json` | This change, executable SHA-256 `c389094bdd58d05d2e53095ef520a672d49390864a0cc0b08d0feb5e4a593602` |
 | Recovery fixture, after | `build/shots/cj016/after/s3-cpu-final-20261006/manifest-20261006T093735705608Z-41704.json` | The same executable: 156 / 156 checks |
 | Clearance fixture, after | `build/shots/cj016-clearance/after/s3-cpu-final-20261006/manifest-20261006T094206360387Z-52304.json` | 26 / 26 checks |
