@@ -52,7 +52,6 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
 | [CJ-008](#cj-008-test-autopilot-improvements) | Test autopilot improvements | Low | Open |
-| [CJ-009](#cj-009-licence-for-the-code) | Licence for the code | Low | Open |
 
 ## Open items
 
@@ -318,16 +317,10 @@ Smaller improvements left after the collision rewrite:
 
 The `drive` autopilot never reverses, so it stays stuck once it drives into something (since 2026-09-27 it ends up against a building corner). It should back out like the `derby` autopilot. Handling scenarios for [CJ-002](#cj-002-vehicle-handling-model) will need scripted manoeuvres as well.
 
-### CJ-009 Licence for the code
-
-- **Priority:** Low
-- **Status:** Open
-
-The project's own code has no licence yet. Choose one (and add a `LICENSE` file) before the code is shared. Third-party asset licences are already listed in [CREDITS.md](../CREDITS.md).
-
 ## Done
 
 | ID | Title | Completed |
 |---|---|---|
 | CJ-001 | Documentation overhaul: documentation structure, design documents, guides, testing guide, ADRs, changelog, contributing guide | 2026-09-27 |
 | — | Collision physics rewrite: vehicles no longer stick to obstacles or jitter; breakaway street furniture; traffic recovery after crashes ([ADR-0005](adr/0005-vehicle-contact-solver.md)) | 2026-09-27 |
+| CJ-009 | Licence for the code: MIT licence for the project's own code (`LICENSE`); third-party assets keep the licences in [CREDITS](../CREDITS.md) | 2026-10-06 |

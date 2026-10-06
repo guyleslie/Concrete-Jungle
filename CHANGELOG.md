@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- MIT licence for the project's own code (`LICENSE`, CJ-009); third-party assets keep the licences listed in CREDITS. A screenshot at the top of the README, ready for publishing on GitHub.
 - Angry drivers shout: three synthesised voices ("hey!", "oi!", "hah!") at a personal pitch, every second or so from the moment they walk up; `shout1.wav`–`shout3.wav` in `assets/sounds/` replace them. Arguing, they raise and shake a fist (two new civilian atlas frames); the punch frame is now only for blows.
 - `TRAFFIC slip` in the test log: the rear-axle slip of rail cars during lane changes, turns and straight driving. New backlog item CJ-020 for the turning slip it found.
 - Wait-for cycles: two knocked cars blocking each other, and three or more drivers waiting on each other in a loop (junction gridlock), are found once per frame; one driver gives way to the driver waiting on it. A rail car backs up along its path; a knocked car makes room with short checked creeps away from the other car. A car held at a stop line by a car in the junction box now waits on that car. `YIELD cycles` and `YIELD min_room` in `traffic.cfg`; `TRAFFIC wait cycles` in the test log.
@@ -38,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `build.sh` reads `RAYLIB_DIR` like `build.bat`, so it builds with raylib installed anywhere.
 - Rail cars change lane by steering instead of sliding sideways: the lateral offset follows an S-curve along the path, the rear axle traces it and the body points along it. Overtaking and mounting the kerb check the whole swept curve first, backing up a little when the car stands too close behind the obstacle; a driver giving way reverses back into its lane the same way.
 - Driver decisions now meet the CJ-016 CPU targets in every city scenario (`chase` 0.69 / 1.41 → 0.32 / 0.82 ms, `rampage` 0.73 / 1.55 → 0.38 / 0.86 ms average / 95th percentile): the rail look-ahead tests only cars and people that can reach its sampled path, recovery rollouts let distant actors sleep and skip rail forecast boxes out of reach, and force steps share their trigonometry. These leave every decision unchanged; covered immediate checks record up to 32 actors instead of 12. `DRIVER DECISION STAGES` in the test log splits the decision time. See the [third increment report](docs/design/traffic-third-increment-results.md).
 - On-foot test runs use the screen centre instead of the mouse cursor for the camera look-ahead, so `foot`, `day` and `brawl` no longer depend on where the cursor rests.

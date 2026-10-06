@@ -16,7 +16,7 @@ How to set up the toolchain, build the game and fix common build problems.
 |---|---|
 | raylib | 6.0. The Windows installer ships a prebuilt `libraylib.a` and the w64devkit GCC toolchain. |
 | Compiler | GCC with C++17 (w64devkit's GCC 15 is used for development). |
-| Location | The build scripts expect raylib in `E:\Apps\raylib`. Set `RAYLIB_DIR` for `build.bat` (the installer default is `C:\raylib`) or edit the paths at the top of `build.sh`. |
+| Location | The build scripts expect raylib in `E:\Apps\raylib`; the installer default is `C:\raylib`. Set `RAYLIB_DIR` to the installation folder: `set RAYLIB_DIR=C:\raylib` before `build.bat`, or `RAYLIB_DIR=/c/raylib sh build.sh` in Git Bash. `compile_flags.txt`, the clangd configuration for editors, uses the same default paths. |
 
 Windows is the development platform. The CMake project also supports Linux and macOS by downloading raylib (`-DRAYLIB_FETCH=ON`); those builds are currently untested.
 
@@ -76,4 +76,4 @@ For automated test runs, see [Testing](../testing.md).
 | CMake with MinGW Make fails with path errors | The project path contains `á`. Use the Ninja generator. |
 | An image does not load | This raylib build has no JPG support. Convert the image to PNG. |
 | `assets/ folder not found` warning | The game was started from another folder. Start it from the project folder. |
-| Link errors about raylib | `RAYLIB_DIR` (or the path in `build.sh`) does not point at the raylib installation. |
+| Link errors about raylib | `RAYLIB_DIR` does not point at the raylib installation. `build.sh` needs the Git Bash form (`/c/raylib`), `build.bat` the Windows form (`C:\raylib`). |

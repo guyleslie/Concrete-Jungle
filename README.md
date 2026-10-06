@@ -4,6 +4,8 @@ A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C+
 
 > **Status:** early development. The game is playable end to end; the vehicle handling and damage models are being reworked. See the [backlog](docs/backlog.md).
 
+![A junction at dusk: traffic at the lights, street lamps, lit windows and long building shadows](docs/images/drive-dusk.png)
+
 ## Features
 
 | Area | Highlights |
@@ -19,7 +21,7 @@ A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C+
 
 ## Quick start
 
-**Requirements:** Windows with raylib 6.0 and its bundled w64devkit GCC toolchain, installed in `E:\Apps\raylib` (otherwise see the [build guide](docs/guides/building.md)).
+**Requirements:** Windows with raylib 6.0 and its bundled w64devkit GCC toolchain. The build scripts look for raylib in `E:\Apps\raylib`; set `RAYLIB_DIR` if it is installed elsewhere (see the [build guide](docs/guides/building.md)).
 
 Build from Git Bash:
 
@@ -100,4 +102,4 @@ tools/    helper scripts: derived art, sprite export, documentation check
 
 ## Credits and licensing
 
-Third-party assets and their licences are listed in [CREDITS.md](CREDITS.md). The "Survivor" character by Riley Gombart is licensed under CC-BY 3.0 and is credited on the title screen. A licence for the project's own code has not been chosen yet ([CJ-009](docs/backlog.md#cj-009-licence-for-the-code)).
+The project's own code is licensed under the [MIT licence](LICENSE). Third-party assets keep their own licences, listed in [CREDITS.md](CREDITS.md). The "Survivor" character by Riley Gombart is licensed under CC-BY 3.0 and is credited on the title screen.

@@ -49,5 +49,6 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [README](../README.md) | Project overview, quick start, controls |
 | [CHANGELOG](../CHANGELOG.md) | Notable changes per milestone |
 | [CONTRIBUTING](../CONTRIBUTING.md) | Workflow, coding style, commit and documentation conventions |
+| [LICENSE](../LICENSE) | MIT licence for the project's own code |
 | [CREDITS](../CREDITS.md) | Third-party assets and licences |
 | [CLAUDE](../CLAUDE.md), [AGENTS](../AGENTS.md) | Working notes for AI coding agents (`AGENTS.md` points to `CLAUDE.md`) |

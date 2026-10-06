@@ -1,8 +1,25 @@
+# Build output
 build/
 build_cmake/
 *.exe
 *.o
+*.pdb
+
+# Test and debug output
 *.log
 shot_*.png
 screenshot*.png
+
+# Python
 __pycache__/
+*.pyc
+
+# Editors and local agent settings
+.vscode/
+.idea/
+.claude/settings.local.json
+
+# Operating system
+Thumbs.db
+desktop.ini
+.DS_Store
