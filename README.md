@@ -25,7 +25,7 @@ A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C+
 
 You need 64-bit Windows and a graphics card that supports OpenGL 3.3.
 
-1. Download `ConcreteJungle-<version>-windows-x64.zip` from the [latest release](https://github.com/guyleslie/Concrete-Jungle/releases/latest) and extract it.
+1. Download `ConcreteJungle-<version>-windows-x64.zip` from the newest release on the [releases page](https://github.com/guyleslie/Concrete-Jungle/releases) and extract it.
 2. Double-click `ConcreteJungle.exe` in the extracted folder. The executable is not signed, so Windows SmartScreen may warn about it: choose *More info › Run anyway*.
 
 The game runs full screen at your monitor's resolution. Press Enter on the title screen, F1 for help, Esc to pause and Q in the pause menu to quit. Keep the executable next to the `assets/` folder: the game loads its data, textures and fonts from there.

@@ -85,7 +85,11 @@ A release is a zip file with the executable, the `assets/` folder, the licence, 
 
    The script writes `build/release/ConcreteJungle-X.Y.Z-windows-x64.zip` and prints its SHA-256. It refuses a console executable from `build.sh`, which is meant for test runs, and a version without a changelog section.
 4. Extract the zip to a new folder and start the game from there.
-5. Push the commit and the tag (`git push origin main vX.Y.Z`). Create a GitHub release from the tag, with the changelog section as its notes, and attach the zip. Mark it as a pre-release while playtests of its changes are open.
+5. Push the commit and the tag (`git push origin main vX.Y.Z`). Create a GitHub release from the tag, with the changelog section as its notes, and attach the zip. Mark it as a pre-release while playtests of its changes are open; GitHub's `/releases/latest` address skips pre-releases, so the README links to the releases page instead. With the [GitHub CLI](https://cli.github.com/):
+
+   ```bash
+   gh release create vX.Y.Z build/release/ConcreteJungle-X.Y.Z-windows-x64.zip --title "Concrete Jungle X.Y.Z" --notes-file <notes.md> --prerelease --verify-tag
+   ```
 
 ## Troubleshooting
 

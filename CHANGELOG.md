@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The README's download link points at the releases page: GitHub's latest-release address skips pre-releases such as 0.3.0.
+
 ## [0.3.0] - 2026-10-06
 
 First public release: the source on GitHub and a playable Windows build. Pedestrian behaviour (CJ-010), full screen (CJ-013) and the third traffic increment (CJ-016) still await playtest acceptance.
