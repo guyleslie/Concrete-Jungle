@@ -1030,8 +1030,22 @@ static void UpdateKnocked(Game& g, int idx, float dt) {
         ai.recovery.rejoinForecastTested = ready;
         ai.recovery.rejoinForecastClear = ready && RecoveryCanRejoin(g, idx, dt);
         if (ai.recovery.rejoinForecastClear) {
+            // From the actual pose to the lane over 'lead' px along a smooth curve (a cubic
+            // Hermite: the car's heading at the start, the lane's at the end), points 2 px
+            // apart: the body turns into the lane without a kink.
             StartPath(v, v.pos, v.Fwd());
-            Waypoint ahead; ahead.p = v.pos + v.Fwd() * lead; Push(ai, ahead);
+            Vector2 laneDir = DirVec(ai.dir);
+            Vector2 lanePt = g.map.InterCenter(ai.ti, ai.tj) + RightV(ai.dir) * LANE_OFFSET;
+            Vector2 target = lanePt + laneDir * Dot(v.pos + v.Fwd() * lead - lanePt, laneDir);
+            float span = Dist(v.pos, target);
+            int n = std::max(2, (int)ceilf(span / 2.0f));
+            for (int k = 1; k <= n; k++) {
+                float t = (float)k / n, t2 = t * t, t3 = t2 * t;
+                Waypoint w;
+                w.p = v.pos * (2 * t3 - 3 * t2 + 1) + v.Fwd() * (span * (t3 - 2 * t2 + t)) +
+                      target * (-2 * t3 + 3 * t2) + laneDir * (span * (t3 - t2));
+                Push(ai, w);
+            }
             PlanNext(v, g.map, nullptr);
             ai.rail = true;
             ai.speed = std::max(0.0f, speed);
