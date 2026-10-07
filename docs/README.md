@@ -28,6 +28,7 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [CJ-016 yielding and incident results](design/traffic-yielding-incident-results.md) | Recovery CPU peaks, cooperative yielding and driver incident fixtures before/after, city CPU, defects found and remaining limits |
 | [CJ-016 third increment results](design/traffic-third-increment-results.md) | Driver decision CPU under the targets in every city scenario, what the optimisations preserve, reproducible on-foot runs, wait-for loops (knocked pairs, junction gridlock) before/after |
 | [CJ-020 turning results](design/traffic-turning-results.md) | Rear-axle slip, turn radius, kerb and encroachment of every traffic class before/after; city slip, overlaps and CPU; the specification refinements agreed during the work |
+| [CJ-023 street geometry proposal](design/street-geometry-proposal.md) | Agreed specification for real-world vehicle widths, street profiles, sidewalk zones, rounded kerbs and their acceptance measurements |
 | [Pedestrians](design/pedestrians.md) | Sidewalk behaviour, crossings, perception and dodging, fleeing, fighting back, steering, injuries, population |
 | [Gameplay](design/gameplay.md) | Player, weapons, wanted level, police response, missions, pickups |
 | [Audio](design/audio.md) | Procedural sound synthesis and file overrides |

@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `TRAFFIC turns planned` and `RAIL-SLIP` lines in the test log; the turning fixture (`cj020-turns-v2`) also checks the wheels against the kerbs and logs a strict encroachment.
 - [Turning results](docs/design/traffic-turning-results.md): turning fixture 32 → 96 of 96 cases, city turning slip 70–75 % of the time over 5° → none, at most 1.9°.
 - Backlog items CJ-022 (three-point turns), CJ-023 (vehicle widths and street geometry, from the feedback that the streets feel cramped) and CJ-024 (recovery cost in dense traffic).
+- [Street geometry proposal](docs/design/street-geometry-proposal.md): the agreed CJ-023 specification — real-world vehicle widths from a `WIDTH` record, data-driven street profiles (12 m main streets, 10 m side streets), sidewalks with a furniture zone and a clear walking zone, building setbacks, rounded kerb corners, and the measurements that will judge them. Backlog items CJ-027 (multi-lane roads) and CJ-028 (rare rule-breaking drivers), from the user's direction for the city.
 
 ### Changed
 

@@ -17,10 +17,10 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the CJ-020 playtest on 2026-10-07:
+Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07:
 
-1. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
-2. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — the streets feel cramped: wider roads and junctions, a rethought sidewalk, more room between the road and the buildings, real-world vehicle widths.
+1. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
+2. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
@@ -42,7 +42,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Open |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
-| [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Open |
+| [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
@@ -50,6 +50,8 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-024](#cj-024-recovery-cost-in-dense-traffic) | Recovery cost in dense traffic | Medium | Open |
 | [CJ-025](#cj-025-metro-track-stations-and-passengers) | Metro track, stations and passengers | Medium | Open |
 | [CJ-026](#cj-026-bus-stops-and-bus-bays) | Bus stops and bus bays | Medium | Open |
+| [CJ-027](#cj-027-multi-lane-roads) | Multi-lane roads | Medium | Open |
+| [CJ-028](#cj-028-rule-breaking-drivers) | Rule-breaking drivers | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
@@ -341,7 +343,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 ### CJ-023 Vehicle widths and street geometry
 
 - **Priority:** High
-- **Status:** Open (found by CJ-020 on 2026-10-07)
+- **Status:** Specification agreed on 2026-10-07; implementation not started (found by CJ-020 on 2026-10-07)
 
 **Problem.** Playtest feedback (2026-10-07): the streets feel cramped; cars and pedestrians seem too close together. The measurements of CJ-020 point to the vehicles and the junctions rather than the road width: lanes are 4 m (real ones 3–3.5 m) and the 4 m sidewalks keep pedestrians 1.4–2.6 m from the kerb, but a vehicle's width follows its sprite's aspect ratio, which makes most of them 30–40 % wider than the real vehicle (Taxi 2.46 m against about 1.8 m, Pickup 2.88 m, Ambulance 2.96 m, Bus 2.92 m against 2.55 m, Semi 3.63 m against 2.55 m), and junction corners are square, without the 3–6 m kerb radius of a real street. As a result the Pickup, Van, Limo and Ambulance need wide turns, and the Bus, the Semi and the right turns of the BoxTruck, FireTruck and Garbage truck do not fit at all, so traffic avoids them ([turning results](design/traffic-turning-results.md)).
 
@@ -349,7 +351,29 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 
 **Scope.** Wider roads and junctions; rounded kerb corners; a rethought sidewalk (a furniture zone along the kerb and a clear walking zone); more room between the road and the buildings; real-world vehicle widths.
 
-**Acceptance criteria.** To be agreed: real-world widths for every class (sprite art drawn or cropped to them), wider roads and junctions with rounded kerb corners (geometry, art and pedestrian waiting spots), a sidewalk layout with a clear strip beside the road, and a larger setback of the buildings; the turning fixture shows clean turns for cars and fitting turns for large vehicles; collisions, traffic, pedestrian and CJ-002 measurements re-run; before/after screenshots of street scenes; playtested.
+**User direction (2026-10-07).** Besides realism, the city must play well on foot and in a vehicle. Streets may differ in width, and multi-lane roads come later ([CJ-027](#cj-027-multi-lane-roads)). Traffic that obeys the rules must never collide while turning; a few drivers may break the rules, but never exaggerated ([CJ-028](#cj-028-rule-breaking-drivers)).
+
+**Specification agreed (2026-10-07).** [Street geometry proposal](design/street-geometry-proposal.md). Collision boxes take each class's real body width from a new `WIDTH` record in `vehicles.cfg` (the sprites' extra width is mostly their side mirrors), with the sprite drawn to it. A new `city.cfg` assigns a street profile to every grid line: main streets 12 m between kerbs (two 4 m lanes and 2 m kerbside strips, kept empty behind an edge line) with 6 m sidewalks and a 2 m setback, side streets 10 m with 5 m sidewalks and a 1.5 m setback, both one lane each way. The sidewalk splits into a furniture zone along the kerb and a clear walking zone; kerb corners are rounded (6 m and 5 m); block interiors stay 48 m, so the island grows from 584 m to about 636 m. Surfaces are computed from the line geometry instead of 4 m tiles; turn paths are built per junction type; the signal timing moves to `city.cfg` with a longer green. The user chose the two profiles, the empty strip and the 48 m interiors.
+
+**Acceptance criteria.** See the [proposal](design/street-geometry-proposal.md#acceptance-criteria): collision widths equal the `WIDTH` records; for every junction type, clean right and left turns for every car class and fitting turns for every large class; zero overlaps and contacts between law-abiding rail cars in junctions; the free run-off from the kerb at least doubled; people walking within 2 m of moving traffic cut to a quarter; pedestrian, traffic, physics, CJ-016 and CPU measurements no worse; before/after screenshots; the CJ-002 baseline re-recorded; playtested.
+
+### CJ-027 Multi-lane roads
+
+- **Priority:** Medium
+- **Status:** Open (user direction on 2026-10-07)
+
+**Idea.** Roads have one lane each way. The user wants multi-lane roads later, with streets of different widths. CJ-023's street profiles carry a lane count from the start, so main streets can grow into avenues with two or more lanes each way.
+
+**Acceptance criteria.** To be agreed: avenues with several lanes each way in `city.cfg`; traffic keeps to a lane, changes lanes by signalling and checking the gap, uses turn lanes or turns from the correct lane at junctions; pedestrians cross wider roads safely (a refuge or a longer green); the CJ-020 turning and CJ-016 fixtures extended to multi-lane junctions; playtested.
+
+### CJ-028 Rule-breaking drivers
+
+- **Priority:** Medium
+- **Status:** Open (user direction on 2026-10-07)
+
+**Idea.** Traffic that obeys the rules never collides while turning ([CJ-023](#cj-023-vehicle-widths-and-street-geometry)). A few drivers should break the rules, as in a real city: run a red light, mount the sidewalk, misjudge a gap and hit another car; never exaggerated. Today traffic never runs a red light, and mounts the sidewalk only to get round an obstacle when impatient.
+
+**Acceptance criteria.** To be agreed: which offences occur and how often (per driver mood, in `traffic.cfg`), measured in the city scenarios (offences per minute, crashes they cause, people hit); law-abiding drivers keep zero contacts in junctions; the police notice offences in view ([CJ-018](#cj-018-police-driving-and-reactions)); playtested.
 
 ## Done
 
