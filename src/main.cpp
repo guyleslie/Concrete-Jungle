@@ -25,6 +25,7 @@
 #include "traffic_clearance_tests.h"
 #include "traffic_conflict_tests.h"
 #include "traffic_incident_tests.h"
+#include "traffic_turn_tests.h"
 #include "rlgl.h"
 
 static void LoadingScreen(const char* msg) {
@@ -81,15 +82,17 @@ int main(int argc, char** argv) {
     TrafficClearanceTests clearanceTests;
     TrafficConflictTests conflictTests;
     TrafficIncidentTests incidentTests;
+    TrafficTurnTests turnTests;
     bool vehicleFixture = shot && (TextIsEqual(scenario, "handling") || TextIsEqual(scenario, "crash-handling"));
     bool trafficFixture = shot && TextIsEqual(scenario, "traffic-recovery");
     bool clearanceFixture = shot && TextIsEqual(scenario, "traffic-clearance");
     bool conflictFixture = shot && TextIsEqual(scenario, "traffic-conflict");
     bool incidentFixture = shot && TextIsEqual(scenario, "traffic-incident");
-    bool fixture = vehicleFixture || trafficFixture || clearanceFixture || conflictFixture || incidentFixture;
+    bool turnFixture = shot && TextIsEqual(scenario, "traffic-turns");
+    bool fixture = vehicleFixture || trafficFixture || clearanceFixture || conflictFixture || incidentFixture || turnFixture;
     if ((vehicleFixture && !tests.Init(game, scenario, testVehicle)) || (trafficFixture && !trafficTests.Init(game, testVehicle)) ||
         (clearanceFixture && !clearanceTests.Init(game)) || (conflictFixture && !conflictTests.Init(game)) ||
-        (incidentFixture && !incidentTests.Init(game))) {
+        (incidentFixture && !incidentTests.Init(game)) || (turnFixture && !turnTests.Init(game))) {
         game.Unload(); gAssets.Unload(); CloseWindow(); return 2;
     }
     if (shot && !fixture) { game.DebugScenario(scenario); game.debugContacts = true; }
@@ -105,6 +108,7 @@ int main(int argc, char** argv) {
         else if (clearanceFixture) clearanceTests.Update(game, dt);
         else if (conflictFixture) conflictTests.Update(game, dt);
         else if (incidentFixture) incidentTests.Update(game, dt);
+        else if (turnFixture) turnTests.Update(game, dt);
         else game.Update(dt);
         BeginDrawing();
         ClearBackground(BLACK);
@@ -113,9 +117,10 @@ int main(int argc, char** argv) {
         else if (clearanceFixture) clearanceTests.Draw(game);
         else if (conflictFixture) conflictTests.Draw(game);
         else if (incidentFixture) incidentTests.Draw(game);
+        else if (turnFixture) turnTests.Draw(game);
         else game.Draw();
         bool lastShot = shot && (++frame >= shotFrames || (conflictFixture && conflictTests.Finished()) ||
-                                (incidentFixture && incidentTests.Finished()));
+                                (incidentFixture && incidentTests.Finished()) || (turnFixture && turnTests.Finished()));
         if (lastShot) {
             rlDrawRenderBatchActive(); TakeScreenshot(shot);
             if (vehicleFixture) tests.Log();
@@ -123,6 +128,7 @@ int main(int argc, char** argv) {
             else if (clearanceFixture) clearanceTests.Log();
             else if (conflictFixture) conflictTests.Log();
             else if (incidentFixture) incidentTests.Log();
+            else if (turnFixture) turnTests.Log();
             else { game.LogTrafficStats(); game.LogPhysStats(); game.LogPedStats(); }
         }
         else if (shot && every > 0 && frame % every == 0) {
@@ -133,7 +139,7 @@ int main(int argc, char** argv) {
         }
         const char* captureLabel = vehicleFixture ? tests.CaptureLabel() : trafficFixture ? trafficTests.CaptureLabel()
             : clearanceFixture ? clearanceTests.CaptureLabel() : conflictFixture ? conflictTests.CaptureLabel()
-            : incidentFixture ? incidentTests.CaptureLabel() : nullptr;
+            : incidentFixture ? incidentTests.CaptureLabel() : turnFixture ? turnTests.CaptureLabel() : nullptr;
         if (captureLabel) {
             rlDrawRenderBatchActive();
             const char* ext = GetFileExtension(shot);
@@ -143,7 +149,8 @@ int main(int argc, char** argv) {
             else if (trafficFixture) trafficTests.ClearCaptureRequest();
             else if (clearanceFixture) clearanceTests.ClearCaptureRequest();
             else if (conflictFixture) conflictTests.ClearCaptureRequest();
-            else incidentTests.ClearCaptureRequest();
+            else if (incidentFixture) incidentTests.ClearCaptureRequest();
+            else turnTests.ClearCaptureRequest();
         }
         EndDrawing();
         if (lastShot) break;
@@ -158,5 +165,6 @@ int main(int argc, char** argv) {
     if (clearanceFixture) return (!clearanceTests.Finished() || clearanceTests.Failed()) ? 1 : 0;
     if (conflictFixture) return (!conflictTests.Finished() || conflictTests.Failed()) ? 1 : 0;
     if (incidentFixture) return (!incidentTests.Finished() || incidentTests.Failed()) ? 1 : 0;
+    if (turnFixture) return (!turnTests.Finished() || turnTests.Failed()) ? 1 : 0;
     return 0;
 }

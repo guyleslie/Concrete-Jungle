@@ -36,10 +36,15 @@ inline bool AIOnRail(const Vehicle& v) { return v.driver == DriverType::Traffic 
 Vector2 AIPathPose(const Vehicle& v, float ahead, float* angle);
 // Fixtures: put v on rails at its current pose and lane direction, with 'tail' px of
 // already-driven path behind it (a yielding driver can retrace that much). With
-// 'insideJunction' a car standing in a junction box goes straight through it.
-void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction = false);
+// 'insideJunction' a car standing in a junction box goes straight through it. 'forcedTurn'
+// fixes the manoeuvre at the first junction (0 straight, 1 right, 2 left; -1 random).
+void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction = false, int forcedTurn = -1);
 // Fixtures: a constant lane shift (a car already passing, for example).
 void AISetLaneShift(Vehicle& v, float shift);
+// Turning (CJ-020): the tightest radius the rear axle can follow (px, from the class's
+// turning circle) and the lateral acceleration allowed in a turn (px/s^2, traffic.cfg).
+float RailTurnMinRadius(const Vehicle& v);
+float RailTurnLateralAccel();
 
 // Lane shift of a rail car at path distance s of its rear axle: 'from' before s0, 'to'
 // beyond s1 (s1 < s0 for a shift driven in reverse), a smooth S-curve between. 'slope'

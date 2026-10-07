@@ -12,6 +12,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [CJ-016 recovery measurements](#cj-016-recovery-measurements)
 - [Cooperative yielding fixture](#cooperative-yielding-fixture)
 - [Driver incident fixture](#driver-incident-fixture)
+- [Turning fixture](#turning-fixture)
 - [Workflow](#workflow)
 
 ## Running a scenario
@@ -49,6 +50,7 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `crash-handling` | Prescribed-speed contacts with isolated forces and production consequences measured separately, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
 | `traffic-recovery` | Isolated enclosed hold, free lane recovery and front-blocked garage escape for Taxi, Bus or BoxTruck, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
 | `traffic-clearance` | Taxi rejoin with separated nearby building/parked-car boxes, plus actual-overlap, clearance-only-contact and forward-blockage API guards at 60 Hz and 20 Hz; 420 frames |
+| `traffic-turns` | Isolated CJ-020 turning fixture: every traffic class turns right, turns left and goes straight through an empty junction at 60 Hz and 20 Hz; see [Turning fixture](#turning-fixture) |
 
 ## Metrics
 
@@ -62,6 +64,7 @@ The run ends by logging:
 | `TRAFFIC stopped because` | Why stopped cars are stopped: red light, queue, person (or a knocked car holding), yield at a junction, static obstacle, full junction box, giving way to another driver | Mostly red lights and queues |
 | `TRAFFIC yielding` | Cooperative yielding roles taken (and how many were chain roles), cars still giving way at the end, and wait-for loops still open at the end: mutual pairs and larger loops | Loops open at the end are only ones that have just formed |
 | `TRAFFIC slip` | The angle between a rail car's body and the motion of its rear axle point (0.32 lengths behind the centre), split into lane changes, turning and straight driving: car-seconds, share above 5°, maximum; and car-seconds of sideways shifting while stopped | Lane changes and straight driving close to 0°; turning see [CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic) |
+| `TRAFFIC rail overlaps` | Pair-seconds in which two rail cars overlap by more than 1 px (rail cars pass through each other in the solver, so any overlap shows), how many of them near a junction box, and the deepest overlap | Close to 0 |
 | `TRAFFIC wait cycles` | Wait-for loops that formed during the run, how many lasted over 10 s, and the longest; then the members of each loop still open at the end (`UNRESOLVED`). A loop lasting 5 s is logged as `WAIT-CYCLE` when it happens | None over 10 s |
 | `INCIDENTS` | Collision incidents started, drivers out, confrontations, fights, drivers back in their own car; interruptions by reason (no safe exit, car lost, driver dead, other); impacts that nobody took personally | Every driver out is back in their car or has a logged reason |
 | `PHYS` jitter | Frames where a physics body's position or heading reverses direction frame after frame | Close to 0 per body-second |
@@ -243,6 +246,30 @@ python tools/run_cj016_incident.py --phase after --run-name incidents-20261006
 ```
 
 80 cases (4 situations, 10 seeds, 60/20 Hz) run in one process, each ending 2 s after every drivable traffic car has its driver back and its lane, or after 60 s. Every case checks that no vehicle is removed or teleported, that every car–driver handle points back (`ownership_violations`), that a car is never both occupied and owned by a person on foot (`duplicate_drivers`), one incident per pair, a contact within 1 s and the settle time. Both phases run a copy of `traffic.cfg` with `INCIDENT confront_chance 1` (scripted aggressive drivers); the before phase also sets `INCIDENT enabled 0`. The per-0.5 s `CJ016I state` and `CJ016I vehicle` lines show every person's and car's state. Version 2 (third increment) adds the shout and gesture checks to the aggressive situations: shouts counted by the incident rules, and the seconds in which an arguing person is drawn with the raised-fist frames or, facing a person rather than a car door, with the punch frames (`PedDrawFrame`). Results: [yielding and incident report](design/traffic-yielding-incident-results.md#driver-incidents) (v1) and [third increment report](design/traffic-third-increment-results.md#incident-presentation) (v2).
+
+## Turning fixture
+
+`cj020-turns-v1` measures how rail traffic turns ([CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic)). Production traffic AI drives one car of every traffic class (traffic weight above 0, police excluded) from 420 px before the box of junction (3, 3) on uniform road, northbound at its cruise speed, through the junction: right, left or straight on, at 60 Hz and 20 Hz on the 1/60 s render clock. The lights stay green. A case ends when the rear axle is 320 px past the box on the exit road, or after 30 s.
+
+The junction's geometry is measured, not drawn from the map: kerbs at the road edges (4 m from the centre line) and the right-hand half of every road arm.
+
+| Check | Meaning | Limit |
+|---|---|---|
+| `turning_slip_deg`, `straight_slip_deg` | Largest angle between the body and the motion of the rear axle point, while the heading changes / otherwise | 3° / 1° |
+| `rear_radius_over_class_min` | Smallest circumradius of rear-axle points 8 px apart, over the class's tightest rear-axle radius from its `TURN` turning circle (turns only) | At least 0.98 |
+| `lateral_accel_over_limit` | Largest lateral acceleration at the rear axle over `TURN lateral_accel` (turns only) | At most 1.05 |
+| `kerb_px` | Deepest overlap of the body with the four blocks round the junction | 4 px |
+| `encroachment_px` | How far a body corner reaches, outside the junction box, into the oncoming half of a road arm or into an arm the car does not use | 0.5 px; 24 px (1.5 m) for `large` classes turning right |
+| `final_lateral_px`, `final_heading_deg` | Offset from the exit lane and heading error at the end | 1 px, 0.5° |
+
+Each case also checks ownership, finite state, no pose jump, no knock and the time to reach the exit; the `CJ020T measure` line adds the share of turning time over 5° of slip and the slowest speed in the turn. Each case ends with a capture of the rear (amber) and front (cyan) axle traces and the body outline every 0.2 s.
+
+```bash
+python tools/run_cj020_turns.py --phase before --run-name baseline
+python tools/run_cj020_turns.py --phase after --run-name turns
+```
+
+The runner runs the fixture and then the six city scenarios (`day`, `chase`, `drive`, `overview`, `crash` for 1,500 frames, `rampage` for 3,600; the others 1,800), one window at a time, and keeps the logs, captures and a manifest with the git state and input hashes under `build/shots/cj020/<phase>/<run-name>/`. `--suite fixture` or `--suite city` runs one part. `CJ_TEST_CASE=<substring>` narrows a diagnostic fixture run.
 
 ## Workflow
 

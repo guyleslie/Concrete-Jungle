@@ -379,6 +379,27 @@ void Game::RailSlipDiagnostics(float dt) {
         } else if (known && shifting && v.ai.speed < 1) diagSideStill += dt;
         railRear[i] = rear; railShift[i] = v.ai.laneShift; railAngle[i] = v.angle;
     }
+    // Rail cars pass through each other in the solver; any overlap is visible ghosting.
+    for (size_t i = 0; i < vehicles.size(); i++) {
+        const Vehicle& a = vehicles[i];
+        if (!a.active || !AIOnRail(a)) continue;
+        for (size_t j = i + 1; j < vehicles.size(); j++) {
+            const Vehicle& b = vehicles[j];
+            if (!b.active || !AIOnRail(b)) continue;
+            float reach = (a.length + b.length) * 0.5f + (a.width + b.width) * 0.5f;
+            if (Len2(a.pos - b.pos) > reach * reach) continue;
+            Vector2 n; float depth;
+            if (!OBBOverlap(a.Box(), b.Box(), n, depth) || depth <= 1) continue;
+            diagRailOverlap += dt;
+            diagRailOverlapMax = std::max(diagRailOverlapMax, depth);
+            // In a junction box: a turning body swinging into another car's way.
+            const float pitch = (float)(cfg::BLOCK_PITCH * cfg::TILE);
+            Vector2 mid = (a.pos + b.pos) * 0.5f;
+            int ti = (int)roundf((mid.x - cfg::TILE) / pitch), tj = (int)roundf((mid.y - cfg::TILE) / pitch);
+            Vector2 c = map.InterCenter(std::clamp(ti, 0, cfg::INTER_X - 1), std::clamp(tj, 0, cfg::INTER_Y - 1));
+            if (fabsf(mid.x - c.x) < cfg::ROAD_HALF + 20 && fabsf(mid.y - c.y) < cfg::ROAD_HALF + 20) diagRailOverlapBox += dt;
+        }
+    }
 }
 
 void Game::LogPhysStats() const {
@@ -399,6 +420,8 @@ void Game::LogPhysStats() const {
              diagShiftMoving, share(diagShiftSlipping, diagShiftMoving), diagShiftMaxSlip,
              diagTurnMoving, share(diagTurnSlipping, diagTurnMoving), diagTurnMaxSlip,
              diagRailMoving, share(diagRailSlipping, diagRailMoving), diagRailMaxSlip, diagSideStill);
+    TraceLog(LOG_INFO, "TRAFFIC rail overlaps (rail cars over 1 px; pair-s, of which near a junction box, deepest px): %.2f, %.2f, %.1f",
+             diagRailOverlap, diagRailOverlapBox, diagRailOverlapMax);
     for (size_t i = 0; i < vehicles.size(); i++) {
         const Vehicle& v = vehicles[i];
         if (!v.active || v.driver != DriverType::Traffic || v.ai.rail || v.ai.dynTimer < 12) continue;

@@ -19,6 +19,38 @@ static const float STOP_BACK = 72.0f;      // stop line distance before the junc
 static const float COMFORT_DECEL = 420.0f;
 
 // -------------------------------------------------------------------------------------
+//  Turning through junctions (CJ-020)
+// -------------------------------------------------------------------------------------
+namespace {
+struct TurnSettings {
+    float lateralAccel = 3.5f;    // m/s^2 at the rear axle in a turn
+};
+
+const TurnSettings& TurnTuning() {
+    static TurnSettings s;
+    static bool loaded = false;
+    if (loaded) return s;
+    loaded = true;
+    TrafficField fields[] = {
+        { "lateral_accel", &s.lateralAccel, 1, 8 }
+    };
+    LoadTrafficRecords("TURN", fields, (int)(sizeof(fields) / sizeof(fields[0])));
+    return s;
+}
+} // namespace
+
+float RailTurnLateralAccel() { return TurnTuning().lateralAccel * M; }
+
+// The tightest path the rear axle can follow at full lock: the class's kerb-to-kerb
+// turning circle is traced by the outer front wheel, a wheelbase (the pose's axle
+// spacing, 0.64 lengths) ahead of the rear axle and half a width outside it.
+float RailTurnMinRadius(const Vehicle& v) {
+    float outer = v.S().turnCircle * 0.5f, wheelbase = v.length * 0.64f;
+    if (outer <= wheelbase * 1.05f) return wheelbase * 0.3f;
+    return std::max(wheelbase * 0.3f, sqrtf(outer * outer - wheelbase * wheelbase) - v.width * 0.5f);
+}
+
+// -------------------------------------------------------------------------------------
 //  Path construction
 // -------------------------------------------------------------------------------------
 static void Push(DriverAI& ai, Waypoint w) {
@@ -27,8 +59,9 @@ static void Push(DriverAI& ai, Waypoint w) {
 }
 
 // Plans the route through junction (ti,tj) approached in direction ai.dir.
-// 'goal' (optional) makes the turn choice close in on a point (police).
-static void PlanNext(Vehicle& v, const CityMap& map, const Vector2* goal) {
+// 'goal' (optional) makes the turn choice close in on a point (police); 'forced' (fixtures)
+// picks the manoeuvre: 0 straight, 1 right, 2 left, 3 U-turn.
+static void PlanNext(Vehicle& v, const CityMap& map, const Vector2* goal, int forced = -1) {
     DriverAI& ai = v.ai;
     int d = ai.dir;
     ai.ti = std::clamp(ai.ti, 0, INTER_X - 1); ai.tj = std::clamp(ai.tj, 0, INTER_Y - 1);
@@ -44,7 +77,8 @@ static void PlanNext(Vehicle& v, const CityMap& map, const Vector2* goal) {
         cand[n] = d2; cw[n] = weight; n++;
     }
     int d2;
-    if (n == 0) d2 = (d + 2) & 3;
+    if (forced >= 0) d2 = forced == 0 ? d : forced == 1 ? (d + 1) & 3 : forced == 2 ? (d + 3) & 3 : (d + 2) & 3;
+    else if (n == 0) d2 = (d + 2) & 3;
     else if (goal) { int b = 0; for (int k = 1; k < n; k++) if (cw[k] > cw[b]) b = k; d2 = cand[b]; }
     else {
         float tot = 0; for (int k = 0; k < n; k++) tot += cw[k];
@@ -1243,7 +1277,7 @@ void AIUpdatePolice(Game& g, int idx, float dt) {
 // -------------------------------------------------------------------------------------
 //  Spawning
 // -------------------------------------------------------------------------------------
-void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction) {
+void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction, int forcedTurn) {
     AIResetPath(v, g.map);
     if (insideJunction && InBox(v.pos, g.map.InterCenter(v.ai.ti, v.ai.tj), 40)) {
         v.ai.ti = std::clamp(v.ai.ti + DX(v.ai.dir), 0, INTER_X - 1);
@@ -1251,7 +1285,7 @@ void AIStartRail(Game& g, Vehicle& v, float tail, bool insideJunction) {
     }
     Vector2 dir = DirVec(v.ai.dir);
     StartPath(v, v.pos - dir * tail, dir);
-    PlanNext(v, g.map, nullptr);
+    PlanNext(v, g.map, nullptr, forcedTurn);
     v.ai.s += tail;
     v.ai.rail = true;
     v.ai.blend = 0;

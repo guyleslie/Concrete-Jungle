@@ -24,6 +24,23 @@ CLASS Garbage   8.0 3.40 110  16    55    40   1.8   9.0   3.6  280  3   large
 CLASS Sportbike 2.1 1.25 212  54    94    34   3.8   12    0.45 55   3   two_wheeler
 CLASS Chopper   2.4 1.20 185  45    85    30   3.4   11    0.5  60   2   two_wheeler
 CLASS Scooter   1.8 1.20 95   30    70    20   3.6   12    0.3  45   3   two_wheeler
+TURN Stinger 10.8
+TURN Viper 11.5
+TURN Bruiser 11.8
+TURN Taxi 11.0
+TURN Pickup 12.6
+TURN Van 12.0
+TURN Limo 14.0
+TURN Ambulance 13.0
+TURN Police 11.4
+TURN Bus 23.0
+TURN BoxTruck 15.5
+TURN Semi 16.5
+TURN FireTruck 16.0
+TURN Garbage 16.0
+TURN Sportbike 5.0
+TURN Chopper 6.0
+TURN Scooter 3.8
 )";
 
 const char* DefaultVehiclesCfg() { return DEFAULT_CFG; }
@@ -53,7 +70,8 @@ void LoadVehicleClasses() {
     auto& classes = VehicleClasses();
     classes.clear();
     const float M = cfg::PX_PER_METER;
-    for (const DataRecord& r : ReadDataFile("assets/data/vehicles.cfg", DEFAULT_CFG)) {
+    std::vector<DataRecord> records = ReadDataFile("assets/data/vehicles.cfg", DEFAULT_CFG);
+    for (const DataRecord& r : records) {
         if (!r.Is("CLASS") || r.size() < 13) continue;
         VehicleSpec s;
         s.name = r[1];
@@ -80,4 +98,12 @@ void LoadVehicleClasses() {
         if (existing >= 0) classes[existing] = s; else classes.push_back(s);
     }
     if (classes.empty()) classes.push_back(VehicleSpec{ "Default" });
+    // Turning circles; a class without one gets 2.3 lengths (about 11 m for a 4.8 m car).
+    for (const DataRecord& r : records) {
+        if (!r.Is("TURN") || r.size() < 3) continue;
+        int c = FindVehicleClass(r[1]);
+        if (c < 0) { TraceLog(LOG_WARNING, "vehicles.cfg line %d: TURN for unknown class '%s'", r.line, r[1].c_str()); continue; }
+        classes[c].turnCircle = r.F(2) * M;
+    }
+    for (VehicleSpec& s : classes) if (s.turnCircle <= 0) s.turnCircle = s.length * 2.3f;
 }

@@ -135,6 +135,8 @@ public:
     float diagRailMoving = 0, diagRailSlipping = 0, diagRailMaxSlip = 0;   // straight: car-s, car-s, deg
     float diagTurnMoving = 0, diagTurnSlipping = 0, diagTurnMaxSlip = 0;   // turning
     float diagShiftMoving = 0, diagShiftSlipping = 0, diagShiftMaxSlip = 0, diagSideStill = 0;   // changing lane
+    // rail cars overlapping each other (they never collide): pair-seconds over 1 px, deepest px
+    float diagRailOverlap = 0, diagRailOverlapBox = 0, diagRailOverlapMax = 0;
     void  RailSlipDiagnostics(float dt);
     void  LogPhysStats() const;
     void ApplyTestImpacts(float dt) { HandleImpacts(dt); }

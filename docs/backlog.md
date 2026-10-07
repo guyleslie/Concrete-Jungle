@@ -46,7 +46,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
-| [CJ-020](#cj-020-turning-kinematics-of-traffic) | Turning kinematics of traffic | Medium | Open |
+| [CJ-020](#cj-020-turning-kinematics-of-traffic) | Turning kinematics of traffic | Medium | In progress |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
@@ -250,11 +250,24 @@ Remaining: the playtest.
 ### CJ-020 Turning kinematics of traffic
 
 - **Priority:** Medium
-- **Status:** Open (found by the rear-axle slip measurement on 2026-10-06)
+- **Status:** In progress; found by the rear-axle slip measurement on 2026-10-06; specification approved on 2026-10-07
 
 **Problem.** Rail cars turn on a quadratic curve whose control point sits at the two lane offsets, so a right turn has a radius of about 2 m; real cars need about 5.5 m. Both axle samples stay on that curve, so the body follows the chord and the rear axle point slides sideways through the bend. `TRAFFIC slip` measured in `chase` and `day` on 2026-10-06: over 5° of rear-axle slip in 72–74 % of the turning time, up to 70–75°. Lane changes no longer slide (CJ-016); turns still do.
 
-**Acceptance criteria.** Rear-axle slip while turning at most 8° (`TRAFFIC slip`, turning) in every city scenario; turning paths sized for each class's turning radius, large vehicles included; the junction rules keep working (no new box conflicts, `TRAFFIC stopped because` comparable); before/after screenshots of turning traffic; playtested.
+**Approved specification (2026-10-07).**
+
+- **Pose rule.** In turns too, the rear axle follows the path and the body points along the path's tangent, so the front swings out, as in lane changes. Straight driving is unchanged.
+- **Turn geometry per class.** Each class gets a kerb-to-kerb turning circle in `vehicles.cfg` (`TURN` records: cars about 11 m, the Bus 23 m); the tightest rear-axle radius follows from it. Turns are arcs with gradual steering in and out (clothoid transitions). A right turn uses the largest radius that keeps the inner kerb corner clear; a class that cannot turn that tightly (large vehicles) first moves towards the road centre and then takes the junction box alone. A left turn uses an arc of about 6 m; large vehicles start turning before the box.
+- **Turning speed.** Limited so that the lateral acceleration at the rear axle stays within about 3.5 m/s² (`TURN lateral_accel` in `traffic.cfg`): about 14 km/h through a right turn and 17 km/h through a left turn, instead of about 29 km/h on a 2 m arc. A change to the feel for the playtest.
+- **Out of scope.** U-turns in the middle of a block: a car cannot turn round in one move on an 8 m street. They take the new pose rule; a realistic three-point turn becomes a new backlog item.
+- **Measurement.** An isolated `traffic-turns` fixture drives every traffic class right, left and straight through an empty junction at 60 Hz and 20 Hz and records slip, rear-axle radius, kerb intrusion, encroachment and lateral acceleration, with trace captures. A new city line counts rail cars overlapping each other.
+
+**Acceptance criteria.**
+
+- Every city scenario: rear-axle slip while turning at most 8°, at most 1 % of the turning time over 5°.
+- Fixture, every class: slip at most 3°; rear-axle radius at least the class minimum; lateral acceleration within the limit; cars (all but `large`) at most 4 px (0.25 m) over the kerb and no encroachment into the oncoming half of a road; large vehicles at most 1.5 m of encroachment, only in right turns.
+- No regression: straight and lane-change slip, the CJ-016 fixtures (recovery and clearance checks, 100/100 conflict cases, 80/80 incident cases), AI contacts, cars blocked over 3 s, wait cycles, rail overlaps, and the decision CPU targets.
+- Before/after captures of turning traffic; playtested.
 
 ### CJ-005 Data-driven street furniture
 

@@ -14,7 +14,7 @@
 const char* gTrafficConfigPath = "assets/data/traffic.cfg";
 
 void LoadTrafficRecords(const char* type, TrafficField* fields, int count) {
-    static const char* const known[] = { "RECOVERY", "YIELD", "INCIDENT" };
+    static const char* const known[] = { "RECOVERY", "YIELD", "INCIDENT", "TURN" };
     for (const DataRecord& r : ReadDataFile(gTrafficConfigPath)) {
         bool knownType = false;
         for (const char* k : known) knownType = knownType || r.Is(k);

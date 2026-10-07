@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- CJ-020 measurements: the `traffic-turns` fixture (every traffic class turning right, left and straight through an empty junction at 60 Hz and 20 Hz: slip, rear-axle radius, kerb intrusion, encroachment, lateral acceleration, trace captures), the `TRAFFIC rail overlaps` line in the test log and `tools/run_cj020_turns.py`.
+- `TURN <class> <turning circle m>` records in `vehicles.cfg` and `TURN lateral_accel` in `traffic.cfg`, the data for sizing traffic turns (CJ-020).
+
 ### Changed
 
 - CJ-016 (human-like traffic and incidents) is done: the user playtested and accepted it on 2026-10-07. ADR-0008 stays Proposed until visible drivers control the physical integrator.

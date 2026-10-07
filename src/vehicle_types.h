@@ -8,6 +8,7 @@
 //    CLASS <name> <length m> <height m> <top km/h> <accel m/s2> <brake m/s2>
 //          <reverse km/h> <steer rad/s> <grip> <mass t> <hp> <traffic weight> [flags]
 //    flags: police emergency large two_wheeler
+//    TURN <name> <turning circle m>   kerb-to-kerb, outer front wheel (traffic turn paths)
 // =====================================================================================
 #pragma once
 #include <string>
@@ -27,6 +28,7 @@ struct VehicleSpec {
     float    maxSpeed = 700, accel = 500, brake = 1300, reverseMax = 260;  // px/s, px/s^2
     float    steerRate = 3.0f, grip = 9.0f, mass = 1.0f, health = 100;
     float    trafficWeight = 1;
+    float    turnCircle = 0;                  // px, kerb-to-kerb turning circle (diameter)
     uint32_t flags = 0;
     bool twoWheeler() const { return flags & VF_TWO_WHEELER; }
     bool police() const { return flags & VF_POLICE; }
