@@ -128,7 +128,7 @@ The specification approved on 2026-10-07 held; the user agreed these refinements
 - **Geometry.** Square junction corners and the over-wide sprites keep the Bus and the Semi from turning and push several classes into wide turns ([CJ-023](../backlog.md#cj-023-vehicle-widths-and-street-geometry)).
 - **Wide turns and through traffic.** In `rampage` a Pickup on a wide right turn and a Bus going straight overlapped by up to 8.9 px for 0.33 s: a wide turn's front sweeps up to 1.5 m into the oncoming half of the exit road, where a driver does not look for it. Wide turns come from the over-wide sprites ([CJ-023](../backlog.md#cj-023-vehicle-widths-and-street-geometry)).
 - **Police.** Police paths are unchanged; they steer physically along the lane planner's curves ([CJ-018](../backlog.md#cj-018-police-driving-and-reactions)).
-- **Playtest.** The turning speed and the look of wide turns need the user's playtest.
+- **Playtest.** The user playtested the turns on 2026-10-07 and accepted them; the minor glitches left need wider roads and junctions and a rethought sidewalk ([CJ-023](../backlog.md#cj-023-vehicle-widths-and-street-geometry)).
 
 ## Evidence
 
