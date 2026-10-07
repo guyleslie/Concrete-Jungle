@@ -45,6 +45,8 @@ void AISetLaneShift(Vehicle& v, float shift);
 // turning circle) and the lateral acceleration allowed in a turn (px/s^2, traffic.cfg).
 float RailTurnMinRadius(const Vehicle& v);
 float RailTurnLateralAccel();
+// Turns planned by traffic so far: clean, wide, not fitting (no other way), other (U-turn).
+void AITurnCounts(int counts[4]);
 
 // Lane shift of a rail car at path distance s of its rear axle: 'from' before s0, 'to'
 // beyond s1 (s1 < s0 for a shift driven in reverse), a smooth S-curve between. 'slope'
@@ -59,22 +61,36 @@ inline float LaneShiftAt(float from, float to, float s0, float s1, float s, floa
     return from + (to - from) * t * t * (3 - 2 * t);
 }
 
-// Pose of a rail car at path distance s from two axle samples of its path. With a
-// constant shift the body is offset sideways from the path. While the shift changes,
-// the rear axle traces the shifted path and the body points along its tangent, as a
-// steered car's does: it turns into the new lane instead of sliding sideways.
+// Half the span over which a path's tangent is taken: turn paths have points about
+// 4 px apart, so the tangent turns smoothly from one segment to the next.
+constexpr float RAIL_TANGENT_SPAN = 2.0f;
+
+// Pose of a rail car at path distance s (its centre). The rear axle (0.32 lengths behind
+// the centre) traces the path, shifted sideways by the lane shift, and the body points
+// along that shifted path's tangent, as a car's rear wheels follow and its front swings
+// out: in turns as in lane changes, the rear axle does not slide sideways. The shifted
+// path's tangent is t (1 - k w) + n w', for the path's tangent t, normal n and signed
+// curvature k (positive turning right), the shift w and its slope w'.
 template <class Sampler>
 inline Vector2 ShiftedRailPose(Sampler sample, float s, float length, float from, float to, float s0, float s1,
                                float fallbackAngle, Vector2* heading) {
-    float axle = length * 0.32f;
-    Vector2 fp = sample(s + axle), rp = sample(s - axle);
-    Vector2 dir = Norm(fp - rp);
+    float axle = length * 0.32f, rearS = s - axle;
+    Vector2 rp = sample(rearS);
+    Vector2 dir = Norm(sample(rearS + RAIL_TANGENT_SPAN) - sample(rearS - RAIL_TANGENT_SPAN));
     if (Len2(dir) < 0.5f) dir = Forward(fallbackAngle);
     float slope = 0;
-    float rear = LaneShiftAt(from, to, s0, s1, s - axle, &slope);
-    float front = LaneShiftAt(from, to, s0, s1, s + axle);
-    if (rear == front && slope == 0) { *heading = dir; return (fp + rp) * 0.5f + Perp(dir) * rear; }
-    Vector2 body = Norm(dir + Perp(dir) * slope);
+    float rear = LaneShiftAt(from, to, s0, s1, rearS, &slope);
+    Vector2 body = dir;
+    if (rear != 0 || slope != 0) {
+        float curvature = 0;
+        if (rear != 0) {
+            Vector2 before = sample(rearS) - sample(rearS - RAIL_TANGENT_SPAN * 2);
+            Vector2 after = sample(rearS + RAIL_TANGENT_SPAN * 2) - sample(rearS);
+            if (Len2(before) > 1e-4f && Len2(after) > 1e-4f)
+                curvature = Cross(Norm(before), Norm(after)) / (RAIL_TANGENT_SPAN * 2);
+        }
+        body = Norm(dir * std::max(0.05f, 1 - curvature * rear) + Perp(dir) * slope);
+    }
     *heading = body;
     return rp + Perp(dir) * rear + body * axle;
 }

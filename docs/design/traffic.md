@@ -21,7 +21,7 @@ The user approved the [CJ-016 specification](traffic-behaviour-proposal.md) on 2
 
 ## Rail driving
 
-A traffic car on its lane is not simulated by the physics solver. It keeps a path — a list of waypoints along the right-hand lane — and a distance *s* along it. Every frame the AI advances *s* by its speed and places the car on the path: the pose comes from two sample points at the front and rear axle (±32 % of the length), so long vehicles sweep realistically through turns. A lateral offset moves the car out of its lane when it overtakes or mounts the kerb; see [Lane changes](#lane-changes).
+A traffic car on its lane is not simulated by the physics solver. It keeps a path — a list of waypoints along the right-hand lane — and a distance *s* along it. Every frame the AI advances *s* by its speed and places the car on the path: the rear axle (32 % of the length behind the centre) traces the path, and the body points along the path's tangent there (taken over 2 px either side). As a car's rear wheels follow and its front swings out, the rear axle never slides sideways, in turns as in lane changes, and long vehicles sweep wide with their front. The path through a junction is therefore the path of the rear axle; see [Turn paths](#turn-paths). A lateral offset moves the car out of its lane when it overtakes or mounts the kerb; see [Lane changes](#lane-changes).
 
 ### Lane changes
 
@@ -33,6 +33,22 @@ The offset is a function of the rear axle's path distance, not of time: it holds
 
 Other drivers' forecasts use the same pose rule. `TRAFFIC slip` in the test log measures the angle between a rail car's body and the motion of its rear axle point, separately for lane changes, turning and straight driving.
 
+### Turn paths
+
+Each traffic class gets one right-turn and one left-turn path (`traffic_turns.*`, CJ-020), built for every traffic sprite while the game loads (about half a second) and reused at every junction, rotated to the approach. A path is an arc between the two lane lines with gradual steering in and out: clothoids, each half a radius long (`TURN easement`). Its radius is never tighter than the class can turn: the rear axle's tightest radius follows from the class's kerb-to-kerb turning circle (`TURN` records in `vehicles.cfg`), traced by the outer front wheel a wheelbase (0.64 lengths) ahead.
+
+The planner drives the body along each candidate with the production pose rule and checks it against the junction's square kerbs and the halves of the roads:
+
+| Limit | Clean turn | Wide turn |
+|---|---|---|
+| Wheels (the body between the axles) over a kerb | 0.5 px | 0.5 px |
+| A car's body over a kerb | 2 px | no limit; large vehicles' overhangs may sweep over a corner, and the planner keeps it small |
+| A body corner in the oncoming half of a road (not counting the 60 px stop-line zone past the box, which cars waiting at a stop line 72 px back leave free) | 1 px | 22 px |
+
+A right turn takes the largest radius that fits, a left turn the radius closest to `TURN left_radius` (6 m). A class that cannot turn cleanly takes a wide turn: it moves up to `TURN max_swing` (2.5 m) towards the centre lines before the turn and back after it, and takes the junction box alone. A class whose turn fits neither way (a 12 m bus or the Semi between square corners) does not take that turn in traffic unless it has no other way; such forced turns are counted in the test log (`TRAFFIC turns planned`). Measured in the [turning fixture](../testing.md#turning-fixture): the cars with real-world widths turn cleanly; the vehicles whose sprites make them 30–40 % wider than their real counterparts need wide turns, and Bus, Semi and the right turns of BoxTruck, FireTruck, Garbage and Limo do not fit.
+
+The paths of police cars are unchanged: they steer physically along the lane planner's curves.
+
 Rail cars cannot jitter or deadlock in physics. They keep their distance by looking ahead along their own path, and in the solver they are infinitely heavy moving bodies that ignore buildings and street furniture (see [Physics › Traffic on rails](physics.md#traffic-on-rails)).
 
 ## Route planning
@@ -40,7 +56,7 @@ Rail cars cannot jitter or deadlock in physics. They keep their distance by look
 The path is planned one junction ahead and always extends at least 520 px beyond the car.
 
 - At each junction the driver picks straight on (55 %, 70 % for large vehicles), right (25 %) or left (20 %, 10 % for large vehicles), among the exits that exist. A dead end at the city edge forces a U-turn.
-- Turns are smooth curves through the junction. Large vehicles swing wide on right turns.
+- Traffic turns along its class's [turn path](#turn-paths); a turn the class cannot make within the limits is avoided unless it is the only way. If the turn would begin behind the car (a car rejoining close to a junction), the driver goes straight on. Police cars use smooth curves through the junction.
 - Each turn is preceded by a stop waypoint that carries the junction, the signal axis and the planned manoeuvre.
 
 ## Speed control
@@ -48,7 +64,7 @@ The path is planned one junction ahead and always extends at least 520 px beyond
 | Influence | Behaviour |
 |---|---|
 | Cruise speed | 215–265 px/s (≈ 48–60 km/h); large vehicles 170–205 px/s. Panicking drivers go 50 % faster. |
-| Curves | Slows to 130 px/s (95 px/s for large vehicles) before and through turns. |
+| Curves | On a turn path, the speed keeps the lateral acceleration at the rear axle within `TURN lateral_accel` (3.5 m/s²) from how fast the body's heading turns at each point: about 13–15 km/h through a right turn and 16–20 km/h through a left turn. The driver brakes towards these limits at the comfortable rate. U-turns keep the old limit of 130 px/s (95 px/s for large vehicles). |
 | Signals | Stops for red. Stops for yellow if it can do so comfortably. |
 | Obstacles | A look-ahead of 40 px + 1.1 × speed + half its length along the path finds vehicles and, unless the driver is distracted, pedestrians on the road (found through the pedestrian grid). The allowed speed follows the gap; the car stops 14 px short of the obstacle. |
 | Acceleration | 45 % of the class acceleration; comfortable braking at 670 px/s², hard braking at 900 px/s² for an obstacle right ahead. |
@@ -65,7 +81,7 @@ The look-ahead runs for every rail car every frame, so its cost matters: it firs
 
 A car only enters a junction box when:
 
-- the box holds no crossing traffic (vehicles going the same way are followed through; straight-on and right turns may meet oncoming straight-on and right turns);
+- the box holds no crossing traffic (vehicles going the same way are followed through; straight-on and right turns may meet oncoming straight-on and right turns, unless either is a [wide turn](#turn-paths), which takes the box alone);
 - a left turn has no oncoming traffic about to come through on green;
 - its exit lane has room for it, so it never blocks the box.
 
@@ -78,7 +94,7 @@ Directional right-of-way rules allow compatible movements through a junction and
 | Stopped behind a static vehicle for 1 s (scaled by the driver's temper) | Overtakes through the oncoming lane if it is clear; otherwise, except for large vehicles, mounts the kerb if the sidewalk is free of furniture and buildings. It steers out along an S-curve, backing up first if it stands too close ([Lane changes](#lane-changes)). |
 | Two drivers stopped behind each other | One of them gives way and backs up; see [Cooperative yielding](#cooperative-yielding). |
 | Two knocked cars, or three or more drivers, waiting on each other in a loop | One of them backs up or makes room; see [Wait-for cycles](#wait-for-cycles). |
-| Blocked for 6 s | Makes a U-turn in the middle of the block, if it is far enough from the junction, the opposite lane is clear and every pose of the swept turn misses other vehicles (not for large vehicles). A refused U-turn keeps the current route. |
+| Blocked for 6 s | Makes a U-turn in the middle of the block, if it is far enough from the junction, the opposite lane is clear and every pose of the swept turn misses other vehicles (not for large vehicles). A refused U-turn keeps the current route. The rear axle follows a semicircle between the lanes, 2 m in radius: the widest one-move turn on an 8 m street, tighter than any car can steer; a realistic three-point turn is [CJ-022](../backlog.md#cj-022-three-point-turns). A dead end at the city edge uses the same semicircle inside the junction box. |
 | Blocked, or someone standing in the road | Honks; impatient drivers honk sooner. |
 | Distracted (random, about once every few minutes per driver) | Ignores pedestrians for 1–2.5 s — accidents happen. |
 | Scared (gunfire, explosions, hit by the player) | Panics: drives faster and runs red lights. |
@@ -135,7 +151,7 @@ Rollouts are the cost of recovery: each force step costs about 0.25 µs for the 
 - **Event-driven holds.** Each job records the vehicles and people that rejected its rollouts. A holding car (no feasible manoeuvre, or queued) replans only when its quantized pose, the number of static obstacles around it or the state of one of those blockers changes, and at least every 2 s. An actor that did not block cannot open a way by moving.
 - **Covered immediate checks.** A full immediate check validates four extra frames (1/15 s) of the committed move and records the predicted poses at those frame boundaries and every vehicle or person that could reach the car within the horizon. The next frames reuse it only while the car stays within 1 px and 0.02 rad of its prediction and every such actor within 2 px of its linear forecast, with no newcomer and no more than 32 of them; otherwise the full check runs at once. With room for only 12 actors, crowds near sidewalks overflowed nine checks out of ten in `chase`.
 - **Stationary forecasts.** A stopped rail car or a motionless body has one forecast pose after its first sample; residual motion is added to its sweep pad, which keeps contact depths exact.
-- **Sleeping actors.** An actor found beyond its cull reach sleeps until the first force step at which it could be within reach again: each step the gap can shrink by at most the car's own travel, the actor's speed and a rounding allowance, and the reach can grow by at most the inflated sweep pads. The car's per-step travel and pad are bounded from its speed and yaw rate; a step that exceeds those bounds wakes every sleeper. Only awake actors are tested, in neighbourhood order, so the first actor to reject a rollout, and with it the recorded blocker, is the one the exhaustive loop would find.
+- **Sleeping actors.** An actor found beyond its cull reach sleeps until the first force step at which it could be within reach again: each step the gap can shrink by at most the car's own travel, the actor's speed and a rounding allowance, and the reach can grow by at most the inflated sweep pads. A rail car's centre sits an axle length ahead of its rear axle along the path's tangent, so its reach also includes the axle length times the heading change along the part of its path a 4 s forecast can reach (at most twice the axle length); only that part of the path is copied into the frame's observation. The car's per-step travel and pad are bounded from its speed and yaw rate; a step that exceeds those bounds wakes every sleeper. Only awake actors are tested, in neighbourhood order, so the first actor to reject a rollout, and with it the recorded blocker, is the one the exhaustive loop would find.
 - **Route-centre cull.** A moving rail car's forecast box sits at its route centre. Before the box (and its trigonometry) is built, the centre is compared with the reach the largest possible sweep pad could give: the centre travel plus the car's radius times the turn between two route directions, at most pi/2 times their cross product below a right angle. Nine out of ten rail forecasts in `rampage` ended there.
 - **Cheap bookkeeping.** A hold between planning jobs neither checks nor plans, so it gathers no neighbourhood; the initial-contact test of a gathered actor is skipped beyond both enclosing circles; a new snapshot empties the forecast cache by advancing an epoch instead of touching every row; a rollout step reuses the sine and cosine of the heading its box was just posed at.
 

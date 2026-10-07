@@ -49,7 +49,7 @@ std::array<double, (size_t)DecisionStage::COUNT> stageMs{};
 
 constexpr float PREDICT_STEP = 1.0f / 240.0f;
 constexpr float OBB_GROW_RADIUS = 1.414214f;  // rounded above sqrt(2): both half-extents grow
-constexpr int MAX_PATH_POINTS = 96;
+constexpr int MAX_PATH_POINTS = 256;   // turn paths have points about 4 px apart
 constexpr int MAX_NEARBY = 1024;
 constexpr int MAX_TIMINGS = 16384;
 constexpr int MAX_FORECAST_SAMPLES = 962;     // 4 s at 240 Hz, including the initial pose
@@ -95,6 +95,9 @@ struct ObservedVehicle {
     float pathDistance = 0, speed = 0, shift = 0, radius = 0, routeGap = 0;
     float shiftFrom = 0, shiftTo = 0, shiftS0 = 0, shiftS1 = 0;   // lane-change profile
     float shiftSpan = 0;                     // how far the lane offset can move the centre
+    // The centre sits an axle length ahead of the rear axle along the path's tangent: on a
+    // curved path it moves up to axle * (the heading change) further than the rear axle.
+    float swingSpan = 0;
     float minDistance = -1e9f;               // a yielding retreat stops here
     float maxDistance = 1e9f;                // the planned stop: red light, queue, person
     float blend = 0, blendAngle = 0;
@@ -432,7 +435,7 @@ void GatherNearbyImpl(Game& g, const Vehicle& v, int self, float horizon) {
         float incomingSpeed = std::max(Len(o.vel), o.rail ? fabsf(o.speed) : 0.0f);
         float incomingReach = incomingSpeed * horizon;
         if (o.rail && o.pathCount > 1) {
-            incomingReach += o.routeGap + o.shiftSpan;
+            incomingReach += o.routeGap + o.shiftSpan + o.swingSpan;
             if (o.blend > 0) incomingReach = std::max(incomingReach, Dist(o.blendPos, o.pos));
         }
         float reach = std::max(cfg.nearbyRadius, ownReach + radius + incomingReach);
@@ -641,17 +644,19 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
                     continue;
                 }
             } else if (actor.blend <= 0) {
-                // Each axle point moves at most |path speed| * time. Their
-                // midpoint inherits that bound; a fixed lane shift contributes
-                // at most 2*|shift| as its direction changes. For the existing
+                // The rear axle moves at most |path speed| * time; the centre, an
+                // axle length ahead along the path's tangent, at most swingSpan
+                // further as the heading turns. A fixed lane shift contributes at
+                // most 2*|shift| as its direction changes. For the existing
                 // inflated-endpoint test, also enclose the preceding sample's
                 // translation/shift and its worst wrapped rotation (pi). The
                 // actual initial pose may differ from route centre zero;
                 // include that gap both in centre travel and the first sweep.
                 // A skipped actor passes the original distance cull too.
                 float shiftSpan = actor.shiftSpan;
-                float travel = fabsf(actor.speed) * time + shiftSpan + actor.routeGap;
-                float maxSweep = fabsf(actor.speed) * h + shiftSpan + n.radius * PI + actor.routeGap;
+                float railSpeed = fabsf(actor.speed);
+                float travel = railSpeed * time + shiftSpan + actor.swingSpan + actor.routeGap;
+                float maxSweep = railSpeed * h + shiftSpan + actor.swingSpan + n.radius * PI + actor.routeGap;
                 float bound = baseReach + travel + growScale * maxSweep;
                 float distance2 = Len2(n.forecastOrigin - scratch.pos);
                 distant = distance2 > bound * bound;
@@ -661,7 +666,7 @@ bool FootprintClear(const Vehicle& scratch, int step, float time, float h, float
                 canSleep = false;
                 if (distant) {
                     n.released = true;
-                    if (Sleep(idx, step, sqrtf(distance2) - bound, fabsf(actor.speed), 0.0f, growScale)) kept--;
+                    if (Sleep(idx, step, sqrtf(distance2) - bound, railSpeed, 0.0f, growScale)) kept--;
                     continue;
                 }
             } else canSleep = false;   // a legacy blend mixes a separate pose: full forecast
@@ -1251,11 +1256,27 @@ void RecoveryBeginFrame(Game& g) {
         // 4 s is the longest forecast; the drift bound encloses the residual motion.
         o.drift = o.rail ? 0.0f : (Len(o.vel) + o.radius * fabsf(o.angVel)) * 4.0f;
         o.stationary = o.rail ? ((o.speed == 0 || o.maxDistance <= o.pathDistance) && o.blend <= 0) : o.drift <= 0.05f;
+        o.swingSpan = 0;
         if (recovering && o.rail) {
-            for (const Waypoint& p : v.ai.path) {
-                if (o.pathCount == MAX_PATH_POINTS) break;
-                o.path[o.pathCount++] = { p.p, p.cum };
+            // The part of the path a 4 s forecast can reach (the longest), with a margin
+            // for the axles and the tangent, and one point beyond each end.
+            float axle = v.length * 0.32f, reach = fabsf(o.speed) * 4;
+            float lo = std::max(o.minDistance, o.pathDistance - reach) - axle - RAIL_TANGENT_SPAN * 4;
+            float hi = std::min(o.maxDistance, o.pathDistance + reach) + axle + RAIL_TANGENT_SPAN * 4;
+            const std::deque<Waypoint>& P = v.ai.path;
+            size_t first = 0, last = P.size();
+            while (first + 1 < P.size() && P[first + 1].cum < lo) first++;
+            while (last > first + 2 && P[last - 2].cum > hi) last--;
+            for (size_t k = first; k < last && o.pathCount < MAX_PATH_POINTS; k++) o.path[o.pathCount++] = { P[k].p, P[k].cum };
+            // The heading turns by the sum of the corners the rear axle passes; the centre
+            // then moves at most axle * |change of the heading vector| (at most 2) further.
+            float turn = 0;
+            for (int k = 1; k + 1 < o.pathCount; k++) {
+                Vector2 a = o.path[k - 1].pos, b = o.path[k].pos, c = o.path[k + 1].pos;
+                if (Dist(a, b) < 1e-3f || Dist(b, c) < 1e-3f) continue;
+                turn += fabsf(WrapAngle(AngleOf(c - b) - AngleOf(b - a)));
             }
+            o.swingSpan = axle * std::min(2.0f, turn);
         }
         // Cache the raw route centre separately from the authoritative actual
         // body. A newly changed rail can otherwise invalidate travel bounds.

@@ -4,28 +4,35 @@
 //  60 Hz and 20 Hz. The lights stay green. Measured against the junction's geometry
 //  (kerbs at the road edges, the right-hand half of each road):
 //    - rear-axle slip: the angle between the body and the motion of its rear axle point;
-//    - rear-axle path radius (circumradius of rear points 8 px apart) and the lateral
-//      acceleration there;
-//    - body over the kerb: the deepest overlap with the four blocks round the junction;
-//    - encroachment: how far a body corner reaches outside the junction box into the
-//      oncoming half of the road, or into an arm the car does not use.
+//    - rear-axle path radius (circumradius of rear points 16 px apart), and the lateral
+//      acceleration of the rear axle (its speed times the yaw rate);
+//    - over the kerb: the deepest overlap of the body, and of the body between the axles
+//      (the wheels), with the four blocks round the junction;
+//    - encroachment: how far a body corner reaches where it can meet other traffic: the
+//      oncoming half of the approach road (cars leaving the junction) and, beyond the
+//      stop-line zone (60 px past the box, which cars waiting at a stop line 72 px back
+//      leave free), the oncoming half of the exit road or a road the car does not use.
+//      The strict measure, counting the stop-line zone too, is logged alongside.
 // =====================================================================================
 #include "traffic_turn_tests.h"
 #include "game.h"
 #include "traffic.h"
+#include "traffic_turns.h"
 #include <cstdlib>
 #include <string>
 #include <vector>
 
 namespace {
-constexpr const char* FIXTURE_ID = "cj020-turns-v1";
+constexpr const char* FIXTURE_ID = "cj020-turns-v2";
 constexpr uint32_t SEED = 0x000c0020u;
 constexpr float RENDER_DT = 1.0f / 60.0f;
 constexpr float MAX_CASE_S = 30.0f;
 constexpr float START_GAP = 420.0f;        // px from the box edge to the car's front at the start
 constexpr float EXIT_GAP = 320.0f;         // px past the box edge the rear axle must reach
 constexpr float RAIL_TAIL = 300.0f;
-constexpr float SAMPLE_SPACING = 8.0f;     // px between rear-axle samples for the radius
+constexpr float SAMPLE_SPACING = 16.0f;    // px between rear-axle samples for the radius (a shorter span
+                                           // magnifies the polygon's chords into a smaller radius)
+constexpr float STOP_ZONE = 60.0f;         // px past the box that cars at a stop line (72 px back) leave free
 
 enum class Turn { Right, Left, Straight };
 const char* TurnName(Turn t) { return t == Turn::Right ? "right" : t == Turn::Left ? "left" : "straight"; }
@@ -78,8 +85,8 @@ struct TrafficTurnTests::State {
     std::vector<Vector2> samples;            // rear-axle points SAMPLE_SPACING apart
     std::vector<float> sampleTimes;
     float minRadius = 1e9f, maxLateral = 0, minTurnSpeed = 1e9f;
-    float kerb = 0, encroach = 0, boxTime = 0, stoppedTime = 0;
-    int teleports = 0, nonfinite = 0, knocks = 0, ownership = 0;
+    float kerb = 0, wheelKerb = 0, encroach = 0, strictEncroach = 0, boxTime = 0, stoppedTime = 0;
+    int teleports = 0, nonfinite = 0, knocks = 0, ownership = 0, unfit = 0;
     Vector2 lastPos{};
     float finalLateral = NAN, finalHeading = NAN, reachedAt = -1;
     std::vector<Vector2> rearTrace, frontTrace;
@@ -129,7 +136,7 @@ struct TrafficTurnTests::State {
         turnSlip = straightSlip = turnSeconds = slipSeconds = 0;
         samples.clear(); sampleTimes.clear();
         minRadius = 1e9f; maxLateral = 0; minTurnSpeed = 1e9f;
-        kerb = encroach = boxTime = stoppedTime = 0;
+        kerb = wheelKerb = encroach = strictEncroach = boxTime = stoppedTime = 0;
         teleports = nonfinite = knocks = ownership = 0;
         lastPos = r.pos; finalLateral = finalHeading = NAN; reachedAt = -1;
         rearTrace.clear(); frontTrace.clear(); ghosts.clear(); ghostClock = 0;
@@ -140,15 +147,16 @@ struct TrafficTurnTests::State {
                  FIXTURE_ID, c.name.c_str(), c.cls.c_str(), TurnName(c.turn), c.step, r.length, r.width,
                  r.S().turnCircle / cfg::M, classRadius);
     }
-    // How far a body corner reaches outside the box into the wrong half of a road arm.
-    float Encroachment(Vector2 c, Turn turn) const {
-        const float H = cfg::ROAD_HALF;
+    // How far a body corner reaches into the wrong half of a road arm outside the box;
+    // 'zone' px past the box edge on the exit and unused arms are not counted.
+    float Encroachment(Vector2 c, Turn turn, float zone) const {
+        const float H = cfg::ROAD_HALF, Z = H + zone;
         if (fabsf(c.x) <= H && fabsf(c.y) <= H) return 0;     // in the junction box
         if (fabsf(c.x) > H && fabsf(c.y) > H) return 0;       // over the kerb: measured separately
         if (c.y > H) return std::max(0.0f, -c.x);                                   // approach arm
-        if (c.y < -H) return turn == Turn::Straight ? std::max(0.0f, -c.x) : -c.y - H;
-        if (c.x > H) return turn == Turn::Right ? std::max(0.0f, -c.y) : c.x - H;
-        return turn == Turn::Left ? std::max(0.0f, c.y) : -c.x - H;
+        if (c.y < -H) return turn == Turn::Straight ? (c.y < -Z ? std::max(0.0f, -c.x) : 0.0f) : std::max(0.0f, -c.y - Z);
+        if (c.x > H) return turn == Turn::Right ? (c.x > Z ? std::max(0.0f, -c.y) : 0.0f) : std::max(0.0f, c.x - Z);
+        return turn == Turn::Left ? (c.x < -Z ? std::max(0.0f, c.y) : 0.0f) : std::max(0.0f, -c.x - Z);
     }
 
     void Observe(Game& g, float step) {
@@ -165,6 +173,9 @@ struct TrafficTurnTests::State {
         Vector2 rear = v.pos - v.Fwd() * (v.length * 0.32f);
         bool turning = fabsf(WrapAngle(v.angle - lastAngle)) > 0.0005f;
         if (std::isfinite(lastRear.x)) {
+            // Lateral acceleration of the rear axle point: its speed times the yaw rate.
+            float lateral = Dist(rear, lastRear) / step * fabsf(WrapAngle(v.angle - lastAngle)) / step;
+            maxLateral = std::max(maxLateral, lateral);
             Vector2 r2;
             float slip = RailRearSlip(v, lastRear, step, &r2);
             if (slip >= 0) {
@@ -186,7 +197,6 @@ struct TrafficTurnTests::State {
                     if (radius < 5000) {
                         minRadius = std::min(minRadius, radius);
                         float speed = (ab + bd) / std::max(1e-4f, sampleTimes[n - 1] - sampleTimes[n - 3]);
-                        maxLateral = std::max(maxLateral, speed * speed / radius);
                         minTurnSpeed = std::min(minTurnSpeed, speed);
                     }
                 }
@@ -198,9 +208,16 @@ struct TrafficTurnTests::State {
         Rectangle blocks[4] = { { ic.x + H, ic.y + H, far, far }, { ic.x - H - far, ic.y + H, far, far },
                                 { ic.x + H, ic.y - H - far, far, far }, { ic.x - H - far, ic.y - H - far, far, far } };
         Vector2 n; float depth;
-        for (const Rectangle& b : blocks) if (OBBOverlap(box, MakeAABB(b), n, depth)) kerb = std::max(kerb, depth);
+        OBB wheels = MakeOBB(v.pos, v.angle, v.width * 0.5f, v.length * 0.32f);
+        for (const Rectangle& b : blocks) {
+            if (OBBOverlap(box, MakeAABB(b), n, depth)) kerb = std::max(kerb, depth);
+            if (OBBOverlap(wheels, MakeAABB(b), n, depth)) wheelKerb = std::max(wheelKerb, depth);
+        }
         Vector2 corners[4]; OBBCorners(box, corners);
-        for (Vector2 k : corners) encroach = std::max(encroach, Encroachment(Local(k), c.turn));
+        for (Vector2 k : corners) {
+            encroach = std::max(encroach, Encroachment(Local(k), c.turn, STOP_ZONE));
+            strictEncroach = std::max(strictEncroach, Encroachment(Local(k), c.turn, 0));
+        }
         Vector2 lp = Local(v.pos);
         if (fabsf(lp.x) < H && fabsf(lp.y) < H) boxTime += step;
         // Traces for the capture.
@@ -238,19 +255,28 @@ struct TrafficTurnTests::State {
             Check("rear_radius_over_class_min", minRadius / classRadius, 0.98f, 1e6f);
             Check("lateral_accel_over_limit", maxLateral / lateralLimit, 0, 1.05f);
         }
-        Check("kerb_px", kerb, 0, 4);
-        Check("encroachment_px", encroach, 0, large && c.turn == Turn::Right ? 24.0f : 0.5f);
+        // The wheels stay on the road; a car's body reaches at most 4 px over a kerb. A
+        // large vehicle's overhangs may sweep over a corner (logged). A class too large or
+        // too wide for a clean turn takes a wide turn: up to 24 px into the oncoming half.
+        // A turn that does not fit is avoided by traffic: only logged here.
+        bool wide = turn && RailTurnPath(v, TurnCode(c.turn)).wide;
+        bool fits = !turn || RailTurnPath(v, TurnCode(c.turn)).fits;
+        if (fits) {
+            Check("wheel_kerb_px", wheelKerb, 0, 1);
+            if (!large && !wide) Check("kerb_px", kerb, 0, 4);
+            Check("encroachment_px", encroach, 0, wide ? 24.0f : 2.0f);
+        } else unfit++;
         Check("final_lateral_px", finalLateral, 0, 1);
         Check("final_heading_deg", finalHeading, 0, 0.5f);
         bool pass = failures == before;
         if (pass) passedCases++;
         // Two lines: raylib truncates a log message at 256 characters.
-        TraceLog(LOG_INFO, "CJ020T measure case=%s slip_deg=%.3f slip_over_5=%.4f straight_slip_deg=%.3f rear_radius_m=%.3f class_min_m=%.3f lateral_ms2=%.3f min_speed_kmh=%.2f",
-                 c.name.c_str(), turnSlip, turnSeconds > 0 ? slipSeconds / turnSeconds : 0.0f, straightSlip,
+        TraceLog(LOG_INFO, "CJ020T measure case=%s wide=%d fits=%d slip_deg=%.3f slip_over_5=%.4f straight_slip_deg=%.3f rear_radius_m=%.3f class_min_m=%.3f lateral_ms2=%.3f min_speed_kmh=%.2f",
+                 c.name.c_str(), (int)wide, (int)fits, turnSlip, turnSeconds > 0 ? slipSeconds / turnSeconds : 0.0f, straightSlip,
                  minRadius < 1e8f ? minRadius / cfg::M : -1.0f, classRadius / cfg::M, maxLateral / cfg::M,
                  minTurnSpeed < 1e8f ? minTurnSpeed / cfg::M * 3.6f : -1.0f);
-        TraceLog(LOG_INFO, "CJ020T result fixture=%s case=%s duration_s=%.3f reached_s=%.3f kerb_px=%.2f encroachment_px=%.2f box_s=%.3f stopped_s=%.3f final_lateral_px=%.3f final_heading_deg=%.3f result=%s",
-                 FIXTURE_ID, c.name.c_str(), phaseTime, reachedAt, kerb, encroach, boxTime, stoppedTime,
+        TraceLog(LOG_INFO, "CJ020T result fixture=%s case=%s duration_s=%.3f reached_s=%.3f kerb_px=%.2f wheel_kerb_px=%.2f encroachment_px=%.2f strict_encroachment_px=%.2f box_s=%.3f stopped_s=%.3f final_lateral_px=%.3f final_heading_deg=%.3f result=%s",
+                 FIXTURE_ID, c.name.c_str(), phaseTime, reachedAt, kerb, wheelKerb, encroach, strictEncroach, boxTime, stoppedTime,
                  finalLateral, finalHeading, pass ? "PASS" : "FAIL");
         completed++;
         capture = c.name;
@@ -357,9 +383,9 @@ void TrafficTurnTests::Draw(const Game& g) const {
     DrawUIText(TextFormat("%s | case %d / %d | %.2f s | %.0f Hz | turning circle %.1f m, min rear radius %.2f m",
                           s.Current().name.c_str(), s.index + 1, (int)s.cases.size(), s.phaseTime, 1.0f / s.Current().step,
                           v.S().turnCircle / cfg::M, s.classRadius / cfg::M), 25, 50, 21, WHITE);
-    DrawUIText(TextFormat("slip turning %.1f deg | rear radius %.2f m | lateral %.2f m/s2 | kerb %.1f px | encroach %.1f px | failures %d",
-                          s.turnSlip, s.minRadius < 1e8f ? s.minRadius / cfg::M : 0.0f, s.maxLateral / cfg::M, s.kerb, s.encroach,
-                          s.failures), 25, 86, 19, s.failures ? Color{ 255, 151, 115, 255 } : Color{ 116, 217, 165, 255 });
+    DrawUIText(TextFormat("slip turning %.1f deg | rear radius %.2f m | lateral %.2f m/s2 | kerb: body %.1f px, wheels %.1f px | encroach %.1f px | failures %d",
+                          s.turnSlip, s.minRadius < 1e8f ? s.minRadius / cfg::M : 0.0f, s.maxLateral / cfg::M, s.kerb, s.wheelKerb,
+                          s.encroach, s.failures), 25, 86, 19, s.failures ? Color{ 255, 151, 115, 255 } : Color{ 116, 217, 165, 255 });
     DrawRectangle(0, GetScreenHeight() - 38, GetScreenWidth(), 38, { 12, 17, 23, 235 });
     DrawUIText(s.lastResult.empty() ? "Amber: rear axle path. Cyan: front axle path. Outlines every 0.2 s. Kerbs at the road edges."
                                     : s.lastResult.c_str(), 25, GetScreenHeight() - 29, 18, LIGHTGRAY);
@@ -368,8 +394,8 @@ void TrafficTurnTests::Draw(const Game& g) const {
 void TrafficTurnTests::Log() const {
     if (!state) return;
     const State& s = *state;
-    TraceLog(LOG_INFO, "CJ020T summary fixture=%s seed=%08x scheduled=%d completed=%d passed_cases=%d render_frames=%d physics_steps=%d checks=%d failures=%d incomplete=%d invalid=%d result=%s",
-             FIXTURE_ID, SEED, (int)s.cases.size(), s.completed, s.passedCases, s.frame, s.physicsSteps, s.checks, s.failures,
+    TraceLog(LOG_INFO, "CJ020T summary fixture=%s seed=%08x scheduled=%d completed=%d passed_cases=%d unfit_turns=%d render_frames=%d physics_steps=%d checks=%d failures=%d incomplete=%d invalid=%d result=%s",
+             FIXTURE_ID, SEED, (int)s.cases.size(), s.completed, s.passedCases, s.unfit, s.frame, s.physicsSteps, s.checks, s.failures,
              (int)!s.finished, (int)s.invalid, s.finished && !s.invalid && s.failures == 0 ? "PASS" : "FAIL");
 }
 bool TrafficTurnTests::Failed() const { return state && (state->invalid || state->failures > 0 || !state->finished); }

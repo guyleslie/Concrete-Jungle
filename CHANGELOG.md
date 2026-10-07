@@ -9,10 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - CJ-020 measurements: the `traffic-turns` fixture (every traffic class turning right, left and straight through an empty junction at 60 Hz and 20 Hz: slip, rear-axle radius, kerb intrusion, encroachment, lateral acceleration, trace captures), the `TRAFFIC rail overlaps` line in the test log and `tools/run_cj020_turns.py`.
-- `TURN <class> <turning circle m>` records in `vehicles.cfg` and `TURN lateral_accel` in `traffic.cfg`, the data for sizing traffic turns (CJ-020).
+- `TURN <class> <turning circle m>` records in `vehicles.cfg`; `TURN lateral_accel`, `easement`, `left_radius` and `max_swing` in `traffic.cfg` (CJ-020).
+- `TRAFFIC turns planned` and `RAIL-SLIP` lines in the test log; the turning fixture (`cj020-turns-v2`) also checks the wheels against the kerbs and logs a strict encroachment.
+- Backlog items CJ-022 (three-point turns), CJ-023 (vehicle widths and street geometry, from the feedback that the streets feel cramped) and CJ-024 (recovery cost in dense traffic).
 
 ### Changed
 
+- Traffic turns like real cars (CJ-020): the rear axle follows the path and the body points along it, so the front swings out and nothing slides sideways through a turn. Each class turns on its own path through a junction, never tighter than its turning circle allows, with gradual steering in and out; the turning speed keeps the lateral acceleration at the rear axle within 3.5 m/s² (about 13–20 km/h). A class too wide for a clean turn takes a wide turn and has the junction box to itself; a turn that does not fit at all (the Bus, the Semi, and the right turns of the large trucks between square corners) is avoided unless there is no other way. Paths are planned while the game loads. Police are unchanged.
+- U-turns follow a 2 m semicircle between the lanes, tangent to both, at a limited speed, instead of a curve that started with a kink.
 - CJ-016 (human-like traffic and incidents) is done: the user playtested and accepted it on 2026-10-07. ADR-0008 stays Proposed until visible drivers control the physical integrator.
 - Backlog: CJ-018 becomes *Police driving and reactions* (High) with the playtest feedback that pursuing police run down pedestrians, ram other cars and cause crashes, and the open police reaction to a fight. New item CJ-021 for visible towing.
 

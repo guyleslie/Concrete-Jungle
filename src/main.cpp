@@ -26,6 +26,7 @@
 #include "traffic_conflict_tests.h"
 #include "traffic_incident_tests.h"
 #include "traffic_turn_tests.h"
+#include "traffic_turns.h"
 #include "rlgl.h"
 
 static void LoadingScreen(const char* msg) {
@@ -73,6 +74,8 @@ int main(int argc, char** argv) {
 
     LoadingScreen("Loading textures, vehicles and characters...");
     gAssets.Load();
+    LoadingScreen("Planning traffic turns...");
+    RailPlanTurns();
     LoadingScreen("Building the city...");
 
     static Game game;                     // large object: keep it off the stack

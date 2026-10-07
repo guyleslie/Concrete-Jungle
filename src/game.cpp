@@ -376,6 +376,10 @@ void Game::RailSlipDiagnostics(float dt) {
             moving += dt;
             if (slip > 5) slipping += dt;
             worst = std::max(worst, slip);
+            if (slip > 8)
+                TraceLog(LOG_INFO, "RAIL-SLIP #%d %s %.1f deg t=%.2f %s shift %.1f uturn_cooldown %.1f turn %d speed %.0f",
+                         (int)i, v.S().name.c_str(), slip, time, shifting ? "changing lane" : turning ? "turning" : "straight",
+                         v.ai.laneShift, v.ai.uturnCooldown, v.ai.curTurn, v.ai.speed);
         } else if (known && shifting && v.ai.speed < 1) diagSideStill += dt;
         railRear[i] = rear; railShift[i] = v.ai.laneShift; railAngle[i] = v.angle;
     }
@@ -422,6 +426,9 @@ void Game::LogPhysStats() const {
              diagRailMoving, share(diagRailSlipping, diagRailMoving), diagRailMaxSlip, diagSideStill);
     TraceLog(LOG_INFO, "TRAFFIC rail overlaps (rail cars over 1 px; pair-s, of which near a junction box, deepest px): %.2f, %.2f, %.1f",
              diagRailOverlap, diagRailOverlapBox, diagRailOverlapMax);
+    int turns[4]; AITurnCounts(turns);
+    TraceLog(LOG_INFO, "TRAFFIC turns planned: clean %d, wide %d, not fitting (no other way) %d, U-turns %d",
+             turns[0], turns[1], turns[2], turns[3]);
     for (size_t i = 0; i < vehicles.size(); i++) {
         const Vehicle& v = vehicles[i];
         if (!v.active || v.driver != DriverType::Traffic || v.ai.rail || v.ai.dynTimer < 12) continue;

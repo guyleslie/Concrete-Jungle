@@ -30,7 +30,7 @@ sys.dont_write_bytecode = True
 from run_cj016 import (ROOT, existing_outputs, git_state, integer_field, positive_seconds,
                        record_fields, save_manifest, stop_process, utc_now)
 
-FIXTURE = "cj020-turns-v1"
+FIXTURE = "cj020-turns-v2"
 FIXTURE_FRAMES = 400000
 CITY = (("day", 1800), ("chase", 1800), ("drive", 1800), ("overview", 1800), ("crash", 1500), ("rampage", 3600))
 CITY_LINES = ("TRAFFIC slip", "TRAFFIC rail overlaps", "TRAFFIC:", "TRAFFIC stopped because", "TRAFFIC wait cycles",

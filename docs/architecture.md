@@ -31,9 +31,9 @@ The `Game` class owns the world and the rules. Subsystems are plain modules with
 | Procedural art | `sprite_gen.*` | Signed-distance-field painter for sprites no asset pack covers |
 | City | `city_map.*` | City generation, 3D structures, street furniture, spatial queries, traffic signals, minimap |
 | Vehicles | `vehicle.*`, `vehicle_types.*` | Vehicle classes, engine / brake / tyre model, vehicle drawing |
-| Measurements | `vehicle_tests.*`, `traffic_tests.*`, `traffic_clearance_tests.*`, `traffic_conflict_tests.*`, `traffic_incident_tests.*` | Isolated CJ-002 handling/collision, frozen CJ-016 recovery scenes, the nearby-box rejoin API regression, cooperative yielding and driver incident scenes, enabled only by screenshot scenarios |
+| Measurements | `vehicle_tests.*`, `traffic_tests.*`, `traffic_clearance_tests.*`, `traffic_conflict_tests.*`, `traffic_incident_tests.*`, `traffic_turn_tests.*` | Isolated CJ-002 handling/collision, frozen CJ-016 recovery scenes, the nearby-box rejoin API regression, cooperative yielding and driver incident scenes, the CJ-020 turning scenes, enabled only by screenshot scenarios |
 | Physics | `physics.*` | Vehicle collision detection and the contact solver |
-| Traffic | `traffic.*`, `traffic_recovery.*`, `traffic_incidents.*` | Rail traffic, cooperative yielding and police AI; shared observations and budgeted physical recovery for knocked traffic; driver moods and collision incidents |
+| Traffic | `traffic.*`, `traffic_turns.*`, `traffic_recovery.*`, `traffic_incidents.*` | Rail traffic, cooperative yielding and police AI; each class's turn paths through a junction; shared observations and budgeted physical recovery for knocked traffic; driver moods and collision incidents |
 | Pedestrians | `pedestrian.*` | Pedestrian AI, steering, the pedestrian grid and drawing |
 | Rendering | `render.*`, `lighting.*`, `particles.*` | Camera, render passes, day/night cycle, particles, decals |
 | Audio | `audio.*` | Procedural sound synthesis, positional playback |

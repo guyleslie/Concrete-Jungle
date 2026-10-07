@@ -4,6 +4,7 @@
 #include "traffic.h"
 #include "game.h"
 #include "traffic_incidents.h"
+#include "traffic_turns.h"
 
 using namespace cfg;
 
@@ -19,44 +20,33 @@ static const float STOP_BACK = 72.0f;      // stop line distance before the junc
 static const float COMFORT_DECEL = 420.0f;
 
 // -------------------------------------------------------------------------------------
-//  Turning through junctions (CJ-020)
-// -------------------------------------------------------------------------------------
-namespace {
-struct TurnSettings {
-    float lateralAccel = 3.5f;    // m/s^2 at the rear axle in a turn
-};
-
-const TurnSettings& TurnTuning() {
-    static TurnSettings s;
-    static bool loaded = false;
-    if (loaded) return s;
-    loaded = true;
-    TrafficField fields[] = {
-        { "lateral_accel", &s.lateralAccel, 1, 8 }
-    };
-    LoadTrafficRecords("TURN", fields, (int)(sizeof(fields) / sizeof(fields[0])));
-    return s;
-}
-} // namespace
-
-float RailTurnLateralAccel() { return TurnTuning().lateralAccel * M; }
-
-// The tightest path the rear axle can follow at full lock: the class's kerb-to-kerb
-// turning circle is traced by the outer front wheel, a wheelbase (the pose's axle
-// spacing, 0.64 lengths) ahead of the rear axle and half a width outside it.
-float RailTurnMinRadius(const Vehicle& v) {
-    float outer = v.S().turnCircle * 0.5f, wheelbase = v.length * 0.64f;
-    if (outer <= wheelbase * 1.05f) return wheelbase * 0.3f;
-    return std::max(wheelbase * 0.3f, sqrtf(outer * outer - wheelbase * wheelbase) - v.width * 0.5f);
-}
-
-// -------------------------------------------------------------------------------------
 //  Path construction
 // -------------------------------------------------------------------------------------
 static void Push(DriverAI& ai, Waypoint w) {
     w.cum = ai.path.empty() ? 0.0f : ai.path.back().cum + Dist(ai.path.back().p, w.p);
     ai.path.push_back(w);
 }
+
+// A traffic U-turn: a semicircle from 'start' (heading 'forward') to the lane on the
+// left, LANE_OFFSET * 2 across, points 2 px apart. It leaves and joins the lanes along
+// their direction, so the body turns without a kink. Its 2 m radius is the widest one-move
+// turn between the lanes; a car needs more, so a realistic three-point turn is CJ-022.
+// The speed keeps the lateral acceleration within TURN lateral_accel.
+static void PushUTurn(DriverAI& ai, Vector2 start, Vector2 forward) {
+    Vector2 centre = start - Perp(forward) * LANE_OFFSET;
+    int n = (int)ceilf(PI * LANE_OFFSET / 2.0f);
+    float vmax = 0.9f * sqrtf(RailTurnLateralAccel() * LANE_OFFSET);
+    for (int k = 1; k <= n; k++) {
+        float a = PI * k / n;
+        Waypoint t; t.p = centre + Perp(forward) * (LANE_OFFSET * cosf(a)) + forward * (LANE_OFFSET * sinf(a));
+        t.turn = true; t.vmax = k < n ? vmax : 0.0f;
+        Push(ai, t);
+    }
+}
+
+// Turns planned by traffic: clean, wide, not fitting (no other way), other (U-turns).
+static int gTurnCounts[4] = { 0, 0, 0, 0 };
+void AITurnCounts(int counts[4]) { for (int k = 0; k < 4; k++) counts[k] = gTurnCounts[k]; }
 
 // Plans the route through junction (ti,tj) approached in direction ai.dir.
 // 'goal' (optional) makes the turn choice close in on a point (police); 'forced' (fixtures)
@@ -69,10 +59,16 @@ static void PlanNext(Vehicle& v, const CityMap& map, const Vector2* goal, int fo
     int opts[3] = { d, (d + 1) & 3, (d + 3) & 3 };
     float w[3] = { v.S().large() ? 0.7f : 0.55f, 0.25f, v.S().large() ? 0.1f : 0.2f };
     int cand[3]; float cw[3]; int n = 0;
+    // A traffic driver avoids a turn its vehicle cannot make within the limits (a 12 m bus
+    // between square corners), unless it has no other way.
+    bool traffic = v.driver == DriverType::Traffic;
+    bool avoid[3] = { false, traffic && !RailTurnPath(v, 1).fits, traffic && !RailTurnPath(v, 2).fits };
+    bool other = false;
+    for (int k = 0; k < 3; k++) if (!avoid[k] && map.ValidInter(ai.ti + DX(opts[k]), ai.tj + DY(opts[k]))) other = true;
     for (int k = 0; k < 3; k++) {
         int d2 = opts[k];
         if (!map.ValidInter(ai.ti + DX(d2), ai.tj + DY(d2))) continue;
-        float weight = w[k];
+        float weight = avoid[k] && other ? 0.0f : w[k];
         if (goal) weight = 0.05f + Saturate(Dot(DirVec(d2), Norm(*goal - c)) + 0.3f) + GRng().Range(0, 0.25f);
         cand[n] = d2; cw[n] = weight; n++;
     }
@@ -83,28 +79,58 @@ static void PlanNext(Vehicle& v, const CityMap& map, const Vector2* goal, int fo
     else {
         float tot = 0; for (int k = 0; k < n; k++) tot += cw[k];
         float r = GRng().Float() * tot; d2 = cand[n - 1];
-        for (int k = 0; k < n; k++) { r -= cw[k]; if (r <= 0) { d2 = cand[k]; break; } }
+        for (int k = 0; k < n; k++) { r -= cw[k]; if (r <= 0 && cw[k] > 0) { d2 = cand[k]; break; } }
     }
     int turnType = d2 == d ? 0 : d2 == ((d + 1) & 3) ? 1 : d2 == ((d + 3) & 3) ? 2 : 3;
 
+    // Traffic turns right and left on its class's turn path (traffic_turns.h): the path of
+    // the rear axle, in the junction frame. Only straight lane points at its start may
+    // lie behind what is already planned (a car rejoining close to the junction); if the
+    // turn itself would, the driver goes straight on instead.
+    const TurnPath* turn = traffic && (turnType == 1 || turnType == 2) ? &RailTurnPath(v, turnType) : nullptr;
+    auto world = [&](Vector2 q) { return c + RightV(d) * q.x - DirVec(d) * q.y; };
+    size_t first = 0;
+    if (turn && !ai.path.empty()) {
+        float planned = Dot(ai.path.back().p - c, DirVec(d));
+        while (first < turn->points.size() && Dot(world(turn->points[first].p) - c, DirVec(d)) <= planned + 1) {
+            if (turn->points[first].curve || turn->points[first].stop) { turn = nullptr; break; }
+            first++;
+        }
+        if (!turn && map.ValidInter(ai.ti + DX(d), ai.tj + DY(d))) { d2 = d; turnType = 0; }
+    }
+
     Vector2 E = c - DirVec(d) * ROAD_HALF + RightV(d) * LANE_OFFSET;
     Vector2 X = c + DirVec(d2) * ROAD_HALF + RightV(d2) * LANE_OFFSET;
-    Waypoint e; e.p = E; e.stop = true; e.si = ai.ti; e.sj = ai.tj; e.axis = (d == 0 || d == 2) ? 0 : 1;
+    Waypoint e; e.stop = true; e.si = ai.ti; e.sj = ai.tj; e.axis = (d == 0 || d == 2) ? 0 : 1;
     e.turnType = turnType; e.d = d; e.d2 = d2;
-    Push(ai, e);
-    if (turnType == 0) {
-        Waypoint x; x.p = X; Push(ai, x);
+    if (traffic && turnType != 0) gTurnCounts[!turn ? 3 : !turn->fits ? 2 : turn->wide ? 1 : 0]++;
+    if (turn) {
+        for (size_t k = first; k < turn->points.size(); k++) {
+            const TurnPoint& q = turn->points[k];
+            Waypoint w = q.stop ? e : Waypoint{};
+            w.p = world(q.p); w.turn = q.curve; w.vmax = q.vmax; w.wide = q.stop && turn->wide;
+            Push(ai, w);
+        }
+        X = ai.path.back().p;
     } else {
-        Vector2 ctrl;
-        if (turnType == 3) ctrl = c + DirVec(d) * 40.0f;
-        else if (turnType == 1 && v.S().large()) ctrl = c + (RightV(d) + RightV(d2)) * 10.0f;   // wide right turn
-        else ctrl = c + RightV(d) * LANE_OFFSET + RightV(d2) * LANE_OFFSET;
-        for (int k = 1; k <= 10; k++) { Waypoint t; t.p = QuadBezier(E, ctrl, X, k / 10.0f); t.turn = true; Push(ai, t); }
+        e.p = E;
+        Push(ai, e);
+        if (turnType == 0) {
+            Waypoint x; x.p = X; Push(ai, x);
+        } else {
+            Vector2 ctrl;
+            if (turnType == 3) ctrl = c + DirVec(d) * 40.0f;
+            else if (turnType == 1 && v.S().large()) ctrl = c + (RightV(d) + RightV(d2)) * 10.0f;   // wide right turn
+            else ctrl = c + RightV(d) * LANE_OFFSET + RightV(d2) * LANE_OFFSET;
+            if (traffic && turnType == 3) PushUTurn(ai, E, DirVec(d));   // a dead end
+            else for (int k = 1; k <= 10; k++) { Waypoint t; t.p = QuadBezier(E, ctrl, X, k / 10.0f); t.turn = true; Push(ai, t); }
+        }
     }
-    // points along the next block so the path stays smooth and long enough
+    // Points along the next block so the path stays smooth and long enough. Traffic stops
+    // half way, before where the next junction's turn path may begin.
     Vector2 nc = map.InterCenter(ai.ti + DX(d2), ai.tj + DY(d2));
     Vector2 nE = nc - DirVec(d2) * ROAD_HALF + RightV(d2) * LANE_OFFSET;
-    for (int k = 1; k <= 3; k++) { Waypoint m; m.p = LerpV(X, nE, k / 4.0f); Push(ai, m); }
+    for (int k = 1; k <= (traffic ? 2 : 3); k++) { Waypoint m; m.p = LerpV(X, nE, k / 4.0f); Push(ai, m); }
     ai.ti += DX(d2); ai.tj += DY(d2); ai.dir = d2;
 }
 
@@ -132,12 +158,14 @@ static Vector2 Sample(const DriverAI& ai, float s, float* heading = nullptr) {
         if (heading && P.size() > 1) *heading = AngleOf(P[1].p - P[0].p);
         return P.front().p;
     }
-    for (size_t i = 0; i + 1 < P.size(); i++) {
-        if (s <= P[i + 1].cum) {
-            float seg = std::max(1e-3f, P[i + 1].cum - P[i].cum);
-            if (heading) *heading = AngleOf(P[i + 1].p - P[i].p);
-            return LerpV(P[i].p, P[i + 1].p, (s - P[i].cum) / seg);
-        }
+    // The first point at or beyond s ends the segment (cumulative distances never
+    // decrease): the segment a scan from the start would find.
+    auto end = std::lower_bound(P.begin() + 1, P.end(), s, [](const Waypoint& w, float d) { return w.cum < d; });
+    if (end != P.end()) {
+        size_t i = (size_t)(end - P.begin()) - 1;
+        float seg = std::max(1e-3f, P[i + 1].cum - P[i].cum);
+        if (heading) *heading = AngleOf(P[i + 1].p - P[i].p);
+        return LerpV(P[i].p, P[i + 1].p, (s - P[i].cum) / seg);
     }
     if (heading) *heading = AngleOf(P.back().p - P[P.size() - 2].p);
     return P.back().p;
@@ -291,15 +319,13 @@ static bool PlanUTurn(Game& g, Vehicle& v) {
         if (fabsf(Dot(rel, RightV(d))) < 40 && Dot(rel, DirVec(od)) > -80 && Dot(rel, DirVec(od)) < 260) return fail();
     }
     StartPath(v, start, DirVec(d));
-    Vector2 ctrl = start + DirVec(d) * 70.0f - RightV(d) * LANE_OFFSET;
-    for (int k = 1; k <= 12; k++) { Waypoint t; t.p = QuadBezier(start, ctrl, end, k / 12.0f); t.turn = true; Push(ai, t); }
+    PushUTurn(ai, start, DirVec(d));
     // Every pose along the turn, plus a body length beyond it, must miss other cars.
-    float axle = v.length * 0.32f, turnEnd = ai.path.back().cum + v.length;
+    float turnEnd = ai.path.back().cum + v.length;
     for (float s = ai.s; s <= turnEnd; s += 8) {
-        Vector2 fp = Sample(ai, s + axle), rp = Sample(ai, s - axle);
-        Vector2 dir = Norm(fp - rp);
-        if (Len2(dir) < 0.5f) continue;
-        OBB pose = MakeOBB((fp + rp) * 0.5f, AngleOf(dir), v.width * 0.5f + 3, v.length * 0.5f + 3);
+        Vector2 dir;
+        Vector2 centre = ShiftedRailPose([&](float d) { return Sample(ai, d); }, s, v.length, 0, 0, 0, 0, v.angle, &dir);
+        OBB pose = MakeOBB(centre, AngleOf(dir), v.width * 0.5f + 3, v.length * 0.5f + 3);
         for (const Vehicle& o : g.vehicles) {
             if (!o.active || &o == &v || Len2(o.pos - pose.c) > 200 * 200) continue;
             Vector2 n; float depth;
@@ -353,7 +379,9 @@ static bool JunctionClear(Game& g, int self, const Waypoint& w, int* blocker) {
             if (diff < 0.6f) continue;                                         // same way: follow through
             bool opposite = diff > PI - 0.6f;
             int theirTurn = AIOnRail(o) ? o.ai.curTurn : 0;
-            if (opposite && w.turnType != 2 && theirTurn != 2) continue;       // straight/right vs straight/right
+            bool theirWide = AIOnRail(o) && o.ai.curWide;
+            // straight/right vs straight/right, unless a wide turn swings across
+            if (opposite && w.turnType != 2 && theirTurn != 2 && !w.wide && !theirWide) continue;
             *blocker = k;
             return false;
         }
@@ -1070,14 +1098,25 @@ void AIUpdateTraffic(Game& g, int idx, float dt) {
     ai.stopDist = 1e9f;
     int junctionBlocker = -1;               // the vehicle keeping us out of the junction box
     float front = ai.s + v.length * 0.5f;
+    // A turn path's speed limits apply at the rear axle, which traces the path. The body
+    // turns at a point while the rear axle is within RAIL_TANGENT_SPAN of it, so each
+    // limit holds over that stretch; ahead, braking towards it stays comfortable.
+    float rearS = ai.s - v.length * 0.32f;
+    for (size_t k = 0; k < ai.path.size(); k++) {
+        const Waypoint& w = ai.path[k];
+        float gap = w.cum - rearS;
+        if (gap > 400) break;
+        if (w.vmax <= 0 || gap < -RAIL_TANGENT_SPAN) continue;
+        desired = std::min(desired, sqrtf(w.vmax * w.vmax + 2 * COMFORT_DECEL * std::max(0.0f, gap - RAIL_TANGENT_SPAN)));
+    }
     for (size_t k = 0; k < ai.path.size(); k++) {
         const Waypoint& w = ai.path[k];
         float gap = w.cum - front;
         if (gap > 320) break;
-        if (w.turn && gap > -v.length) desired = std::min(desired, (sp.large() ? 95.0f : 130.0f) + std::max(0.0f, gap) * 1.1f);
+        if (w.turn && w.vmax <= 0 && gap > -v.length) desired = std::min(desired, (sp.large() ? 95.0f : 130.0f) + std::max(0.0f, gap) * 1.1f);
         if (w.stop) {
             float stopGap = w.cum - STOP_BACK - front;
-            if (stopGap < -8) { ai.curTurn = w.turnType; continue; }       // committed: past the stop line
+            if (stopGap < -8) { ai.curTurn = w.turnType; ai.curWide = w.wide; continue; }   // committed: past the stop line
             int sig = map.SignalState(w.si, w.sj, w.axis);
             bool canStop = stopGap > (ai.speed * ai.speed) / (2 * COMFORT_DECEL * 1.6f) - 6;
             bool mustStop = false;

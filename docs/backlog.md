@@ -42,16 +42,19 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Open |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
+| [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
 | [CJ-020](#cj-020-turning-kinematics-of-traffic) | Turning kinematics of traffic | Medium | In progress |
+| [CJ-024](#cj-024-recovery-cost-in-dense-traffic) | Recovery cost in dense traffic | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
 | [CJ-008](#cj-008-test-autopilot-improvements) | Test autopilot improvements | Low | Open |
 | [CJ-021](#cj-021-visible-towing) | Visible towing | Low | Open |
+| [CJ-022](#cj-022-three-point-turns) | Three-point turns | Low | Open |
 
 ## Open items
 
@@ -317,6 +320,33 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 **Idea.** A car that cannot get free, such as one boxed in by buildings and other cars, stays in place and stays observable under [CJ-016](#cj-016-road-rage-and-traffic-incidents). A tow truck should come and remove it in view, as the approved [traffic proposal](design/traffic-behaviour-proposal.md) plans after the core. Nothing may vanish or be relocated invisibly in the meantime.
 
 **Acceptance criteria.** To be agreed: the tow truck drives there on the road network, hooks up the car and tows it away; a test scenario logs the call, the arrival time and the removal; playtested.
+
+### CJ-024 Recovery cost in dense traffic
+
+- **Priority:** Medium
+- **Status:** Open (found by CJ-020 on 2026-10-07)
+
+**Problem.** Since CJ-020 traffic takes turns at a realistic 13–20 km/h, so traffic is denser round the junctions. In `rampage`, where the player knocks many cars off their lanes, about 7 cars recover at a time instead of 4.5, with more moving drivers to forecast round each, and the driver decision CPU (about 0.7 ms average, 1.2 ms 95th percentile) exceeds the CJ-016 targets of 0.5 and 1.0 ms. The recovery decisions themselves are unchanged; the other city scenarios stay within the targets. The user accepted this for CJ-020 on 2026-10-07.
+
+**Acceptance criteria.** `rampage` within 0.5 ms average and 1.0 ms 95th percentile decision CPU, with the CJ-016 fixtures passing unchanged.
+
+### CJ-022 Three-point turns
+
+- **Priority:** Low
+- **Status:** Open (found by CJ-020 on 2026-10-07)
+
+**Problem.** A traffic car blocked for 6 s turns round in the middle of a block, and a dead end at the city edge forces a U-turn in the junction. On an 8 m street the widest one-move turn between the lanes has a 2 m radius, while a car's rear axle needs at least 3.3 m (a bus 7 m): since CJ-020 the rear axle follows that semicircle without sliding, but no real car could make the turn.
+
+**Acceptance criteria.** To be agreed: a three-point turn (forward into the far lane, reverse, forward) within each class's turning radius, checked against vehicles and people like a pull-out; large vehicles keep avoiding U-turns; playtested.
+
+### CJ-023 Vehicle widths and street geometry
+
+- **Priority:** High
+- **Status:** Open (found by CJ-020 on 2026-10-07)
+
+**Problem.** Playtest feedback (2026-10-07): the streets feel cramped; cars and pedestrians seem too close together. The measurements of CJ-020 point to the vehicles and the junctions rather than the road width: lanes are 4 m (real ones 3–3.5 m) and the 4 m sidewalks keep pedestrians 1.4–2.6 m from the kerb, but a vehicle's width follows its sprite's aspect ratio, which makes most of them 30–40 % wider than the real vehicle (Taxi 2.46 m against about 1.8 m, Pickup 2.88 m, Ambulance 2.96 m, Bus 2.92 m against 2.55 m, Semi 3.63 m against 2.55 m), and junction corners are square, without the 3–6 m kerb radius of a real street. As a result the Pickup, Van, Limo and Ambulance need wide turns, and the Bus, the Semi and the right turns of the BoxTruck, FireTruck and Garbage truck do not fit at all, so traffic avoids them (measured by the CJ-020 turning fixture).
+
+**Acceptance criteria.** To be agreed: real-world widths for every class (sprite art drawn or cropped to them), rounded kerb corners at junctions (geometry, art and pedestrian waiting spots), possibly wider streets; the turning fixture shows clean turns for cars and fitting turns for large vehicles; collisions and the CJ-002 baseline re-measured; before/after screenshots of street scenes; playtested.
 
 ## Done
 

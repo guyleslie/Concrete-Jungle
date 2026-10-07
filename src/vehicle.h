@@ -34,6 +34,8 @@ struct Waypoint {
     Vector2 p;
     float   cum = 0;         // distance along the path from its first point
     bool    turn = false;    // part of a turn (slow down)
+    float   vmax = 0;        // px/s allowed with the rear axle here (0: none; turn paths)
+    bool    wide = false;    // at a stop waypoint: a wide turn that takes the junction box alone
     bool    stop = false;    // entry of intersection (si,sj): signal 'axis', planned manoeuvre
     int     si = 0, sj = 0, axis = 0;
     int     turnType = 0;    // at a stop waypoint: 0 straight, 1 right, 2 left, 3 u-turn
@@ -56,6 +58,7 @@ struct DriverAI {
     float shiftFrom = 0, shiftTo = 0, shiftS0 = 0, shiftS1 = 0;
     float pullBack = 0, pullShift = 0;   // backing up first to pull out round an obstacle
     int   curTurn = 0;       // manoeuvre inside the current junction (for yielding)
+    bool  curWide = false;   // ... and whether it is a wide turn (takes the box alone)
     float blend = 0;         // legacy rail U-turn easing; physical recovery never blends
     Vector2 blendPos{};  float blendAng = 0;
     float dynTimer = 0;      // time spent knocked off the rail

@@ -63,8 +63,9 @@ The run ends by logging:
 | `TRAFFIC jolts` | Sudden velocity jumps per second, split into rail, knocked and police cars | Rail jolts close to 0 |
 | `TRAFFIC stopped because` | Why stopped cars are stopped: red light, queue, person (or a knocked car holding), yield at a junction, static obstacle, full junction box, giving way to another driver | Mostly red lights and queues |
 | `TRAFFIC yielding` | Cooperative yielding roles taken (and how many were chain roles), cars still giving way at the end, and wait-for loops still open at the end: mutual pairs and larger loops | Loops open at the end are only ones that have just formed |
-| `TRAFFIC slip` | The angle between a rail car's body and the motion of its rear axle point (0.32 lengths behind the centre), split into lane changes, turning and straight driving: car-seconds, share above 5°, maximum; and car-seconds of sideways shifting while stopped | Lane changes and straight driving close to 0°; turning see [CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic) |
+| `TRAFFIC slip` | The angle between a rail car's body and the motion of its rear axle point (0.32 lengths behind the centre), split into lane changes, turning and straight driving: car-seconds, share above 5°, maximum; and car-seconds of sideways shifting while stopped. A slip over 8° is logged as `RAIL-SLIP` with the car and what it was doing | Close to 0° in lane changes, turns and straight driving; at most 8° ([CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic)) |
 | `TRAFFIC rail overlaps` | Pair-seconds in which two rail cars overlap by more than 1 px (rail cars pass through each other in the solver, so any overlap shows), how many of them near a junction box, and the deepest overlap | Close to 0 |
+| `TRAFFIC turns planned` | Turns traffic planned: clean, wide (out of the lane, taking the junction box alone), not fitting (a class with no other way), and U-turns at a dead end | Not fitting close to 0 |
 | `TRAFFIC wait cycles` | Wait-for loops that formed during the run, how many lasted over 10 s, and the longest; then the members of each loop still open at the end (`UNRESOLVED`). A loop lasting 5 s is logged as `WAIT-CYCLE` when it happens | None over 10 s |
 | `INCIDENTS` | Collision incidents started, drivers out, confrontations, fights, drivers back in their own car; interruptions by reason (no safe exit, car lost, driver dead, other); impacts that nobody took personally | Every driver out is back in their car or has a logged reason |
 | `PHYS` jitter | Frames where a physics body's position or heading reverses direction frame after frame | Close to 0 per body-second |
@@ -249,20 +250,21 @@ python tools/run_cj016_incident.py --phase after --run-name incidents-20261006
 
 ## Turning fixture
 
-`cj020-turns-v1` measures how rail traffic turns ([CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic)). Production traffic AI drives one car of every traffic class (traffic weight above 0, police excluded) from 420 px before the box of junction (3, 3) on uniform road, northbound at its cruise speed, through the junction: right, left or straight on, at 60 Hz and 20 Hz on the 1/60 s render clock. The lights stay green. A case ends when the rear axle is 320 px past the box on the exit road, or after 30 s.
+`cj020-turns-v2` measures how rail traffic turns ([CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic)). Production traffic AI drives one car of every traffic class (traffic weight above 0, police excluded) from 420 px before the box of junction (3, 3) on uniform road, northbound at its cruise speed, through the junction: right, left or straight on, at 60 Hz and 20 Hz on the 1/60 s render clock. The lights stay green. A case ends when the rear axle is 320 px past the box on the exit road, or after 30 s. 96 cases run in one process.
 
-The junction's geometry is measured, not drawn from the map: kerbs at the road edges (4 m from the centre line) and the right-hand half of every road arm.
+The junction's geometry is measured, not drawn from the map: square kerbs at the road edges (4 m from the centre line) and the right-hand half of every road. The stop-line zone, the first 60 px of a road past the box, is free when cars wait at a stop line 72 px back, so a corner there does not count as encroachment; the strict value, counting the zone too, is logged as `strict_encroachment_px`.
 
 | Check | Meaning | Limit |
 |---|---|---|
 | `turning_slip_deg`, `straight_slip_deg` | Largest angle between the body and the motion of the rear axle point, while the heading changes / otherwise | 3° / 1° |
-| `rear_radius_over_class_min` | Smallest circumradius of rear-axle points 8 px apart, over the class's tightest rear-axle radius from its `TURN` turning circle (turns only) | At least 0.98 |
-| `lateral_accel_over_limit` | Largest lateral acceleration at the rear axle over `TURN lateral_accel` (turns only) | At most 1.05 |
-| `kerb_px` | Deepest overlap of the body with the four blocks round the junction | 4 px |
-| `encroachment_px` | How far a body corner reaches, outside the junction box, into the oncoming half of a road arm or into an arm the car does not use | 0.5 px; 24 px (1.5 m) for `large` classes turning right |
+| `rear_radius_over_class_min` | Smallest circumradius of rear-axle points 16 px apart (a shorter span magnifies the path's chords into a smaller radius), over the class's tightest rear-axle radius from its `TURN` turning circle (turns only) | At least 0.98 |
+| `lateral_accel_over_limit` | Largest lateral acceleration of the rear axle point, its speed times the yaw rate, over `TURN lateral_accel` (turns only) | At most 1.05 |
+| `wheel_kerb_px` | Deepest overlap of the body between the axles (the wheels) with the four blocks round the junction | 1 px |
+| `kerb_px` | The same for the whole body; checked for cars on a clean turn, logged otherwise (a large vehicle's overhangs may sweep over a corner) | 4 px |
+| `encroachment_px` | How far a body corner reaches, outside the box and the stop-line zone, into the oncoming half of a road or into a road the car does not use | 2 px; 24 px (1.5 m) on a [wide turn](design/traffic.md#turn-paths) |
 | `final_lateral_px`, `final_heading_deg` | Offset from the exit lane and heading error at the end | 1 px, 0.5° |
 
-Each case also checks ownership, finite state, no pose jump, no knock and the time to reach the exit; the `CJ020T measure` line adds the share of turning time over 5° of slip and the slowest speed in the turn. Each case ends with a capture of the rear (amber) and front (cyan) axle traces and the body outline every 0.2 s.
+Each case also checks ownership, finite state, no pose jump, no knock and the time to reach the exit. A turn whose path does not fit the planner's limits, which traffic avoids, is still driven: its slip, radius and lateral acceleration are checked, its kerb and encroachment only logged (`fits=0`, `unfit_turns` in the summary). The `CJ020T measure` line adds the share of turning time over 5° of slip and the slowest speed in the turn. Each case ends with a capture of the rear (amber) and front (cyan) axle traces and the body outline every 0.2 s.
 
 ```bash
 python tools/run_cj020_turns.py --phase before --run-name baseline

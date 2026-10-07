@@ -49,6 +49,14 @@ CLASS <name> <length m> <height m> <top speed km/h> <accel m/s²> <brake m/s²>
 
 Redefining an existing class name replaces it. The handling model these values feed is described in [Vehicles](../design/vehicles.md).
 
+### `TURN` — turning circle
+
+```
+TURN <class> <turning circle m>
+```
+
+The kerb-to-kerb turning circle at full lock (traced by the outer front wheel), as manufacturers publish it: about 11 m for a car, 23 m for a 12 m bus. Traffic sizes its [turn paths](../design/traffic.md#turn-paths) from it, at load. A class without a `TURN` record gets 2.3 times its length.
+
 ### `SPRITE` — an image for a class
 
 ```
@@ -80,12 +88,13 @@ Named colours: `red blue white black silver green darkgreen beige teal maroon ye
 
 ## Traffic behaviour
 
-File: `assets/data/traffic.cfg`. It configures physical recovery after a car is knocked from its lane, cooperative yielding and driver incidents. See [Traffic](../design/traffic.md#knocked-off-the-lane) for the behaviour contract.
+File: `assets/data/traffic.cfg`. It configures physical recovery after a car is knocked from its lane, cooperative yielding, driver incidents and turning through junctions. See [Traffic](../design/traffic.md#knocked-off-the-lane) for the behaviour contract.
 
 ```text
 RECOVERY <name> <value>
 YIELD    <name> <value>
 INCIDENT <name> <value>
+TURN     <name> <value>
 ```
 
 Use these lowercase parameter names. The record type is case-insensitive, and `#` starts a comment. Values must be finite and within the listed inclusive range. Unknown names, unknown record types, malformed records and invalid values emit a warning and retain the prior validated value. Missing parameters use the built-in defaults; the shipped file is the reference for current tuning. Settings load once per process, so restart the game after changing the file. Measurement runs may read another file with `--traffic-config <path>`.
@@ -123,6 +132,17 @@ See [Cooperative yielding](../design/traffic.md#cooperative-yielding).
 | `max_chain` | 1–6 drivers | Longest chain of queued drivers backing up together |
 | `cycles` | 0–1 | 0 keeps only the pair rule: nothing resolves two knocked cars or a loop of three or more drivers (baseline measurements) |
 | `min_room` | 2–60 px | Least room a knocked car must be able to make, moving straight away from the driver waiting on it, to take the making-room role |
+
+### Turning
+
+See [Turn paths](../design/traffic.md#turn-paths). Turn paths are planned while the game loads.
+
+| Name | Unit and valid range | Meaning |
+|---|---|---|
+| `lateral_accel` | 1–8 m/s² | Lateral acceleration allowed at the rear axle in a turn; it sets the turning speed |
+| `easement` | 0–1.5 radii | Length of the gradual steering into and out of the arc (clothoids) |
+| `left_radius` | 3–12 m | Preferred radius of a left turn; never tighter than the class can turn |
+| `max_swing` | 0–4 m | How far a wide turn may move towards the centre lines before turning |
 
 ### Incidents
 
