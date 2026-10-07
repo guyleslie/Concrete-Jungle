@@ -225,9 +225,15 @@ struct TrafficTurnTests::State {
         if (rearTrace.empty() || Dist(rearTrace.back(), rear) > 2) { rearTrace.push_back(rear); frontTrace.push_back(front); }
         ghostClock -= step;
         if (ghostClock <= 0 && Local(v.pos).y < H + 140 && !reached) { ghosts.push_back(box); ghostClock = 0.2f; }
-        // Done: the rear axle is EXIT_GAP past the box edge on the exit arm.
+        // Done: the rear axle is EXIT_GAP past the box edge on the exit arm, and 40 px past
+        // the end of the turn path (a wide turn returns to its lane after the box).
+        float exitGap = EXIT_GAP;
+        if (c.turn != Turn::Straight) {
+            const TurnPath& path = RailTurnPath(v, TurnCode(c.turn));
+            if (!path.points.empty()) exitGap = std::max(exitGap, fabsf(path.points.back().p.x) - H + 40);
+        }
         Vector2 lr = Local(rear);
-        bool past = c.turn == Turn::Right ? lr.x > H + EXIT_GAP : c.turn == Turn::Left ? lr.x < -H - EXIT_GAP : lr.y < -H - EXIT_GAP;
+        bool past = c.turn == Turn::Right ? lr.x > H + exitGap : c.turn == Turn::Left ? lr.x < -H - exitGap : lr.y < -H - exitGap;
         if (past && !reached) {
             reached = true; reachedAt = phaseTime;
             float lane = cfg::LANE_OFFSET;

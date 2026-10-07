@@ -250,7 +250,7 @@ python tools/run_cj016_incident.py --phase after --run-name incidents-20261006
 
 ## Turning fixture
 
-`cj020-turns-v2` measures how rail traffic turns ([CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic)). Production traffic AI drives one car of every traffic class (traffic weight above 0, police excluded) from 420 px before the box of junction (3, 3) on uniform road, northbound at its cruise speed, through the junction: right, left or straight on, at 60 Hz and 20 Hz on the 1/60 s render clock. The lights stay green. A case ends when the rear axle is 320 px past the box on the exit road, or after 30 s. 96 cases run in one process.
+`cj020-turns-v2` measures how rail traffic turns ([CJ-020](backlog.md#cj-020-turning-kinematics-of-traffic)). Production traffic AI drives one car of every traffic class (traffic weight above 0, police excluded) from 420 px before the box of junction (3, 3) on uniform road, northbound at its cruise speed, through the junction: right, left or straight on, at 60 Hz and 20 Hz on the 1/60 s render clock. The lights stay green. A case ends when the rear axle is 320 px past the box on the exit road and 40 px past the end of the turn path (a wide turn returns to its lane after the box), or after 30 s. 96 cases run in one process.
 
 The junction's geometry is measured, not drawn from the map: square kerbs at the road edges (4 m from the centre line) and the right-hand half of every road. The stop-line zone, the first 60 px of a road past the box, is free when cars wait at a stop line 72 px back, so a corner there does not count as encroachment; the strict value, counting the zone too, is logged as `strict_encroachment_px`.
 

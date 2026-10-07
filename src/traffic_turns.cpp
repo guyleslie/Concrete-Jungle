@@ -251,8 +251,12 @@ TurnPath Plan(int turnType, const Vehicle& v) {
     const float top = 10.0f * M;
     // Right: the largest radius that fits; left: the radius closest to left_radius.
     float pref = turnType == 1 ? top : std::max(rmin, s.leftRadius * M);
-    auto swingLength = [&](float swing) {   // a move out of the lane no sharper than the class can steer
-        return swing > 0 ? std::max(sqrtf(6 * swing * rmin) * 1.25f, 2 * SPACING) : 0.0f;
+    // A move out of the lane and back like a lane change (traffic.cpp ShiftLength): its
+    // sharpest bend within a comfortable radius, and at least one and a half lengths, so
+    // the front of a long vehicle does not wag.
+    auto swingLength = [&](float swing) {
+        float radius = std::max({ 90.0f, v.length * 1.25f, rmin });
+        return swing > 0 ? std::max(sqrtf(6 * swing * radius), v.length * 1.5f) : 0.0f;
     };
     auto excess = [&](const TurnPath& t, bool wide) {
         float kerbLimit = large || wide ? 1e9f : CAR_KERB;
