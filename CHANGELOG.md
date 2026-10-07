@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-07
+
+Traffic turns like real cars (CJ-020), and the human-like traffic and driver incidents of CJ-016 are accepted after their playtests. The specification for roomier streets and real-world vehicle widths (CJ-023) is agreed; the city itself is unchanged in this release. Pedestrian behaviour (CJ-010) and full screen (CJ-013) still await playtest acceptance.
+
 ### Added
 
 - CJ-020 measurements: the `traffic-turns` fixture (every traffic class turning right, left and straight through an empty junction at 60 Hz and 20 Hz: slip, rear-axle radius, kerb intrusion, encroachment, lateral acceleration, trace captures), the `TRAFFIC rail overlaps` line in the test log and `tools/run_cj020_turns.py`.
