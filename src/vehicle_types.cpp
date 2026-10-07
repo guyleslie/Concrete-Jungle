@@ -41,6 +41,9 @@ TURN Garbage 16.0
 TURN Sportbike 5.0
 TURN Chopper 6.0
 TURN Scooter 3.8
+WIDTH Sportbike 0.75
+WIDTH Chopper 0.95
+WIDTH Scooter 0.70
 )";
 
 const char* DefaultVehiclesCfg() { return DEFAULT_CFG; }
@@ -99,11 +102,13 @@ void LoadVehicleClasses() {
     }
     if (classes.empty()) classes.push_back(VehicleSpec{ "Default" });
     // Turning circles; a class without one gets 2.3 lengths (about 11 m for a 4.8 m car).
+    // Collision widths; a class without one takes its sprite's width (vehicle.cpp).
     for (const DataRecord& r : records) {
-        if (!r.Is("TURN") || r.size() < 3) continue;
+        bool turn = r.Is("TURN");
+        if ((!turn && !r.Is("WIDTH")) || r.size() < 3) continue;
         int c = FindVehicleClass(r[1]);
-        if (c < 0) { TraceLog(LOG_WARNING, "vehicles.cfg line %d: TURN for unknown class '%s'", r.line, r[1].c_str()); continue; }
-        classes[c].turnCircle = r.F(2) * M;
+        if (c < 0) { TraceLog(LOG_WARNING, "vehicles.cfg line %d: %s for unknown class '%s'", r.line, r[0].c_str(), r[1].c_str()); continue; }
+        (turn ? classes[c].turnCircle : classes[c].width) = r.F(2) * M;
     }
     for (VehicleSpec& s : classes) if (s.turnCircle <= 0) s.turnCircle = s.length * 2.3f;
 }

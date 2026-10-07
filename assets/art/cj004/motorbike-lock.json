@@ -1,0 +1,34 @@
+{
+  "source": "motorbike-sheet.png",
+  "sha256": "D6B77C0B52174E6C2BF6C94EE663B3B505A4B84C25F4E1B38F8689620EBC95E9",
+  "source_size_px": [
+    1536,
+    1024
+  ],
+  "cell_size_px": [
+    512,
+    512
+  ],
+  "grid": [
+    3,
+    2
+  ],
+  "direction": "up",
+  "visual_acceptance": {
+    "date": "2026-10-07",
+    "by": "user",
+    "status": "accepted",
+    "instruction": "Preserve the accepted motorbike designs; do not regenerate or overwrite without a new user request."
+  },
+  "size_validation": {
+    "date": "2026-10-07",
+    "length_status": "export gallery uses existing class lengths from assets/data/vehicles.cfg",
+    "measurements": "motorbike-export-check.json",
+    "preview": "motorbike-export-preview.png",
+    "export_rule": "512 square PNG; UP; active alpha height 448 at y32; centre [256,256]; equal active bounds for each empty/ridden pair. Position and size are baked into the PNG pixels.",
+    "runtime_corrections": "none; no per-image pivot, offset or scale configuration",
+    "export_validation": "all six saved PNGs pass the runtime alpha-border size and centre checks",
+    "physics_width_status": "WIDTH records in assets/data/vehicles.cfg set the collision widths (Sportbike 0.75 m, Chopper 0.95 m, Scooter 0.70 m); the drawn mirrors overhang them",
+    "runtime_status": "integrated 2026-10-07 through BIKE records in assets/data/vehicles.cfg; awaiting user playtest"
+  }
+}

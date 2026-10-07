@@ -435,10 +435,11 @@ void TrafficConflictTests::Draw(const Game& g) const {
     for (size_t i = 0; i < g.vehicles.size(); i++) {
         const Vehicle& v = g.vehicles[i];
         const VehicleSprite& sprite = gAssets.vehicles[v.skin];
-        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 4, v.pos.y + 5, v.width, v.length },
-                       V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 120 });
-        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, v.width, v.length },
-                       V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, WHITE);
+        const float sw = SpriteWidth(v);
+        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 4, v.pos.y + 5, sw, v.length },
+                       V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 120 });
+        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, sw, v.length },
+                       V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, WHITE);
         Color c = v.ai.yieldTo >= 0 ? Color{ 255, 200, 70, 255 } : (int)i == s.priority ? Color{ 110, 220, 160, 255 } : Color{ 170, 180, 190, 255 };
         Vector2 corners[4]; OBBCorners(v.Box(), corners);
         for (int k = 0; k < 4; k++) DrawLineEx(corners[k], corners[(k + 1) % 4], 1.5f, c);

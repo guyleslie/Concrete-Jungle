@@ -379,10 +379,11 @@ void TrafficTurnTests::Draw(const Game& g) const {
     for (size_t i = 1; i < s.rearTrace.size(); i++) DrawLineEx(s.rearTrace[i - 1], s.rearTrace[i], 2.5f, { 255, 190, 70, 255 });
     const Vehicle& v = g.vehicles[s.car];
     const VehicleSprite& sprite = gAssets.vehicles[v.skin];
-    DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 3, v.pos.y + 4, v.width, v.length },
-                   V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 120 });
-    DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, v.width, v.length },
-                   V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, WHITE);
+    const float sw = SpriteWidth(v);
+    DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 3, v.pos.y + 4, sw, v.length },
+                   V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 120 });
+    DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, sw, v.length },
+                   V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, WHITE);
     EndMode2D();
     DrawRectangle(0, 0, GetScreenWidth(), 140, { 12, 17, 23, 240 });
     DrawUIText("CONCRETE JUNGLE / CJ-020 TURNING KINEMATICS", 25, 14, 25, { 215, 231, 241, 255 }, true);

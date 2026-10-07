@@ -29,7 +29,7 @@ Classes are defined by `CLASS` records in `assets/data/vehicles.cfg`, which is t
 | Large (`large` flag) | Bus, BoxTruck, Semi, FireTruck, Garbage |
 | Two-wheelers (`two_wheeler` flag) | Sportbike, Chopper, Scooter |
 
-Each class sets length, height, top speed, acceleration, braking, reverse speed, steering rate, tyre grip, mass, health and how often it appears in traffic. A vehicle's width comes from its sprite's aspect ratio, so the collision box always matches the picture.
+Each class sets length, height, top speed, acceleration, braking, reverse speed, steering rate, tyre grip, mass, health and how often it appears in traffic. The sprite is drawn at the class length with its own aspect ratio. Its drawn width is also the collision width, so the box matches the picture, unless a `WIDTH` record sets the collision width: the two-wheelers use the handlebar width of real bikes, and their drawn mirrors reach beyond the box.
 
 The acceleration and braking values are arcade-tuned: roughly 4–9 times real-world figures (for example 90 m/s² braking). This is one of the reasons the handling is being reworked.
 
@@ -89,6 +89,7 @@ Blowing up a vehicle the player damaged raises the wanted level and pays $150.
 ## Visual and audio feedback
 
 - The sprite darkens with damage; wrecks are drawn charred.
+- A motorbike without a rider (parked, abandoned, wrecked, or after the rider is thrown off) switches to its empty image.
 - Skid marks and tyre smoke appear when sliding sideways faster than 130 px/s, when handbraking above 140 px/s, and on hard launches of powerful cars. Off-road driving throws up dust.
 - Headlights switch on automatically at night (for the player: L cycles auto / on / off); brake and reversing lights follow the controls; emergency vehicles have a siren and light bar (G toggles it for the player).
 - The engine sound follows a simulated four-gear rev counter; the tyre squeal follows the sideways slip.

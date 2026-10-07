@@ -39,7 +39,7 @@ static void LoadingScreen(const char* msg) {
 }
 
 int main(int argc, char** argv) {
-    // --shot <file.png> [--frames N] [--every N] [--scenario foot|drive|night|nightdrive|chase|day|crash|derby|rampage]
+    // --shot <file.png> [--frames N] [--every N] [--scenario foot|drive|night|nightdrive|chase|day|crash|derby|rampage|bikes|...]
     // (file names are relative to the working directory; --every also saves <file>_<frame>.png)
     const char* shot = nullptr; const char* scenario = "foot"; int shotFrames = 180, every = 0;
     const char* testVehicle = "Taxi";

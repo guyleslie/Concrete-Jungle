@@ -80,6 +80,8 @@ The user chose these on 2026-10-07 and accepted the rest of this specification:
 | Chopper | 0.95 m | — | 0.95 m | Cruiser motorcycle |
 | Scooter | 0.69 m | — | 0.70 m | Scooter |
 
+- The two-wheelers took their `WIDTH` records early, with the new motorbike art of [CJ-004](../backlog.md#cj-004-replace-placeholder-art) on 2026-10-07: the loader reads `WIDTH` for every class, and the Sportbike, Chopper and Scooter have their target widths. Their *Now* values above belong to the earlier procedural sprites. A two-wheeler's sprite keeps its own aspect instead of being scaled to its body width, because its `WIDTH` is the handlebar width while the median row width measures the tank and seat. The cars' records and the body-width drawing rule remain step 1.
+
 ## Street profiles
 
 - A new data file, `assets/data/city.cfg`, defines street profiles and assigns one to every grid line, so streets differ in width without code changes ([ADR-0002](../adr/0002-data-driven-content.md)).

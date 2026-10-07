@@ -3,12 +3,14 @@
 //
 //  Classes are defined in assets/data/vehicles.cfg (built-in defaults are used if the
 //  file is missing). To add a new kind of vehicle, add a CLASS line there and one or
-//  more SPRITE (image file) or GEN (procedural) lines - no code changes needed.
+//  more SPRITE (image file), BIKE (motorbike pair) or GEN (procedural) lines - no code
+//  changes needed.
 //
 //    CLASS <name> <length m> <height m> <top km/h> <accel m/s2> <brake m/s2>
 //          <reverse km/h> <steer rad/s> <grip> <mass t> <hp> <traffic weight> [flags]
 //    flags: police emergency large two_wheeler
 //    TURN <name> <turning circle m>   kerb-to-kerb, outer front wheel (traffic turn paths)
+//    WIDTH <name> <width m>            collision width; without one, the sprite's width
 // =====================================================================================
 #pragma once
 #include <string>
@@ -29,6 +31,7 @@ struct VehicleSpec {
     float    steerRate = 3.0f, grip = 9.0f, mass = 1.0f, health = 100;
     float    trafficWeight = 1;
     float    turnCircle = 0;                  // px, kerb-to-kerb turning circle (diameter)
+    float    width = 0;                       // px, collision width (WIDTH); 0 = the sprite's width
     uint32_t flags = 0;
     bool twoWheeler() const { return flags & VF_TWO_WHEELER; }
     bool police() const { return flags & VF_POLICE; }

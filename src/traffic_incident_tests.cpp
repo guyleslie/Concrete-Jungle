@@ -395,10 +395,11 @@ void TrafficIncidentTests::Draw(const Game& g) const {
     for (size_t i = 0; i < g.vehicles.size(); i++) {
         const Vehicle& v = g.vehicles[i];
         const VehicleSprite& sprite = gAssets.vehicles[v.skin];
-        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 4, v.pos.y + 5, v.width, v.length },
-                       V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 120 });
-        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, v.width, v.length },
-                       V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, v.burning ? Color{ 255, 140, 90, 255 } : WHITE);
+        const float sw = SpriteWidth(v);
+        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 4, v.pos.y + 5, sw, v.length },
+                       V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 120 });
+        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, sw, v.length },
+                       V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, v.burning ? Color{ 255, 140, 90, 255 } : WHITE);
         const char* who = (int)i == s.parked ? "PARKED" : v.driver == DriverType::Player ? "PLAYER" :
             v.driver == DriverType::Traffic ? DriverMoodText((DriverMood)v.ai.mood) : v.burning ? "ON FIRE - EMPTY" : "EMPTY: DRIVER OUT";
         DrawText(who, (int)(v.pos.x + v.width * 0.5f + 6), (int)v.pos.y - 6, 10, LIGHTGRAY);

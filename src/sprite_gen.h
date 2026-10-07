@@ -4,9 +4,9 @@
 //  A tiny anti-aliased "vector painter": every shape is a signed distance function that
 //  is rasterised with analytic coverage and shaded with a bevel/specular model. This
 //  yields smooth, glossy, high-resolution sprites in the same style as the Unlucky
-//  Studio vehicles, for everything the asset packs don't cover (motorbikes + riders,
-//  civilians, street furniture, the metro train), and fallbacks (cars, buses, trucks,
-//  trees) used when an image file is missing or a GEN line asks for them.
+//  Studio vehicles, for everything the asset packs don't cover (civilians, street
+//  furniture, the metro train), and fallbacks (cars, buses, trucks, motorbikes, trees)
+//  used when an image file is missing or a GEN line asks for them.
 //
 //  All generators take real-world proportions (16 world px == 1 m) into account; the
 //  canvas resolution is ~3x the on-screen size so mipmapping keeps them crisp.

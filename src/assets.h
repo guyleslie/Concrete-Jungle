@@ -2,7 +2,7 @@
 //  Asset loading - DATA DRIVEN.
 //
 //  What gets loaded is described by the text files in assets/data/:
-//    vehicles.cfg    CLASS (handling), SPRITE (image files), GEN (procedural vehicles)
+//    vehicles.cfg    CLASS (handling), SPRITE / BIKE (image files), GEN (procedural vehicles)
 //    characters.cfg  ANIM / FEET / SCALE lines for animated character sprite sets
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists

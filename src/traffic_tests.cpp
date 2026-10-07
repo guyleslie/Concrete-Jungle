@@ -277,8 +277,9 @@ void TrafficTests::Draw(const Game& g) const {
     }
     for (size_t i = 1; i < s.trail.size(); i++) DrawLineEx(s.trail[i - 1], s.trail[i], 1.5f, { 76, 210, 194, 150 });
     const VehicleSprite& sprite = gAssets.vehicles[car.skin];
-    DrawTexturePro(sprite.tex, sprite.src, { car.pos.x + 4, car.pos.y + 5, car.width, car.length }, V2(car.width * 0.5f, car.length * 0.5f), car.angle * RAD2DEG, { 0, 0, 0, 130 });
-    DrawTexturePro(sprite.tex, sprite.src, { car.pos.x, car.pos.y, car.width, car.length }, V2(car.width * 0.5f, car.length * 0.5f), car.angle * RAD2DEG, WHITE);
+    const float sw = SpriteWidth(car);
+    DrawTexturePro(sprite.tex, sprite.src, { car.pos.x + 4, car.pos.y + 5, sw, car.length }, V2(sw * 0.5f, car.length * 0.5f), car.angle * RAD2DEG, { 0, 0, 0, 130 });
+    DrawTexturePro(sprite.tex, sprite.src, { car.pos.x, car.pos.y, sw, car.length }, V2(sw * 0.5f, car.length * 0.5f), car.angle * RAD2DEG, WHITE);
     DrawLineEx(car.pos, car.pos + car.vel * 0.2f, 1.5f, { 85, 190, 255, 200 });
     EndMode2D();
     DrawRectangle(0, 0, GetScreenWidth(), 175, { 12, 17, 23, 238 });

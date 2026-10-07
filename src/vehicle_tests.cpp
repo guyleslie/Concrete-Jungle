@@ -772,8 +772,9 @@ void VehicleTests::Draw(const Game& g) const {
     for (size_t i = 1; i < s.trail.size(); i++) DrawLineEx(s.trail[i - 1], s.trail[i], 1.5f / zoom, { 76, 210, 194, 150 });
     for (const Vehicle& v : g.vehicles) {
         const VehicleSprite& sprite = gAssets.vehicles[v.skin];
-        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 4, v.pos.y + 5, v.width, v.length }, V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 130 });
-        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, v.width, v.length }, V2(v.width * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, WHITE);
+        const float sw = SpriteWidth(v);
+        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x + 4, v.pos.y + 5, sw, v.length }, V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 130 });
+        DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, sw, v.length }, V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, WHITE);
         DrawLineEx(v.pos, v.pos + v.vel * 0.2f, 1.5f / zoom, { 85, 190, 255, 200 });
     }
     if (s.touched) { DrawCircleV(s.contactPoint, 4 / zoom, YELLOW); DrawLineEx(s.contactPoint, s.contactPoint + s.contactNormal * 35, 2 / zoom, YELLOW); }

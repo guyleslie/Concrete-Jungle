@@ -28,6 +28,8 @@ Every loader has built-in defaults, so a missing file never stops the game. Unkn
 
 File: `assets/data/vehicles.cfg`. Images go in `assets/vehicles/` as PNG, **facing up** (the front of the vehicle at the top of the image), at 16 px = 1 m or higher resolution — the sprite is scaled to the class length and its width follows the aspect ratio.
 
+Every image is drawn by the same rule: transparent edges are trimmed at alpha 0.1, and the remaining rectangle is centred on the vehicle and scaled so that its height equals the class length. The collision width is the drawn width unless the class has a [`WIDTH`](#width--collision-width) record. Export new art on a 512 × 512 px transparent canvas with the visible part 448 px tall and centred at (256, 256) px. Bake any registration or scale correction into the pixels: there are no per-image offset or scale settings. See the [CJ-004 export convention](../../assets/art/cj004/README.md#shared-vehicle-convention).
+
 ### `CLASS` — a type of vehicle
 
 ```
@@ -57,6 +59,14 @@ TURN <class> <turning circle m>
 
 The kerb-to-kerb turning circle at full lock (traced by the outer front wheel), as manufacturers publish it: about 11 m for a car, 23 m for a 12 m bus. Traffic sizes its [turn paths](../design/traffic.md#turn-paths) from it, at load. A class without a `TURN` record gets 2.3 times its length.
 
+### `WIDTH` — collision width
+
+```
+WIDTH <class> <width m>
+```
+
+The width of the collision box. A class without one uses its sprite's drawn width, mirrors included. The sprite keeps its aspect either way, so mirrors or handlebars drawn wider than the `WIDTH` reach beyond the collision box, as on a real vehicle. The shipped two-wheelers give the handlebar width of comparable real bikes; the cars get their records with [CJ-023](../design/street-geometry-proposal.md#vehicle-widths).
+
 ### `SPRITE` — an image for a class
 
 ```
@@ -64,6 +74,14 @@ SPRITE <class> <file> <extra paint variants 0-3>
 ```
 
 Each extra variant re-tints the coloured body panels (green, blue, silver) and leaves glass and tyres untouched.
+
+### `BIKE` — a motorbike with and without its rider
+
+```
+BIKE <class> <empty file> <ridden file>
+```
+
+Parked, abandoned and wrecked bikes show the empty image; a bike with a rider shows the ridden one. Both images need the same visible size and centre, with the bike at the same place in both, so the bike stays put when the rider gets on or comes off; the loader logs a warning if their aspects differ. Each `BIKE` line adds one look to the class: add more lines, for example the same bike in other colours, for variety.
 
 ### `DERIVE` and `COMPOSE` — new vehicles from existing art
 

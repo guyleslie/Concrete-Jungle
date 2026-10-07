@@ -40,6 +40,26 @@ void Game::DebugScenario(const char* name) {
         if (n == "derby") autoMode = 2;
         if (n == "rampage") { autoMode = 3; dn.hour = 13.0f; }
     }
+    if (n == "bikes") {                // every two-wheeler parked and ridden, beside the player and a car
+        dn.hour = 13.0f;
+        std::vector<VClass> bikes;
+        for (VClass c = 0; c < (VClass)VehicleClasses().size(); c++)
+            if (Spec(c).twoWheeler() && gAssets.RandomSkin(c) >= 0) bikes.push_back(c);
+        const float gap = 2.0f * M, row = 3.0f * M;
+        Rectangle area = { 0, 0, bikes.size() * gap + 3.0f * M, 2 * row };
+        Vector2 at = player.pos + V2(-area.width * 0.5f, -area.height - 1.5f * M);
+        for (int tries = 0; tries < 200; tries++) {
+            Vector2 c = player.pos + V2(-area.width * 0.5f + (tries % 9 - 4) * 1.0f * M, -area.height - (1.5f + float(tries / 9)) * M);
+            if (map.AreaFree({ c.x, c.y, area.width, area.height })) { at = c; break; }
+        }
+        for (size_t k = 0; k < bikes.size(); k++) {
+            int skin = gAssets.RandomSkin(bikes[k]);
+            SpawnVehicle(skin, at + V2(gap * (k + 0.5f), row * 0.5f), 0, DriverType::Parked);
+            SpawnVehicle(skin, at + V2(gap * (k + 0.5f), row * 1.5f), 0, DriverType::Traffic);  // off the rail: holds briefly
+        }
+        int car = gAssets.RandomSkin(FindVehicleClass("Stinger"));
+        if (car >= 0) SpawnVehicle(car, at + V2(bikes.size() * gap + 1.5f * M, row), 0, DriverType::Parked);
+    }
     if (n == "overview") { debugOverview = true; dn.hour = 13.0f; }
     if (n == "brawl") { autoMode = 4; dn.hour = 13.0f; }
     if (n == "night" || n == "nightdrive") dn.hour = 22.5f;

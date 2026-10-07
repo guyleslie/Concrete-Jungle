@@ -148,6 +148,9 @@ void VehicleFrameEffects(Vehicle& v, const CityMap& map, Particles& fx, float dt
 void UpdateVehicleEffects(Vehicle& v, Particles& fx, float dt);
 
 // Rendering (called inside the matching render pass)
+// Drawn width: the class length times the sprite's aspect. Mirrors and handlebars may
+// reach beyond the collision width when the class has a WIDTH record.
+float SpriteWidth(const Vehicle& v);
 void DrawVehicleShadow(const Vehicle& v, Vector2 shadowVec);
 void DrawVehicle(const Vehicle& v, float time);
 void DrawVehicleLights(const Vehicle& v, float night, float time);

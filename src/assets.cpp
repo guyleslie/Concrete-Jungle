@@ -317,10 +317,10 @@ DERIVE Bus       stretch van.png    0.30 0.93 2.5  orange yellow blue white
 COMPOSE BoxTruck  semi.png 0.00 0.52 van.png 0.28 1.00 1.35 white navy cream grey
 COMPOSE FireTruck semi.png 0.00 0.52 van.png 0.28 1.00 1.35 red
 COMPOSE Garbage   semi.png 0.00 0.52 van.png 0.28 1.00 1.30 darkgreen orange
-# GEN <class> <generator> <colours...>   (procedural placeholders until real art is found)
-GEN Sportbike bike_sport red/black/white blue/navy/black black/black/red yellow/darkgrey/yellow green/black/white
-GEN Chopper   bike_chopper black/brown/black maroon/black/black silver/brown/black
-GEN Scooter   bike_scooter teal/pink/white cream/navy/white red/black/white
+# BIKE <class> <empty file> <ridden file>
+BIKE Sportbike sportbike-empty.png sportbike-ridden.png
+BIKE Chopper   chopper-empty.png   chopper-ridden.png
+BIKE Scooter   scooter-empty.png   scooter-ridden.png
 )";
 
 static const char* DEFAULT_CHARACTERS = R"(
@@ -489,7 +489,7 @@ static Image Repaint(const Image& src, Color target, bool neutralToo) {
 }
 
 // -------------------------------------------------------------------------------------
-//  Vehicles (vehicles.cfg: SPRITE / GEN records)
+//  Vehicles (vehicles.cfg: SPRITE / DERIVE / COMPOSE / BIKE / GEN records)
 // -------------------------------------------------------------------------------------
 static void LoadVehicles(Assets& A) {
     LoadVehicleClasses();
@@ -510,6 +510,25 @@ static void LoadVehicles(Assets& A) {
                 else        AddVehicle(A, RecolorPaint(img, hues[v], 1.0f, 0.95f), cls);
             }
             AddVehicle(A, img, cls);
+        } else if (r.Is("BIKE") && r.size() >= 4) {
+            VClass cls = FindVehicleClass(r[1]);
+            if (cls < 0) { TraceLog(LOG_WARNING, "vehicles.cfg:%d unknown class '%s'", r.line, r[1].c_str()); continue; }
+            char pathR[256];
+            snprintf(path, sizeof(path), "assets/vehicles/%s", r[2].c_str());
+            snprintf(pathR, sizeof(pathR), "assets/vehicles/%s", r[3].c_str());
+            Image empty, ridden;
+            if (!TryLoadImage(path, empty)) continue;
+            if (!TryLoadImage(pathR, ridden)) { UnloadImage(empty); continue; }
+            int e = AddVehicle(A, empty, cls, false);
+            int rd = AddVehicle(A, ridden, cls);
+            A.vehicles[rd].emptySkin = e;
+            A.vehicles[e].emptySkin = e;
+            // Both are drawn at the class length: a different aspect changes the width
+            // when the rider gets on or off.
+            Rectangle a = A.vehicles[e].src, b = A.vehicles[rd].src;
+            if (fabsf(a.width / a.height - b.width / b.height) > 0.005f * a.width / a.height)
+                TraceLog(LOG_WARNING, "vehicles.cfg:%d '%s' and '%s' differ in aspect (%.0fx%.0f, %.0fx%.0f px)",
+                         r.line, r[2].c_str(), r[3].c_str(), a.width, a.height, b.width, b.height);
         } else if ((r.Is("DERIVE") && r.size() >= 7) || (r.Is("COMPOSE") && r.size() >= 9)) {
             VClass cls = FindVehicleClass(r[1]);
             if (cls < 0) { TraceLog(LOG_WARNING, "vehicles.cfg:%d unknown class '%s'", r.line, r[1].c_str()); continue; }
@@ -565,6 +584,15 @@ static void LoadVehicles(Assets& A) {
         }
     }
     if (A.vehicles.empty()) AddVehicle(A, Car({ 200, 30, 35, 255 }, CarStyle::Hatchback), 0);
+    for (VClass c = 0; c < (VClass)A.byClass.size(); c++) {
+        if (A.byClass[c].empty()) continue;
+        const VehicleSprite& s = A.vehicles[A.byClass[c][0]];
+        const VehicleSpec& sp = Spec(c);
+        float drawn = sp.length * (s.src.width / s.src.height);
+        TraceLog(LOG_INFO, "VEHICLE %-9s length %.2f m, collision width %.3f m, drawn width %.3f m, sprite %dx%d px",
+                 sp.name.c_str(), sp.length / cfg::M, (sp.width > 0 ? sp.width : drawn) / cfg::M, drawn / cfg::M,
+                 (int)s.src.width, (int)s.src.height);
+    }
 }
 
 // -------------------------------------------------------------------------------------

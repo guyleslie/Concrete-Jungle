@@ -23,7 +23,7 @@ void InitVehicle(Vehicle& v, int skin, Vector2 pos, float angle) {
     v.angle = angle;
     const VehicleSpec& sp = Spec(v.cls);
     v.length = sp.length;
-    v.width = sp.length * (s.src.width / s.src.height);
+    v.width = sp.width > 0 ? sp.width : sp.length * (s.src.width / s.src.height);
     v.height = sp.height;
     v.health = sp.health;
     v.driverSkin = GRng().Int(0, std::max(0, (int)gAssets.peds.size() - 1));
@@ -191,12 +191,17 @@ static const VehicleSprite& SpriteOf(const Vehicle& v) {
     return s;
 }
 
+// The sprite keeps its aspect at the class length, whatever the collision width.
+static float DrawnWidth(const Vehicle& v, const VehicleSprite& s) { return v.length * (s.src.width / s.src.height); }
+float SpriteWidth(const Vehicle& v) { return DrawnWidth(v, SpriteOf(v)); }
+
 void DrawVehicleShadow(const Vehicle& v, Vector2 sv) {
     const VehicleSprite& s = SpriteOf(v);
+    float w = DrawnWidth(v, s);
     // silhouette of the sprite, offset by the sun, slightly spread for softness
     Vector2 o = sv * (v.height * 0.6f);
-    DrawFlatSprite(s.tex, s.src, v.pos + o, 0, v.width * 1.08f, v.length * 1.04f, v.angle, ColorA(BLACK, 0.55f));
-    DrawFlatSprite(s.tex, s.src, v.pos + o * 0.5f, 0, v.width * 1.02f, v.length * 1.0f, v.angle, ColorA(BLACK, 0.8f));
+    DrawFlatSprite(s.tex, s.src, v.pos + o, 0, w * 1.08f, v.length * 1.04f, v.angle, ColorA(BLACK, 0.55f));
+    DrawFlatSprite(s.tex, s.src, v.pos + o * 0.5f, 0, w * 1.02f, v.length * 1.0f, v.angle, ColorA(BLACK, 0.8f));
 }
 
 void DrawVehicle(const Vehicle& v, float time) {
@@ -208,7 +213,7 @@ void DrawVehicle(const Vehicle& v, float time) {
         tint = ColorMul(WHITE, 1.0f - 0.35f * dmg);
         if (v.damageFlash > 0) tint = LerpColor(tint, { 255, 200, 190, 255 }, v.damageFlash * 0.5f);
     }
-    DrawFlatSprite(s.tex, s.src, v.pos, v.height, v.width, v.length, v.angle, tint);
+    DrawFlatSprite(s.tex, s.src, v.pos, v.height, DrawnWidth(v, s), v.length, v.angle, tint);
     if (v.missionTarget) {
         float p = 0.5f + 0.5f * sinf(time * 5);
         DrawFlatRing(v.pos, v.length * 0.62f, v.length * 0.62f + 2.5f, v.height + 1, ColorA({ 255, 220, 60, 255 }, 0.5f + 0.5f * p), 40);

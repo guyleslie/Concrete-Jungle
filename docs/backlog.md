@@ -39,7 +39,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | In progress |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
-| [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Open |
+| [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | In progress |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
@@ -167,7 +167,11 @@ Remaining: the playtest.
 ### CJ-004 Replace placeholder art
 
 - **Priority:** High
-- **Status:** Open
+- **Status:** In progress: motorbikes integrated and awaiting playtest; civilians open
+
+**Art session (2026-10-07).** The user rejected all civilian sheets and earlier idle masters: idle must hide legs and shoes completely, with vertical hanging arms, compact integrated shoulders and ordinary clothing. V3 was rejected for enormous shoulder/upper-arm blobs; the [v4 idle candidate](../assets/art/cj004/civilian-idle-master-v4.png) awaits review, with no animations generated from it. The [revised workflow](../assets/art/cj004/civilian-prompts-v2.md) uses the player's moderate detail and separate walk, run and action groups after master acceptance. The sportbike, chopper and scooter designs with and without riders are accepted, subject to correct size. Keep the [source art and historical prompts](../assets/art/cj004/README.md). Six vehicle PNG exports follow a shared facing, centre and size convention, with position and scale baked into the pixels and no per-image runtime correction configuration. Remaining for the civilians: approve and animate them, register and validate loops and posture, preserve appearance variety, add data-driven loading, measure before and after, and playtest. CJ-011 player posture is not implemented by these images.
+
+**Motorbikes integrated (2026-10-07).** The size review found the lengths, the pair registration (at most 1 px, 0.5 cm, between the empty and ridden image) and the riders' scale (helmet about 0.30 m) correct, but the drawn mirror and handlebar spans 24–35 % wider than real bikes: 0.96 m, 1.24 m and 0.93 m. The user chose real collision widths: `WIDTH` records give the Sportbike 0.75 m, the Chopper 0.95 m and the Scooter 0.70 m (the placeholders had 0.77, 0.95 and 0.69 m), while the art keeps its proportions and the mirrors overhang the box. `BIKE` records load the six images from `assets/vehicles/`, one look per class. Automatic paint variants were rejected because they also recolour the lights and cannot recolour the black chopper; more colours come as more image pairs. Results: the `VEHICLE` start-up log shows the bike widths above and every car unchanged; the [`bikes` scenario](testing.md#scenarios) shows the art at game scale beside the player and a car; the `traffic-turns` fixture passes 96 of 96 cases with results identical to the CJ-020 run; `drive` runs at 141.9 FPS uncapped (144.2 FPS in the CJ-020 run). Remaining for the motorbikes: the user playtest.
 
 **Problem.** Motorbikes and civilian pedestrians use procedural placeholder sprites that do not match the quality of the rest of the art. Playtest feedback (2026-09-27): the civilians look much cheaper than the player, their walk animation does not look real, and standing civilians look smaller than the player, because the player sprite holds its arms forward while the civilians are drawn thin from the top.
 
