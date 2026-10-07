@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- CJ-016 (human-like traffic and incidents) is done: the user playtested and accepted it on 2026-10-07. ADR-0008 stays Proposed until visible drivers control the physical integrator.
+- Backlog: CJ-018 becomes *Police driving and reactions* (High) with the playtest feedback that pursuing police run down pedestrians, ram other cars and cause crashes, and the open police reaction to a fight. New item CJ-021 for visible towing.
+
 ### Fixed
 
 - The README's download link points at the releases page: GitHub's latest-release address skips pre-releases such as 0.3.0.

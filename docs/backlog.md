@@ -17,16 +17,16 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the third CJ-016 increment on 2026-10-06:
+Recommended order, updated after the CJ-016 playtest on 2026-10-07:
 
-1. **[CJ-016](#cj-016-road-rage-and-traffic-incidents) Human-like traffic and incidents** — the third increment is done: decision CPU under the targets, wait-for loops resolved, shouting, a raised fist and steered lane changes. Next: the user playtest (queues, two-car conflicts, heavy-vehicle reversing, a full confrontation, lane changes; temporarily `INCIDENT aggressive_share 1` makes every driver aggressive), under the [approved specification](design/traffic-behaviour-proposal.md). The user explicitly rejects removing drivers or relocating vehicles to resolve a blockage.
-2. **[CJ-020](#cj-020-turning-kinematics-of-traffic) Turning kinematics of traffic** — rail cars still slide through tight right turns.
-3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities needed by CJ-016 deliberately rather than changing traffic behaviour incidentally.
+1. **[CJ-020](#cj-020-turning-kinematics-of-traffic) Turning kinematics of traffic** — rail cars still slide through tight right turns.
+2. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
+3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
 6. **[CJ-004](#cj-004-replace-placeholder-art) and [CJ-011](#cj-011-relaxed-player-posture) Character art** — one art session: civilians, motorbikes, and a relaxed player.
 
-CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance. The new traffic priority does not close them.
+CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance. The CJ-016 playtest does not close them.
 
 Before each item, search for open-source code, assets and references that would help (the licence must allow redistribution; see [Adding content](guides/adding-content.md#art-and-licence-requirements)). Examples worth evaluating: Box2D or Jolt Physics as a reference for CJ-002, recorded CC0 sound libraries for CJ-012, OpenGameArt and Kenney-style texture packs of the right quality for CJ-014.
 
@@ -41,10 +41,9 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
 | [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Open |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
-| [CJ-018](#cj-018-police-drivers-avoid-pedestrians) | Police drivers avoid pedestrians | Medium | Open |
+| [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
-| [CJ-016](#cj-016-road-rage-and-traffic-incidents) | Human-like traffic and incidents | High | In progress; awaiting playtest of the third increment |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
 | [CJ-020](#cj-020-turning-kinematics-of-traffic) | Turning kinematics of traffic | Medium | Open |
@@ -52,6 +51,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
 | [CJ-008](#cj-008-test-autopilot-improvements) | Test autopilot improvements | Low | Open |
+| [CJ-021](#cj-021-visible-towing) | Visible towing | Low | Open |
 
 ## Open items
 
@@ -182,14 +182,16 @@ Remaining: the playtest.
 
 **Acceptance criteria.** Walking without aiming shows a relaxed pose for every weapon; aiming or firing raises the weapon within 0.2 s; playtested.
 
-### CJ-018 Police drivers avoid pedestrians
+### CJ-018 Police driving and reactions
 
-- **Priority:** Medium
+- **Priority:** High
 - **Status:** Open
 
 **Problem.** Police cars in pursuit drive at up to 150 km/h through crowds and on sidewalks and do not react to people at all; in the `brawl` scenario they caused most of the pedestrian deaths.
 
-**Acceptance criteria.** Police cars brake for and steer around people when it does not cost them the pursuit, mount the sidewalk only when necessary and slowly; in `chase` and `brawl`, pedestrians hit by police drop by at least 80 %.
+**Playtest feedback (2026-10-07).** During a pursuit the police are far too aggressive: they run down many pedestrians, drive their cars badly, ram other cars and cause crashes. They also do not react to a fight between drivers (left open by [CJ-016](#cj-016-road-rage-and-traffic-incidents)). The user wants police behaviour discussed again in a separate session before any change.
+
+**Acceptance criteria.** To be agreed in that session. Starting points: police cars brake for and steer around people when it does not cost them the pursuit, mount the sidewalk only when necessary and slowly; in `chase` and `brawl`, pedestrians hit by police drop by at least 80 %; collisions between police and uninvolved traffic are measured and reduced; police respond to a fight between drivers.
 
 ### CJ-014 City art and layout
 
@@ -219,31 +221,6 @@ Remaining: the playtest.
 **Problem.** The light from the street lamps does not fall where it should, the lamp posts themselves could look better, and the lighting of the whole game at night could be much better, with a cooler colour and without the current bugs.
 
 **Acceptance criteria.** A list of the lighting bugs with screenshots; lamp light pools aligned with the lamp heads; a night palette agreed with the user; before/after screenshots at dusk and at night; see [Rendering](design/rendering.md).
-
-### CJ-016 Road rage and traffic incidents
-
-- **Priority:** High
-- **Status:** In progress; specification approved on 2026-10-05; recovery (2026-10-05), CPU peaks, cooperative yielding and driver incidents (2026-10-06) implemented and measured; city CPU targets met, wait-for loops resolved, shouting, raised fist and steered lane changes (2026-10-06); the user playtest pending
-
-**User direction (2026-10-03).** Drivers should behave like people: follow, yield, avoid, reverse, honk, sometimes misjudge and collide, and occasionally get out to confront or fight another driver. A blocked situation must not be solved by deleting a driver, forcing them to walk away after a timer, or relocating an involved vehicle. This is the current priority; CJ-002 supplies the necessary vehicle capabilities.
-
-**Pre-change problem.** `UpdateKnocked` gave up after 12 s or below 35 % vehicle health; it spawned an unrelated pedestrian on-screen or relocated the vehicle off-screen. Recovery alternated controls towards one target without validating a full escape path. Pedestrian fighting still targets the player, so a driver-versus-driver incident also needs persistent ownership and explicit actor targeting.
-
-**Approved specification.** [Human-like traffic and incident proposal](design/traffic-behaviour-proposal.md): predicted occupancy, feasible swept-footprint manoeuvres, stable yielding roles, impossible-blockage handling, persistent drivers, cause-based incidents, reusable spatial queries and measured CPU budgets. [ADR-0008](adr/0008-human-like-traffic.md) is Proposed; the accepted rail decision remains in force until a tested replacement addresses its original jitter/deadlock concerns.
-
-**First increment (2026-10-05).** Frozen `traffic-recovery` fixtures measure Taxi, Bus and BoxTruck in enclosed, free and reverse-escape geometry at 60 Hz and 20 Hz: 52 checks, 14,400 rendered frames and 240 s per class. The complete baseline had 14 failed checks per class; the corrected build passed all 156 recovery checks. A separate 26-check clearance regression reproduced four pre-fix failures caused by separated nearby boxes being falsely classified as initial contact, then passed every check after the fix. The [result report](design/traffic-recovery-results.md) preserves exact manifests/hashes, timings and failed intermediate attempts. Corrected garage recovery took 10.833/10.600 s for Taxi, 20.967/21.100 s for Bus and 13.767/13.900 s for BoxTruck at 60/20 Hz; enclosed cars stayed with their drivers for 60 s with no movement, overlap, blend or ownership loss. All six matching city runs completed and recorded zero recovery give-ups; crash/chase each recorded one rejoin and rampage recorded eleven. The crash/rampage CPU failures remain open in the report. The controller uses a shared snapshot and at most 20 physical forward/reverse/hold candidates, with safe progressing lane feedback skipping escape search. Path scanning no longer ignores a mutually blocking vehicle; ordinary rail passing and junction right-of-way rules remain. Full-population CPU acceptance, city-edge/moving/multi-seed fixtures and user playtest remain pending. Cooperative conflict roles/reservations, persistent on-foot ownership and fights remain to be implemented; CJ-002 remains an explicit handling dependency.
-
-**Second increment (2026-10-06).** Recovery planning is sliced across frames under a shared deterministic step budget; holds replan only when a blocker moves; followers behind a car keep their own distance (the rear-end rule) and rail cars are forecast no further than their planned stop; immediate checks validate a few extra frames and are reused while everything moves as forecast. The worst city decision frame fell from 11.6 ms to 2.5 ms; `crash` meets both decision targets (0.434 ms average, 0.933 ms p95), while `chase` (0.739 / 1.455 ms) and `rampage` (0.799 / 1.617 ms) still exceed them. Cooperative yielding gives two drivers stopped behind each other stable roles; the yielder retraces its own path on rails and tucks back into its lane, with a chain behind it. The new `traffic-conflict` fixture (60 cases) went from 6 to 60 resolved cases. Driver moods (10 % aggressive) and collision incidents let an aggressive driver stop, get out on a safe side, confront the other driver or the player, fight, and drive the same car on; interruptions end with a logged reason. The new `traffic-incident` fixture (80 cases) went from 20 to 80 accepted cases with no ownership violation or duplicate driver. Queue-aware rejoining, escape from an existing contact and a fixed U-turn route loss came out of the new fixtures. The frozen recovery and clearance fixtures still pass all 182 checks with unchanged rejoin times. Evidence: [yielding and incident report](design/traffic-yielding-incident-results.md).
-
-**Third increment (2026-10-06), CPU.** Every city scenario now meets the decision CPU targets: `chase` 0.689 / 1.415 → 0.321 / 0.819 ms, `rampage` 0.727 / 1.547 → 0.378 / 0.861 ms, `crash` 0.390 / 0.865 → 0.234 / 0.484 ms (average / 95th percentile). The rail look-ahead tests only what can reach its sampled path, recovery rollouts let distant actors sleep and skip rail forecast boxes out of reach, and force steps share their trigonometry; these leave every decision unchanged, and all four fixtures reproduce the second increment line by line. Covered immediate checks now record up to 32 actors instead of 12, which changes city decisions. On-foot test runs no longer depend on the mouse cursor. Evidence: [third increment report](design/traffic-third-increment-results.md).
-
-**Third increment (2026-10-06), wait-for cycles.** Two knocked cars blocking each other and loops of three or more drivers (junction gridlock) are found once per frame; one driver gives way to the driver waiting on it, a rail car by backing up, a knocked car by short checked creeps that make room. A car held at a stop line waits on the car in the box. The conflict fixture (v2, 100 cases) adds `knocked-pair` and `junction-gridlock`: 0 → 20 of 20 each, with the 60 earlier cases unchanged. The city runs had no loop lasting over 10 s; the "unresolved pair" at the end of `crash` is one that formed 0.3 s before the end.
-
-**Third increment (2026-10-06), presentation.** Arguing drivers shout (three synthesised voices at a personal pitch, every second or so) and shake a raised fist (two new civilian atlas frames); the punch frame is kept for blows. Rail cars change lane by steering: the lateral offset follows an S-curve along the path, the rear axle traces it and the body points along it; a car standing too close behind an obstacle backs up before pulling out, and a yielding car reverses back into its lane the same way. Incident fixture v2: 40 → 80 of 80 (shouts 0 → 4–10 per case, raised fist 0 → 1.5–4.4 s, punch frame while arguing face to face 0.5–1.5 → 0 s); conflict fixture: lane-change slip 90° → 2.1°, 80 → 100 of 100. The slip measurement also found turning traffic sliding (CJ-020).
-
-**Remaining.** Police reaction to a fight; the user playtest of queues, two-car conflicts, heavy-vehicle reversing and a full confrontation. Visible towing follows the accepted core.
-
-**Acceptance criteria.** Follow the approved proposal's scenario table. Feasible blockages resolve physically; impossible ones remain stable and observable; timeout-based disappearance/relocation is zero; incident participants retain identity and car ownership; exiting, approaching, fighting and returning are visible actions with interruption rules. Validate with fixed seeds, 60 Hz/20 Hz scenarios, class-specific recovery tests, regression runs, separate traffic CPU timings and a user playtest. First deliver reliable manoeuvring, then incidents and combat; visible towing follows the accepted core.
 
 ### CJ-017 Pedestrian life
 
@@ -319,6 +296,15 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 
 **Observed on 2026-10-06** (`drive`, 1,800 frames, build `a3da34f`): the run now stops in the first junction. At t = 1.65 s a traffic taxi (#44, normal driver) hits the Stinger at an approach speed of 221 px/s; 0.05 s later the Stinger hits two pieces of street furniture. From then on the car stays at 0 km/h until the end of the run (11 player stuck events, health 61/100). The taxi stays knocked for more than 12 s (`LONG-REJOIN reason=no_feasible_manoeuvre`), so neither car frees the other, and every screenshot after the first two seconds shows the same junction.
 
+### CJ-021 Visible towing
+
+- **Priority:** Low
+- **Status:** Open
+
+**Idea.** A car that cannot get free, such as one boxed in by buildings and other cars, stays in place and stays observable under [CJ-016](#cj-016-road-rage-and-traffic-incidents). A tow truck should come and remove it in view, as the approved [traffic proposal](design/traffic-behaviour-proposal.md) plans after the core. Nothing may vanish or be relocated invisibly in the meantime.
+
+**Acceptance criteria.** To be agreed: the tow truck drives there on the road network, hooks up the car and tows it away; a test scenario logs the call, the arrival time and the removal; playtested.
+
 ## Done
 
 | ID | Title | Completed |
@@ -326,3 +312,29 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 | CJ-001 | Documentation overhaul: documentation structure, design documents, guides, testing guide, ADRs, changelog, contributing guide | 2026-09-27 |
 | — | Collision physics rewrite: vehicles no longer stick to obstacles or jitter; breakaway street furniture; traffic recovery after crashes ([ADR-0005](adr/0005-vehicle-contact-solver.md)) | 2026-09-27 |
 | CJ-009 | Licence for the code: MIT licence for the project's own code (`LICENSE`); third-party assets keep the licences in [CREDITS](../CREDITS.md) | 2026-10-06 |
+| CJ-016 | Human-like traffic and incidents: physical recovery without timeouts, cooperative yielding, wait-for cycles, persistent drivers and road-rage incidents ([details](#cj-016-road-rage-and-traffic-incidents)) | 2026-10-07 |
+
+### CJ-016 Road rage and traffic incidents
+
+- **Priority:** High
+- **Status:** Done on 2026-10-07; specification approved on 2026-10-05; three increments (2026-10-05, 2026-10-06); playtested and accepted on 2026-10-07
+
+**User direction (2026-10-03).** Drivers should behave like people: follow, yield, avoid, reverse, honk, sometimes misjudge and collide, and occasionally get out to confront or fight another driver. A blocked situation must not be solved by deleting a driver, forcing them to walk away after a timer, or relocating an involved vehicle. This is the current priority; CJ-002 supplies the necessary vehicle capabilities.
+
+**Pre-change problem.** `UpdateKnocked` gave up after 12 s or below 35 % vehicle health; it spawned an unrelated pedestrian on-screen or relocated the vehicle off-screen. Recovery alternated controls towards one target without validating a full escape path. Pedestrian fighting still targets the player, so a driver-versus-driver incident also needs persistent ownership and explicit actor targeting.
+
+**Approved specification.** [Human-like traffic and incident proposal](design/traffic-behaviour-proposal.md): predicted occupancy, feasible swept-footprint manoeuvres, stable yielding roles, impossible-blockage handling, persistent drivers, cause-based incidents, reusable spatial queries and measured CPU budgets. [ADR-0008](adr/0008-human-like-traffic.md) is Proposed; the accepted rail decision remains in force until a tested replacement addresses its original jitter/deadlock concerns.
+
+**First increment (2026-10-05).** Frozen `traffic-recovery` fixtures measure Taxi, Bus and BoxTruck in enclosed, free and reverse-escape geometry at 60 Hz and 20 Hz: 52 checks, 14,400 rendered frames and 240 s per class. The complete baseline had 14 failed checks per class; the corrected build passed all 156 recovery checks. A separate 26-check clearance regression reproduced four pre-fix failures caused by separated nearby boxes being falsely classified as initial contact, then passed every check after the fix. The [result report](design/traffic-recovery-results.md) preserves exact manifests/hashes, timings and failed intermediate attempts. Corrected garage recovery took 10.833/10.600 s for Taxi, 20.967/21.100 s for Bus and 13.767/13.900 s for BoxTruck at 60/20 Hz; enclosed cars stayed with their drivers for 60 s with no movement, overlap, blend or ownership loss. All six matching city runs completed and recorded zero recovery give-ups; crash/chase each recorded one rejoin and rampage recorded eleven. The crash/rampage CPU failures remain open in the report. The controller uses a shared snapshot and at most 20 physical forward/reverse/hold candidates, with safe progressing lane feedback skipping escape search. Path scanning no longer ignores a mutually blocking vehicle; ordinary rail passing and junction right-of-way rules remain. Full-population CPU acceptance, city-edge/moving/multi-seed fixtures and user playtest remain pending. Cooperative conflict roles/reservations, persistent on-foot ownership and fights remain to be implemented; CJ-002 remains an explicit handling dependency.
+
+**Second increment (2026-10-06).** Recovery planning is sliced across frames under a shared deterministic step budget; holds replan only when a blocker moves; followers behind a car keep their own distance (the rear-end rule) and rail cars are forecast no further than their planned stop; immediate checks validate a few extra frames and are reused while everything moves as forecast. The worst city decision frame fell from 11.6 ms to 2.5 ms; `crash` meets both decision targets (0.434 ms average, 0.933 ms p95), while `chase` (0.739 / 1.455 ms) and `rampage` (0.799 / 1.617 ms) still exceed them. Cooperative yielding gives two drivers stopped behind each other stable roles; the yielder retraces its own path on rails and tucks back into its lane, with a chain behind it. The new `traffic-conflict` fixture (60 cases) went from 6 to 60 resolved cases. Driver moods (10 % aggressive) and collision incidents let an aggressive driver stop, get out on a safe side, confront the other driver or the player, fight, and drive the same car on; interruptions end with a logged reason. The new `traffic-incident` fixture (80 cases) went from 20 to 80 accepted cases with no ownership violation or duplicate driver. Queue-aware rejoining, escape from an existing contact and a fixed U-turn route loss came out of the new fixtures. The frozen recovery and clearance fixtures still pass all 182 checks with unchanged rejoin times. Evidence: [yielding and incident report](design/traffic-yielding-incident-results.md).
+
+**Third increment (2026-10-06), CPU.** Every city scenario now meets the decision CPU targets: `chase` 0.689 / 1.415 → 0.321 / 0.819 ms, `rampage` 0.727 / 1.547 → 0.378 / 0.861 ms, `crash` 0.390 / 0.865 → 0.234 / 0.484 ms (average / 95th percentile). The rail look-ahead tests only what can reach its sampled path, recovery rollouts let distant actors sleep and skip rail forecast boxes out of reach, and force steps share their trigonometry; these leave every decision unchanged, and all four fixtures reproduce the second increment line by line. Covered immediate checks now record up to 32 actors instead of 12, which changes city decisions. On-foot test runs no longer depend on the mouse cursor. Evidence: [third increment report](design/traffic-third-increment-results.md).
+
+**Third increment (2026-10-06), wait-for cycles.** Two knocked cars blocking each other and loops of three or more drivers (junction gridlock) are found once per frame; one driver gives way to the driver waiting on it, a rail car by backing up, a knocked car by short checked creeps that make room. A car held at a stop line waits on the car in the box. The conflict fixture (v2, 100 cases) adds `knocked-pair` and `junction-gridlock`: 0 → 20 of 20 each, with the 60 earlier cases unchanged. The city runs had no loop lasting over 10 s; the "unresolved pair" at the end of `crash` is one that formed 0.3 s before the end.
+
+**Third increment (2026-10-06), presentation.** Arguing drivers shout (three synthesised voices at a personal pitch, every second or so) and shake a raised fist (two new civilian atlas frames); the punch frame is kept for blows. Rail cars change lane by steering: the lateral offset follows an S-curve along the path, the rear axle traces it and the body points along it; a car standing too close behind an obstacle backs up before pulling out, and a yielding car reverses back into its lane the same way. Incident fixture v2: 40 → 80 of 80 (shouts 0 → 4–10 per case, raised fist 0 → 1.5–4.4 s, punch frame while arguing face to face 0.5–1.5 → 0 s); conflict fixture: lane-change slip 90° → 2.1°, 80 → 100 of 100. The slip measurement also found turning traffic sliding (CJ-020).
+
+**Playtest (2026-10-07).** The user tested queues, two-car conflicts, heavy-vehicle reversing, a full confrontation and lane changes, and accepted them. Moved on: the police reaction to a fight to [CJ-018](#cj-018-police-driving-and-reactions), visible towing to [CJ-021](#cj-021-visible-towing). [ADR-0008](adr/0008-human-like-traffic.md) stays Proposed until visible drivers control the physical integrator.
+
+**Acceptance criteria.** Follow the approved proposal's scenario table. Feasible blockages resolve physically; impossible ones remain stable and observable; timeout-based disappearance/relocation is zero; incident participants retain identity and car ownership; exiting, approaching, fighting and returning are visible actions with interruption rules. Validate with fixed seeds, 60 Hz/20 Hz scenarios, class-specific recovery tests, regression runs, separate traffic CPU timings and a user playtest. First deliver reliable manoeuvring, then incidents and combat; visible towing follows the accepted core.

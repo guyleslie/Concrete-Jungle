@@ -7,7 +7,7 @@
 
 The user rejects resolving traffic blockages by making a driver leave after a deadline or relocating the car. At the time of this proposal, recovery did this after 12 s, and rail path scanning could resolve mutual blocking by ignoring an obstacle. [CJ-016's approved specification](../design/traffic-behaviour-proposal.md) requires actual manoeuvres, cooperative yielding, persistent drivers and event-driven incidents.
 
-The first [physical recovery increment](../design/traffic.md#knocked-off-the-lane) replaces those timeout exits with checked recovery or persistent holding and removes the mutual-blocker scanning exception. Ordinary traffic still derives poses from a lane path. Shared conflict resolution and persistent on-foot drivers remain pending, so this decision stays Proposed.
+The first [physical recovery increment](../design/traffic.md#knocked-off-the-lane) replaces those timeout exits with checked recovery or persistent holding and removes the mutual-blocker scanning exception. Later increments added cooperative yielding, wait-for cycle resolution, persistent on-foot drivers and cause-based incidents; the user playtested and accepted them on 2026-10-07. Ordinary traffic still derives poses from a lane path, and visible drivers do not yet control the shared physical integrator. This decision stays Proposed until that part is decided, after the CJ-002 handling model.
 
 [ADR-0004](0004-kinematic-rail-traffic.md) chose rail poses because the original physical controllers jittered and deadlocked. It remains Accepted until a measured replacement addresses both failures. This proposal does not change production physics or supersede that decision yet.
 
