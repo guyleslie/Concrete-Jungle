@@ -360,6 +360,17 @@ static bool InBox(Vector2 p, Vector2 c, float grow = 6) {
     return fabsf(p.x - c.x) < ROAD_HALF + grow && fabsf(p.y - c.y) < ROAD_HALF + grow;
 }
 
+// Has rail car o passed its stop line for junction (si, sj) without having left the box?
+// Such a car no longer checks the junction: it is coming through.
+static bool CommittedTo(const Vehicle& o, int si, int sj) {
+    float front = o.ai.s + o.length * 0.5f, rear = o.ai.s - o.length * 0.5f;
+    for (const Waypoint& w : o.ai.path) {
+        if (!w.stop || w.si != si || w.sj != sj) continue;
+        return w.cum - STOP_BACK - front < -8 && rear < w.cum + ROAD_HALF * 2 + 40;
+    }
+    return false;
+}
+
 // May vehicle 'self' enter the junction of stop waypoint w now? 'blocker' receives the
 // vehicle that keeps it out (a wait-for edge for gridlock detection).
 static bool JunctionClear(Game& g, int self, const Waypoint& w, int* blocker) {
@@ -375,7 +386,11 @@ static bool JunctionClear(Game& g, int self, const Waypoint& w, int* blocker) {
         bool mover = AIOnRail(o) || o.driver == DriverType::Police || (isPlayer && o.Speed() > 20);
         if (!mover || Len2(o.pos - c) > 420 * 420) continue;
         float diff = fabsf(WrapAngle(o.angle - myDir));
-        if (InBox(o.pos, c)) {
+        // A car occupies the box once its centre or its nose is in it (a turning car's
+        // nose sweeps across the box first), or once it has passed its stop line for this
+        // junction and is coming through.
+        if (InBox(o.pos, c) || InBox(o.pos + o.Fwd() * (o.length * 0.5f), c, 0) ||
+            (AIOnRail(o) && CommittedTo(o, w.si, w.sj))) {
             if (diff < 0.6f) continue;                                         // same way: follow through
             bool opposite = diff > PI - 0.6f;
             int theirTurn = AIOnRail(o) ? o.ai.curTurn : 0;

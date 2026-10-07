@@ -64,7 +64,7 @@ The path is planned one junction ahead and always extends at least 520 px beyond
 | Influence | Behaviour |
 |---|---|
 | Cruise speed | 215–265 px/s (≈ 48–60 km/h); large vehicles 170–205 px/s. Panicking drivers go 50 % faster. |
-| Curves | On a turn path, the speed keeps the lateral acceleration at the rear axle within `TURN lateral_accel` (3.5 m/s²) from how fast the body's heading turns at each point: about 13–15 km/h through a right turn and 16–20 km/h through a left turn. The driver brakes towards these limits at the comfortable rate. U-turns keep the old limit of 130 px/s (95 px/s for large vehicles). |
+| Curves | On a turn path, the speed keeps the lateral acceleration at the rear axle within `TURN lateral_accel` (3.5 m/s²) from how fast the body's heading turns at each point: about 11–15 km/h through a right turn and 15–19 km/h through a left turn. The driver brakes towards these limits at the comfortable rate. U-turns keep the old limit of 130 px/s (95 px/s for large vehicles). |
 | Signals | Stops for red. Stops for yellow if it can do so comfortably. |
 | Obstacles | A look-ahead of 40 px + 1.1 × speed + half its length along the path finds vehicles and, unless the driver is distracted, pedestrians on the road (found through the pedestrian grid). The allowed speed follows the gap; the car stops 14 px short of the obstacle. |
 | Acceleration | 45 % of the class acceleration; comfortable braking at 670 px/s², hard braking at 900 px/s² for an obstacle right ahead. |
@@ -81,7 +81,7 @@ The look-ahead runs for every rail car every frame, so its cost matters: it firs
 
 A car only enters a junction box when:
 
-- the box holds no crossing traffic (vehicles going the same way are followed through; straight-on and right turns may meet oncoming straight-on and right turns, unless either is a [wide turn](#turn-paths), which takes the box alone);
+- the box holds no crossing traffic (vehicles going the same way are followed through; straight-on and right turns may meet oncoming straight-on and right turns, unless either is a [wide turn](#turn-paths), which takes the box alone). A car counts as in the box once its centre or its nose is in it, or once it has passed its stop line for the junction: a turning car's nose sweeps across the box before its centre, and a car past its stop line no longer checks the junction;
 - a left turn has no oncoming traffic about to come through on green;
 - its exit lane has room for it, so it never blocks the box.
 

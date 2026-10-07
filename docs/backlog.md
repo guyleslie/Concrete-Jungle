@@ -326,7 +326,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 - **Priority:** Medium
 - **Status:** Open (found by CJ-020 on 2026-10-07)
 
-**Problem.** Since CJ-020 traffic takes turns at a realistic 13–20 km/h, so traffic is denser round the junctions. In `rampage`, where the player knocks many cars off their lanes, about 7 cars recover at a time instead of 4.5, with more moving drivers to forecast round each, and the driver decision CPU (about 0.7 ms average, 1.2 ms 95th percentile) exceeds the CJ-016 targets of 0.5 and 1.0 ms. The recovery decisions themselves are unchanged; the other city scenarios stay within the targets. The user accepted this for CJ-020 on 2026-10-07.
+**Problem.** Since CJ-020 traffic takes turns at a realistic 11–19 km/h, so traffic is denser round the junctions. In `rampage`, where the player knocks many cars off their lanes, about 7 cars recover at a time instead of 4.5, with more moving drivers to forecast round each, and the driver decision CPU (about 0.7 ms average, 1.2 ms 95th percentile) exceeds the CJ-016 targets of 0.5 and 1.0 ms. The recovery decisions themselves are unchanged; the other city scenarios stay within the targets. The user accepted this for CJ-020 on 2026-10-07.
 
 **Acceptance criteria.** `rampage` within 0.5 ms average and 1.0 ms 95th percentile decision CPU, with the CJ-016 fixtures passing unchanged.
 
