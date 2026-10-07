@@ -271,7 +271,7 @@ python tools/run_cj020_turns.py --phase before --run-name baseline
 python tools/run_cj020_turns.py --phase after --run-name turns
 ```
 
-The runner runs the fixture and then the six city scenarios (`day`, `chase`, `drive`, `overview`, `crash` for 1,500 frames, `rampage` for 3,600; the others 1,800), one window at a time, and keeps the logs, captures and a manifest with the git state and input hashes under `build/shots/cj020/<phase>/<run-name>/`. `--suite fixture` or `--suite city` runs one part. `CJ_TEST_CASE=<substring>` narrows a diagnostic fixture run.
+The runner runs the fixture and then the six city scenarios (`day`, `chase`, `drive`, `overview`, `crash` for 1,500 frames, `rampage` for 3,600; the others 1,800), one window at a time, and keeps the logs, captures and a manifest with the git state and input hashes under `build/shots/cj020/<phase>/<run-name>/`. `--suite fixture` or `--suite city` runs one part. `CJ_TEST_CASE=<substring>` narrows a diagnostic fixture run. Results: [turning results](design/traffic-turning-results.md).
 
 ## Workflow
 

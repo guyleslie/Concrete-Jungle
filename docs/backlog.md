@@ -17,16 +17,16 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the CJ-016 playtest on 2026-10-07:
+Recommended order, updated after CJ-020 on 2026-10-07:
 
-1. **[CJ-020](#cj-020-turning-kinematics-of-traffic) Turning kinematics of traffic** — rail cars still slide through tight right turns.
-2. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
+1. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
+2. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — the streets feel cramped; vehicles are 30–40 % too wide and junction corners are square, so buses and trucks cannot turn.
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
 6. **[CJ-004](#cj-004-replace-placeholder-art) and [CJ-011](#cj-011-relaxed-player-posture) Character art** — one art session: civilians, motorbikes, and a relaxed player.
 
-CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance. The CJ-016 playtest does not close them.
+CJ-020 (turning) awaits the user's playtest: the turning speed and the look of wide turns. CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
 
 Before each item, search for open-source code, assets and references that would help (the licence must allow redistribution; see [Adding content](guides/adding-content.md#art-and-licence-requirements)). Examples worth evaluating: Box2D or Jolt Physics as a reference for CJ-002, recorded CC0 sound libraries for CJ-012, OpenGameArt and Kenney-style texture packs of the right quality for CJ-014.
 
@@ -47,7 +47,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
 | [CJ-019](#cj-019-performance-telemetry) | Performance telemetry | Medium | Open |
-| [CJ-020](#cj-020-turning-kinematics-of-traffic) | Turning kinematics of traffic | Medium | In progress |
+| [CJ-020](#cj-020-turning-kinematics-of-traffic) | Turning kinematics of traffic | Medium | Implemented, awaiting playtest |
 | [CJ-024](#cj-024-recovery-cost-in-dense-traffic) | Recovery cost in dense traffic | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
@@ -253,7 +253,7 @@ Remaining: the playtest.
 ### CJ-020 Turning kinematics of traffic
 
 - **Priority:** Medium
-- **Status:** In progress; found by the rear-axle slip measurement on 2026-10-06; specification approved on 2026-10-07
+- **Status:** Implemented on 2026-10-07, awaiting playtest; found by the rear-axle slip measurement on 2026-10-06; specification approved on 2026-10-07
 
 **Problem.** Rail cars turn on a quadratic curve whose control point sits at the two lane offsets, so a right turn has a radius of about 2 m; real cars need about 5.5 m. Both axle samples stay on that curve, so the body follows the chord and the rear axle point slides sideways through the bend. `TRAFFIC slip` measured in `chase` and `day` on 2026-10-06: over 5° of rear-axle slip in 72–74 % of the turning time, up to 70–75°. Lane changes no longer slide (CJ-016); turns still do.
 
@@ -271,6 +271,10 @@ Remaining: the playtest.
 - Fixture, every class: slip at most 3°; rear-axle radius at least the class minimum; lateral acceleration within the limit; cars (all but `large`) at most 4 px (0.25 m) over the kerb and no encroachment into the oncoming half of a road; large vehicles at most 1.5 m of encroachment, only in right turns.
 - No regression: straight and lane-change slip, the CJ-016 fixtures (recovery and clearance checks, 100/100 conflict cases, 80/80 incident cases), AI contacts, cars blocked over 3 s, wait cycles, rail overlaps, and the decision CPU targets.
 - Before/after captures of turning traffic; playtested.
+
+**Result (2026-10-07).** The rear axle traces the path in turns too, and every traffic class turns on its own [turn path](design/traffic.md#turn-paths). Turning fixture: 32 → 96 of 96 cases; slip 13–70° → at most 1.9°; a Taxi's right turn 1.8 → 3.6 m (class minimum 3.3 m) at 2.7 m/s² instead of 37 m/s². City: turning slip 70–75 % of the time over 5°, up to 76° → 0.0 %, at most 1.9° in all six scenarios; rail overlaps 1.65 → 0.33 pair-s. The CJ-016 fixtures pass. The user agreed these refinements during the work: the stop-line zone does not count as encroachment; wheels stay off the kerbs while large vehicles' overhangs may sweep a corner; over-wide cars take wide turns; turns that do not fit at all (Bus, Semi, the large trucks' right turns) are avoided; the `rampage` CPU stays above target as [CJ-024](#cj-024-recovery-cost-in-dense-traffic). Out of the work came [CJ-022](#cj-022-three-point-turns) and [CJ-023](#cj-023-vehicle-widths-and-street-geometry). Evidence: [turning results](design/traffic-turning-results.md).
+
+Remaining: the playtest.
 
 ### CJ-005 Data-driven street furniture
 
@@ -326,7 +330,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 - **Priority:** Medium
 - **Status:** Open (found by CJ-020 on 2026-10-07)
 
-**Problem.** Since CJ-020 traffic takes turns at a realistic 11–19 km/h, so traffic is denser round the junctions. In `rampage`, where the player knocks many cars off their lanes, about 7 cars recover at a time instead of 4.5, with more moving drivers to forecast round each, and the driver decision CPU (about 0.7 ms average, 1.2 ms 95th percentile) exceeds the CJ-016 targets of 0.5 and 1.0 ms. The recovery decisions themselves are unchanged; the other city scenarios stay within the targets. The user accepted this for CJ-020 on 2026-10-07.
+**Problem.** Since CJ-020 traffic takes turns at a realistic 11–19 km/h, so traffic is denser round the junctions. In `rampage`, where the player knocks many cars off their lanes, about 7 cars recover at a time instead of 4.5, with more moving drivers to forecast round each, and the driver decision CPU (0.60 ms average, 1.17 ms 95th percentile on 2026-10-07) exceeds the CJ-016 targets of 0.5 and 1.0 ms. The recovery decisions themselves are unchanged; the other city scenarios stay within the targets. The user accepted this for CJ-020 on 2026-10-07.
 
 **Acceptance criteria.** `rampage` within 0.5 ms average and 1.0 ms 95th percentile decision CPU, with the CJ-016 fixtures passing unchanged.
 
@@ -344,7 +348,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 - **Priority:** High
 - **Status:** Open (found by CJ-020 on 2026-10-07)
 
-**Problem.** Playtest feedback (2026-10-07): the streets feel cramped; cars and pedestrians seem too close together. The measurements of CJ-020 point to the vehicles and the junctions rather than the road width: lanes are 4 m (real ones 3–3.5 m) and the 4 m sidewalks keep pedestrians 1.4–2.6 m from the kerb, but a vehicle's width follows its sprite's aspect ratio, which makes most of them 30–40 % wider than the real vehicle (Taxi 2.46 m against about 1.8 m, Pickup 2.88 m, Ambulance 2.96 m, Bus 2.92 m against 2.55 m, Semi 3.63 m against 2.55 m), and junction corners are square, without the 3–6 m kerb radius of a real street. As a result the Pickup, Van, Limo and Ambulance need wide turns, and the Bus, the Semi and the right turns of the BoxTruck, FireTruck and Garbage truck do not fit at all, so traffic avoids them (measured by the CJ-020 turning fixture).
+**Problem.** Playtest feedback (2026-10-07): the streets feel cramped; cars and pedestrians seem too close together. The measurements of CJ-020 point to the vehicles and the junctions rather than the road width: lanes are 4 m (real ones 3–3.5 m) and the 4 m sidewalks keep pedestrians 1.4–2.6 m from the kerb, but a vehicle's width follows its sprite's aspect ratio, which makes most of them 30–40 % wider than the real vehicle (Taxi 2.46 m against about 1.8 m, Pickup 2.88 m, Ambulance 2.96 m, Bus 2.92 m against 2.55 m, Semi 3.63 m against 2.55 m), and junction corners are square, without the 3–6 m kerb radius of a real street. As a result the Pickup, Van, Limo and Ambulance need wide turns, and the Bus, the Semi and the right turns of the BoxTruck, FireTruck and Garbage truck do not fit at all, so traffic avoids them ([turning results](design/traffic-turning-results.md)).
 
 **Acceptance criteria.** To be agreed: real-world widths for every class (sprite art drawn or cropped to them), rounded kerb corners at junctions (geometry, art and pedestrian waiting spots), possibly wider streets; the turning fixture shows clean turns for cars and fitting turns for large vehicles; collisions and the CJ-002 baseline re-measured; before/after screenshots of street scenes; playtested.
 

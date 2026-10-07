@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CJ-020 measurements: the `traffic-turns` fixture (every traffic class turning right, left and straight through an empty junction at 60 Hz and 20 Hz: slip, rear-axle radius, kerb intrusion, encroachment, lateral acceleration, trace captures), the `TRAFFIC rail overlaps` line in the test log and `tools/run_cj020_turns.py`.
 - `TURN <class> <turning circle m>` records in `vehicles.cfg`; `TURN lateral_accel`, `easement`, `left_radius` and `max_swing` in `traffic.cfg` (CJ-020).
 - `TRAFFIC turns planned` and `RAIL-SLIP` lines in the test log; the turning fixture (`cj020-turns-v2`) also checks the wheels against the kerbs and logs a strict encroachment.
+- [Turning results](docs/design/traffic-turning-results.md): turning fixture 32 → 96 of 96 cases, city turning slip 70–75 % of the time over 5° → none, at most 1.9°.
 - Backlog items CJ-022 (three-point turns), CJ-023 (vehicle widths and street geometry, from the feedback that the streets feel cramped) and CJ-024 (recovery cost in dense traffic).
 
 ### Changed
