@@ -24,7 +24,8 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — the player's unarmed and armed walk without the combat stance; the civilian 3D pipeline of [CJ-004](#cj-004-replace-placeholder-art) may help.
+6. **[CJ-029](#cj-029-civilian-gait-realism) Civilian gait realism** — specification agreed on 2026-10-08: a natural walk, a jog and the run, each locked to the distance walked.
+7. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — the player's unarmed and armed walk without the combat stance; the civilian 3D pipeline of [CJ-004](#cj-004-replace-placeholder-art) may help.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
 
@@ -51,6 +52,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-026](#cj-026-bus-stops-and-bus-bays) | Bus stops and bus bays | Medium | Open |
 | [CJ-027](#cj-027-multi-lane-roads) | Multi-lane roads | Medium | Open |
 | [CJ-028](#cj-028-rule-breaking-drivers) | Rule-breaking drivers | Medium | Open |
+| [CJ-029](#cj-029-civilian-gait-realism) | Civilian gait realism | High | Specification agreed |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
@@ -362,6 +364,27 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 **Idea.** Traffic that obeys the rules never collides while turning ([CJ-023](#cj-023-vehicle-widths-and-street-geometry)). A few drivers should break the rules, as in a real city: run a red light, mount the sidewalk, misjudge a gap and hit another car; never exaggerated. Today traffic never runs a red light, and mounts the sidewalk only to get round an obstacle when impatient.
 
 **Acceptance criteria.** To be agreed: which offences occur and how often (per driver mood, in `traffic.cfg`), measured in the city scenarios (offences per minute, crashes they cause, people hit); law-abiding drivers keep zero contacts in junctions; the police notice offences in view ([CJ-018](#cj-018-police-driving-and-reactions)); playtested.
+
+### CJ-029 Civilian gait realism
+
+- **Priority:** High
+- **Status:** Specification agreed on 2026-10-08
+
+**Problem (playtest, 2026-10-08).** Walking civilians reach too far forward with their legs, which does not look natural. The user also wants the movement and the animation frames to match. The library walk lifts the thigh 50° forward (a casual walk about 30°), so the toes land 0.46 m ahead of the hips on average. One eight-frame walk loop at 1.3 m per cycle serves every look and every walking speed, so the feet of short and tall people slip, and a hurried walk at 2–3 m/s needs four to five steps a second. The game also turns the sprite by up to 0.05 rad with the steps, on top of the sway the rendered walk already has.
+
+**Agreed specification.**
+
+| Gait | Speed | Frames | Source |
+|---|---|---|---|
+| Walk | Up to 2.0 m/s | 16 | `Walk_Formal_Loop`, thigh forward swing remapped to about 30° |
+| Jog | 2.0–4.0 m/s | 8 | `Jog_Fwd_Loop`, upper body upright like the run |
+| Run | From 4.0 m/s | 8 | `Sprint_Loop`, as now |
+
+- Each look's stride per gait is measured from its own animation (the travel of the planted foot per cycle) and written on its `CIVILIAN` line in `civilians.cfg`; the frames advance with the distance walked.
+- `civilians.cfg` declares the atlas layout (which frames hold which animation), so the longer walk and the jog need no code constants; the procedural atlas keeps its layout.
+- The game's own step sway is switched off for the rendered atlases (a `civilians.cfg` value).
+
+**Acceptance criteria.** Per look: walk thigh forward swing at most 30°; a planted foot moves at most 2 cm while it is on the ground, simulated with the frames advanced by the distance as in the game; cycles closed, pelvis at the frame centre. Cadence within realistic bands at the speeds where each gait shows (walk 1.6–2.8 steps/s at 1.2–2.0 m/s, jog 2.4–3.4 at 2.0–4.0 m/s, run 2.8–3.8 at 4.0–5.7 m/s). The idle, punches, fist and lying frames and every other CJ-004 criterion unchanged. Before/after: the `civilians`, `day`, `rampage` and `brawl` scenarios (pedestrian metrics unchanged, FPS medians of alternating runs); then the user's playtest.
 
 ## Done
 
