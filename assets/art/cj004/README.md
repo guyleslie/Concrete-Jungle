@@ -1,6 +1,6 @@
 # CJ-004 art preparation
 
-The user accepted the motorbike designs on 2026-10-07, subject to correct size, and rejected the earlier civilian sheets and idle masters. The accepted bike source is preserved, and its six exports, which follow the shared vehicle convention below, replaced the procedural motorbikes in the game on 2026-10-07, and the user accepted them in a playtest on 2026-10-08. Since 2026-10-08 the civilians are rendered from 3D models instead of generated images; the generated civilian art below is superseded. CJ-004 remains open for the civilians.
+The user accepted the motorbike designs on 2026-10-07, subject to correct size, and rejected the earlier civilian sheets and idle masters. The accepted bike source is preserved, and its six exports, which follow the shared vehicle convention below, replaced the procedural motorbikes in the game on 2026-10-07, and the user accepted them in a playtest on 2026-10-08. Since 2026-10-08 the civilians are rendered from 3D models instead of generated images; the generated civilian art below is superseded. The user playtested and accepted the civilians on 2026-10-08, which completes CJ-004.
 
 ## Motorbike exports
 

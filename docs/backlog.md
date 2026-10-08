@@ -24,7 +24,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-004](#cj-004-replace-placeholder-art) and [CJ-011](#cj-011-relaxed-player-posture) Character art** — one art session: civilians and a relaxed player. The motorbikes are done.
+6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — the player's unarmed and armed walk without the combat stance; the civilian 3D pipeline of [CJ-004](#cj-004-replace-placeholder-art) may help.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
 
@@ -39,7 +39,6 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | In progress |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
-| [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Motorbikes done; civilians awaiting playtest |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
@@ -163,43 +162,6 @@ Remaining: the playtest.
 - Recorded sounds from sources that allow redistribution (for example CC0 libraries) instead of synthesis wherever synthesis sounds artificial; several variants per sound, picked at random.
 
 **Acceptance criteria.** A sound list with sources and licences agreed before implementation; at least three variants for each frequent sound; horn and siren types configurable in the data files; a test scenario that logs which sounds played at which volume and pan; playtested and accepted; [Audio](design/audio.md) and [CREDITS](../CREDITS.md) updated.
-
-### CJ-004 Replace placeholder art
-
-- **Priority:** High
-- **Status:** In progress: motorbikes playtested and accepted on 2026-10-08; civilians integrated on 2026-10-08, awaiting playtest
-
-**Art session (2026-10-07).** The user rejected all civilian sheets and earlier idle masters: idle must hide legs and shoes completely, with vertical hanging arms, compact integrated shoulders and ordinary clothing. V3 was rejected for enormous shoulder/upper-arm blobs; the [v4 idle candidate](../assets/art/cj004/civilian-idle-master-v4.png) awaits review, with no animations generated from it. The [revised workflow](../assets/art/cj004/civilian-prompts-v2.md) uses the player's moderate detail and separate walk, run and action groups after master acceptance. The sportbike, chopper and scooter designs with and without riders are accepted, subject to correct size. Keep the [source art and historical prompts](../assets/art/cj004/README.md). Six vehicle PNG exports follow a shared facing, centre and size convention, with position and scale baked into the pixels and no per-image runtime correction configuration. Remaining for the civilians: approve and animate them, register and validate loops and posture, preserve appearance variety, add data-driven loading, measure before and after, and playtest. CJ-011 player posture is not implemented by these images.
-
-**Motorbikes integrated (2026-10-07).** The size review found the lengths, the pair registration (at most 1 px, 0.5 cm, between the empty and ridden image) and the riders' scale (helmet about 0.30 m) correct, but the drawn mirror and handlebar spans 24–35 % wider than real bikes: 0.96 m, 1.24 m and 0.93 m. The user chose real collision widths: `WIDTH` records give the Sportbike 0.75 m, the Chopper 0.95 m and the Scooter 0.70 m (the placeholders had 0.77, 0.95 and 0.69 m), while the art keeps its proportions and the mirrors overhang the box. `BIKE` records load the six images from `assets/vehicles/`, one look per class. Automatic paint variants were rejected because they also recolour the lights and cannot recolour the black chopper; more colours come as more image pairs. Results: the `VEHICLE` start-up log shows the bike widths above and every car unchanged; the [`bikes` scenario](testing.md#scenarios) shows the art at game scale beside the player and a car; the `traffic-turns` fixture passes 96 of 96 cases with results identical to the CJ-020 run; `drive` runs at 141.9 FPS uncapped (144.2 FPS in the CJ-020 run).
-
-**Motorbike playtest (2026-10-08).** The user tested the motorbikes and accepted them. The motorbike part of the acceptance criteria is met; CJ-004 stays open for the civilians.
-
-**Civilians from 3D (2026-10-08).** Image generation could not keep 22 frames consistent and correctly projected (the camera rarely occurs in its training data, a reference image overrode the prompt, the target moved between iterations), so the civilians are now built with MakeHuman (MPFB, CC0 assets) in Blender, animated with the Quaternius Universal Animation Library (CC0) and rendered straight from above ([pipeline](../assets/art/cj004/README.md#civilian-3d-pipeline)). The user's decisions: an upright idle in which legs and shoes are at most 4 % of the silhouette, and a stylized look with a dark contour and firmer colours. The proof of concept, one civilian with the idle and an eight-frame walk, met the idle, width and loop criteria; its side-to-side pelvis sway of 3.1 px is the natural sway of a walk. The user accepted it and asked for the full set: run, punch, lying, the raised-fist gestures and appearance variants, then integration, a before/after measurement and the playtest.
-
-**Agreed civilian specification (2026-10-08).**
-
-| Frames (96 px, facing up) | Content | Source |
-|---|---|---|
-| 0–7 | Walk | `Walk_Formal_Loop` |
-| 8 | Idle | Upright pose built by the render script |
-| 9 | Lying (knocked down or dead), real size | Last frame of `Death01` |
-| 10–11 | Right and left punch | Peak of `Punch_Cross` / `Punch_Jab` |
-| 12–13 | Raised fist, two shake positions | Pose built by the render script |
-| 14–21 | Run (new) | `Jog_Fwd_Loop` or `Sprint_Loop`, whichever looks more natural |
-
-- **Variants:** 28, as today: men and women, three age groups, three builds, several skin tones, at least eight outfits and eight hairstyles from the CC0 packs with recoloured clothes; no two with the same outfit, colour and hair.
-- **Integration, data-driven:** atlases in `assets/characters/civilians/`, listed in a new `assets/data/civilians.cfg`; a missing file keeps the procedural civilian. Run frames show only at running speed; an atlas without them keeps the walk frames. No other behaviour changes.
-- **Criteria per variant:** idle legs and shoes at most 4 % of the silhouette; width within ±10 % of the player's (0.59–0.72 m); walk and run cycles closed; pelvis cycle average within 1 px of the frame centre.
-- **Criteria in the game:** a new `civilians` scenario lines up every variant beside the player (screenshots before and after); `day`, `rampage` and `brawl` change FPS by at most 5 % and leave the pedestrian metrics unchanged; then the user's playtest.
-
-**Civilians integrated (2026-10-08).** 28 looks: 14 men and 14 women of three age groups, 1.55–1.86 m tall, in ordinary clothes from the CC0 packs, several recoloured ([full set](../assets/art/cj004/README.md#full-set-2026-10-08)). Width per look against the player could not be met: women and slim men are narrower than the player, whose combat stance and vest make him broad. The user chose to draw standing civilians 12 % larger (`SCALE 1.12` in `civilians.cfg`) and to apply the width criterion to the average man: −7 % standing, +7 % walking. Every look meets the other per-look criteria (idle legs and shoes 0.3–3.9 %, closed cycles, pelvis at the frame centre). The atlases load from [civilians.cfg](guides/adding-content.md#civilians) (144 px frames covering 2.1 m, a 3.2 m run cycle above 3.6 m/s); the procedural looks remain the fallback. In the game: the `civilians` scenario shows all 28 beside the player; single runs of the same build vary by up to 15 %, so FPS is compared as the median of four alternating runs: `day` 326.2 â†’ 314.9 FPS (âˆ’3.5 %), `brawl` 256.6 â†’ 271.9 FPS (+6.0 %); one `rampage` run 161.7 â†’ 155.9 FPS (âˆ’3.6 %), within that spread; the `PEDS` lines of all three scenarios are identical before and after. Remaining: the user's playtest.
-
-**Problem.** Motorbikes and civilian pedestrians use procedural placeholder sprites that do not match the quality of the rest of the art. Playtest feedback (2026-09-27): the civilians look much cheaper than the player, their walk animation does not look real, and standing civilians look smaller than the player, because the player sprite holds its arms forward while the civilians are drawn thin from the top.
-
-**Notes.** No free, high-resolution top-down motorbike or civilian art has been found yet. itch.io listings show a bot check to automated browsers, so they must be searched manually. The player's Survivor sprites are a soldier in a combat stance, so recolouring them into civilians (GTA 2 style remaps) was considered and rejected. Any new art must meet the [art requirements](guides/adding-content.md#art-and-licence-requirements); consider rendering sprites from open-source 3D character models (for example CC0 models rendered top-down) if no 2D set exists.
-
-**Acceptance criteria.** Motorbikes (sport, chopper, scooter, with and without rider) and civilians replaced by art of consistent quality, with walk, run, idle, punch and lying frames, added through the data files, credited in [CREDITS.md](../CREDITS.md). Civilians and the player read as the same size.
 
 ### CJ-011 Relaxed player posture
 
@@ -410,6 +372,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 | CJ-009 | Licence for the code: MIT licence for the project's own code (`LICENSE`); third-party assets keep the licences in [CREDITS](../CREDITS.md) | 2026-10-06 |
 | CJ-016 | Human-like traffic and incidents: physical recovery without timeouts, cooperative yielding, wait-for cycles, persistent drivers and road-rage incidents ([details](#cj-016-road-rage-and-traffic-incidents)) | 2026-10-07 |
 | CJ-020 | Turning kinematics of traffic: the rear axle traces the path, a turn path per class from its turning circle, turning speed from lateral acceleration ([details](#cj-020-turning-kinematics-of-traffic)) | 2026-10-07 |
+| CJ-004 | Replace placeholder art: motorbikes from generated top-down art, 28 civilians rendered from 3D models ([details](#cj-004-replace-placeholder-art)) | 2026-10-08 |
 
 ### CJ-016 Road rage and traffic incidents
 
@@ -461,3 +424,42 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 **Result (2026-10-07).** The rear axle traces the path in turns too, and every traffic class turns on its own [turn path](design/traffic.md#turn-paths). Turning fixture: 32 → 96 of 96 cases; slip 13–70° → at most 1.9°; a Taxi's right turn 1.8 → 3.6 m (class minimum 3.3 m) at 2.7 m/s² instead of 37 m/s². City: turning slip 70–75 % of the time over 5°, up to 76° → 0.0 %, at most 1.9° in all six scenarios; rail overlaps 1.65 → 0.33 pair-s. The CJ-016 fixtures pass. The user agreed these refinements during the work: the stop-line zone does not count as encroachment; wheels stay off the kerbs while large vehicles' overhangs may sweep a corner; over-wide cars take wide turns; turns that do not fit at all (Bus, Semi, the large trucks' right turns) are avoided; the `rampage` CPU stays above target as [CJ-024](#cj-024-recovery-cost-in-dense-traffic). Out of the work came [CJ-022](#cj-022-three-point-turns) and [CJ-023](#cj-023-vehicle-widths-and-street-geometry). Evidence: [turning results](design/traffic-turning-results.md).
 
 **Playtest (2026-10-07).** The user found the turns good, with minor glitches that in their view only wider roads and junctions and a rethought sidewalk can fix; recorded in [CJ-023](#cj-023-vehicle-widths-and-street-geometry).
+
+### CJ-004 Replace placeholder art
+
+- **Priority:** High
+- **Status:** Done on 2026-10-08; motorbikes and civilians playtested and accepted on 2026-10-08
+
+**Art session (2026-10-07).** The user rejected all civilian sheets and earlier idle masters: idle must hide legs and shoes completely, with vertical hanging arms, compact integrated shoulders and ordinary clothing. V3 was rejected for enormous shoulder/upper-arm blobs; the [v4 idle candidate](../assets/art/cj004/civilian-idle-master-v4.png) awaits review, with no animations generated from it. The [revised workflow](../assets/art/cj004/civilian-prompts-v2.md) uses the player's moderate detail and separate walk, run and action groups after master acceptance. The sportbike, chopper and scooter designs with and without riders are accepted, subject to correct size. Keep the [source art and historical prompts](../assets/art/cj004/README.md). Six vehicle PNG exports follow a shared facing, centre and size convention, with position and scale baked into the pixels and no per-image runtime correction configuration. Remaining for the civilians: approve and animate them, register and validate loops and posture, preserve appearance variety, add data-driven loading, measure before and after, and playtest. CJ-011 player posture is not implemented by these images.
+
+**Motorbikes integrated (2026-10-07).** The size review found the lengths, the pair registration (at most 1 px, 0.5 cm, between the empty and ridden image) and the riders' scale (helmet about 0.30 m) correct, but the drawn mirror and handlebar spans 24–35 % wider than real bikes: 0.96 m, 1.24 m and 0.93 m. The user chose real collision widths: `WIDTH` records give the Sportbike 0.75 m, the Chopper 0.95 m and the Scooter 0.70 m (the placeholders had 0.77, 0.95 and 0.69 m), while the art keeps its proportions and the mirrors overhang the box. `BIKE` records load the six images from `assets/vehicles/`, one look per class. Automatic paint variants were rejected because they also recolour the lights and cannot recolour the black chopper; more colours come as more image pairs. Results: the `VEHICLE` start-up log shows the bike widths above and every car unchanged; the [`bikes` scenario](testing.md#scenarios) shows the art at game scale beside the player and a car; the `traffic-turns` fixture passes 96 of 96 cases with results identical to the CJ-020 run; `drive` runs at 141.9 FPS uncapped (144.2 FPS in the CJ-020 run).
+
+**Motorbike playtest (2026-10-08).** The user tested the motorbikes and accepted them. The motorbike part of the acceptance criteria is met; CJ-004 stays open for the civilians.
+
+**Civilians from 3D (2026-10-08).** Image generation could not keep 22 frames consistent and correctly projected (the camera rarely occurs in its training data, a reference image overrode the prompt, the target moved between iterations), so the civilians are now built with MakeHuman (MPFB, CC0 assets) in Blender, animated with the Quaternius Universal Animation Library (CC0) and rendered straight from above ([pipeline](../assets/art/cj004/README.md#civilian-3d-pipeline)). The user's decisions: an upright idle in which legs and shoes are at most 4 % of the silhouette, and a stylized look with a dark contour and firmer colours. The proof of concept, one civilian with the idle and an eight-frame walk, met the idle, width and loop criteria; its side-to-side pelvis sway of 3.1 px is the natural sway of a walk. The user accepted it and asked for the full set: run, punch, lying, the raised-fist gestures and appearance variants, then integration, a before/after measurement and the playtest.
+
+**Agreed civilian specification (2026-10-08).**
+
+| Frames (96 px, facing up) | Content | Source |
+|---|---|---|
+| 0–7 | Walk | `Walk_Formal_Loop` |
+| 8 | Idle | Upright pose built by the render script |
+| 9 | Lying (knocked down or dead), real size | Last frame of `Death01` |
+| 10–11 | Right and left punch | Peak of `Punch_Cross` / `Punch_Jab` |
+| 12–13 | Raised fist, two shake positions | Pose built by the render script |
+| 14–21 | Run (new) | `Jog_Fwd_Loop` or `Sprint_Loop`, whichever looks more natural |
+
+- **Variants:** 28, as today: men and women, three age groups, three builds, several skin tones, at least eight outfits and eight hairstyles from the CC0 packs with recoloured clothes; no two with the same outfit, colour and hair.
+- **Integration, data-driven:** atlases in `assets/characters/civilians/`, listed in a new `assets/data/civilians.cfg`; a missing file keeps the procedural civilian. Run frames show only at running speed; an atlas without them keeps the walk frames. No other behaviour changes.
+- **Criteria per variant:** idle legs and shoes at most 4 % of the silhouette; width within ±10 % of the player's (0.59–0.72 m); walk and run cycles closed; pelvis cycle average within 1 px of the frame centre.
+- **Criteria in the game:** a new `civilians` scenario lines up every variant beside the player (screenshots before and after); `day`, `rampage` and `brawl` change FPS by at most 5 % and leave the pedestrian metrics unchanged; then the user's playtest.
+
+**Civilians integrated (2026-10-08).** 28 looks: 14 men and 14 women of three age groups, 1.55–1.86 m tall, in ordinary clothes from the CC0 packs, several recoloured ([full set](../assets/art/cj004/README.md#full-set-2026-10-08)). Width per look against the player could not be met: women and slim men are narrower than the player, whose combat stance and vest make him broad. The user chose to draw standing civilians 12 % larger (`SCALE 1.12` in `civilians.cfg`) and to apply the width criterion to the average man: −7 % standing, +7 % walking. Every look meets the other per-look criteria (idle legs and shoes 0.3–3.9 %, closed cycles, pelvis at the frame centre). The atlases load from [civilians.cfg](guides/adding-content.md#civilians) (144 px frames covering 2.1 m, a 3.2 m run cycle above 3.6 m/s); the procedural looks remain the fallback. In the game: the `civilians` scenario shows all 28 beside the player; single runs of the same build vary by up to 15 %, so FPS is compared as the median of four alternating runs: `day` 326.2 â†’ 314.9 FPS (âˆ’3.5 %), `brawl` 256.6 â†’ 271.9 FPS (+6.0 %); one `rampage` run 161.7 â†’ 155.9 FPS (âˆ’3.6 %), within that spread; the `PEDS` lines of all three scenarios are identical before and after.
+
+**Civilian playtest (2026-10-08).** The user tested the civilians and accepted them; CJ-004 is done. The relaxed player posture remains [CJ-011](#cj-011-relaxed-player-posture).
+
+**Problem.** Motorbikes and civilian pedestrians use procedural placeholder sprites that do not match the quality of the rest of the art. Playtest feedback (2026-09-27): the civilians look much cheaper than the player, their walk animation does not look real, and standing civilians look smaller than the player, because the player sprite holds its arms forward while the civilians are drawn thin from the top.
+
+**Notes.** No free, high-resolution top-down motorbike or civilian art has been found yet. itch.io listings show a bot check to automated browsers, so they must be searched manually. The player's Survivor sprites are a soldier in a combat stance, so recolouring them into civilians (GTA 2 style remaps) was considered and rejected. Any new art must meet the [art requirements](guides/adding-content.md#art-and-licence-requirements); consider rendering sprites from open-source 3D character models (for example CC0 models rendered top-down) if no 2D set exists.
+
+**Acceptance criteria.** Motorbikes (sport, chopper, scooter, with and without rider) and civilians replaced by art of consistent quality, with walk, run, idle, punch and lying frames, added through the data files, credited in [CREDITS.md](../CREDITS.md). Civilians and the player read as the same size.

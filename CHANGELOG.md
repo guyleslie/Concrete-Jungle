@@ -15,7 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Civilians are rendered from 3D models (CJ-004): 28 looks, men and women of three age groups and real heights (1.55–1.86 m) in ordinary clothes, with a relaxed walk, a run for fleeing and dodging, two punches, the raised fist and a body on the ground at real size, replacing the procedural looks (which remain the fallback). Standing civilians are drawn 12 % larger than life on top of the usual character scale, so that an average man reads as large as the player. Awaits playtest.
+- Civilians are rendered from 3D models (CJ-004): 28 looks, men and women of three age groups and real heights (1.55–1.86 m) in ordinary clothes, with a relaxed walk, a run for fleeing and dodging, two punches, the raised fist and a body on the ground at real size, replacing the procedural looks (which remain the fallback). Standing civilians are drawn 12 % larger than life on top of the usual character scale, so that an average man reads as large as the player.
+- CJ-004 (replace placeholder art) is done: the user playtested and accepted the civilians on 2026-10-08, after the motorbikes earlier the same day.
 - Motorbikes use the new CJ-004 art instead of the procedural placeholders: a sportbike, a chopper and a scooter, each with and without a rider. The art keeps its proportions at the class length, so its mirrors and handlebars (0.93–1.24 m) reach beyond the collision box, which keeps the handlebar width of real bikes: Sportbike 0.75 m, Chopper 0.95 m, Scooter 0.70 m (0.77, 0.95 and 0.69 m before). One look per class for now, instead of 11 colour and outfit combinations.
 - CJ-004 motorbikes are done: the user playtested and accepted them on 2026-10-08. CJ-004 stays open for the civilians.
 
