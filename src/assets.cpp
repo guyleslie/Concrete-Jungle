@@ -369,8 +369,17 @@ WEAPON Flashlight flashlight  10  2.0  0  1  1.4  0   0    0    melee punch ligh
 static const char* DEFAULT_CIVILIANS = R"(
 FRAME 144 2.1
 SCALE 1.12
-WALK 1.3
-RUN 3.2
+SWAY 0
+ANIM walk 0 16
+ANIM idle 16 1
+ANIM lying 17 1
+ANIM punch 18 2
+ANIM fist 20 2
+ANIM jog 22 8
+ANIM run 30 8
+GAIT jog 2.0 2.5 4.0 2.8
+GAIT run 4.0 2.8 6.5 3.3
+WALK 1.05
 CIVILIAN civilian-01.png
 CIVILIAN civilian-02.png
 CIVILIAN civilian-03.png
@@ -633,42 +642,116 @@ static void LoadVehicles(Assets& A) {
 // -------------------------------------------------------------------------------------
 //  Civilians (civilians.cfg): one atlas strip per look, all in the same frame format
 // -------------------------------------------------------------------------------------
+// Cut every frame of a uniform atlas strip to its visible part and pack the parts side by side
+// (4 px apart, so that mipmaps do not bleed); returns the texture's size in bytes.
+static size_t PackCivilian(CivilianAtlas& a, Image strip, int framePx) {
+    const int PAD = 4, frames = strip.width / framePx;
+    std::vector<Rectangle> part(frames);
+    int width = PAD, height = 1;
+    for (int i = 0; i < frames; i++) {
+        Image f = ImageFromImage(strip, { (float)(i * framePx), 0, (float)framePx, (float)framePx });
+        Rectangle b = GetImageAlphaBorder(f, 0.01f);
+        UnloadImage(f);
+        if (b.width <= 0 || b.height <= 0) b = { framePx * 0.5f, framePx * 0.5f, 1, 1 };
+        part[i] = b;
+        width += (int)b.width + PAD;
+        height = std::max(height, (int)b.height);
+    }
+    Image packed = GenImageColor(width, height + 2 * PAD, BLANK);
+    a.src.resize(frames);
+    a.offset.resize(frames);
+    float x = PAD;
+    for (int i = 0; i < frames; i++) {
+        const Rectangle& b = part[i];
+        Rectangle from = { i * (float)framePx + b.x, b.y, b.width, b.height };
+        a.src[i] = { x, (float)PAD, b.width, b.height };
+        a.offset[i] = { b.x + b.width * 0.5f - framePx * 0.5f, b.y + b.height * 0.5f - framePx * 0.5f };
+        ImageDraw(&packed, strip, from, a.src[i], WHITE);
+        x += b.width + PAD;
+    }
+    UnloadImage(strip);
+    size_t bytes = (size_t)packed.width * packed.height * 4;
+    a.tex = MakeTexture(packed, false, true);
+    return bytes;
+}
+
+static spritegen::PedAnim PedAnimByName(const std::string& s) {
+    using spritegen::PedAnim;
+    static const char* names[] = { "walk", "idle", "lying", "punch", "fist", "jog", "run" };
+    for (int i = 0; i < (int)PedAnim::COUNT; i++) if (s == names[i]) return (PedAnim)i;
+    return PedAnim::COUNT;
+}
+
 static void LoadCivilians(Assets& A) {
-    int framePx = 0;
-    float frameM = 0, walkM = 1.3f, runM = 0, scale = 1.0f;
+    using spritegen::PedAnim;
+    int framePx = 0, frames = 0;
+    float frameM = 0, walkM = 1.3f, scale = 1.0f, sway = 0.05f;
+    PedFrames layout[(int)PedAnim::COUNT];
+    PedGait jog, run;
+    size_t bytes = 0, uniform = 0;
     char path[256];
     for (const DataRecord& r : ReadDataFile("assets/data/civilians.cfg", DEFAULT_CIVILIANS)) {
         if (r.Is("FRAME") && r.size() >= 3) { framePx = r.I(1); frameM = r.F(2); }
         else if (r.Is("SCALE") && r.size() >= 2) scale = r.F(1);
+        else if (r.Is("SWAY") && r.size() >= 2) sway = r.F(1);
         else if (r.Is("WALK") && r.size() >= 2) walkM = r.F(1);
-        else if (r.Is("RUN") && r.size() >= 2) runM = r.F(1);
-        else if (r.Is("CIVILIAN") && r.size() >= 2) {
+        else if (r.Is("ANIM") && r.size() >= 4) {
+            PedAnim a = PedAnimByName(r[1]);
+            if (a == PedAnim::COUNT) { TraceLog(LOG_WARNING, "civilians.cfg:%d unknown animation '%s'", r.line, r[1].c_str()); continue; }
+            layout[(int)a] = { r.I(2), r.I(3) };
+        } else if (r.Is("GAIT") && r.size() >= 6) {
+            PedGait g = { r.F(2), r.F(3), r.F(4), r.F(5) };
+            if (r[1] == "jog") jog = g; else if (r[1] == "run") run = g;
+            else TraceLog(LOG_WARNING, "civilians.cfg:%d unknown gait '%s'", r.line, r[1].c_str());
+        } else if (r.Is("CIVILIAN") && r.size() >= 2) {
             if (framePx <= 0 || frameM <= 0) { TraceLog(LOG_WARNING, "civilians.cfg:%d CIVILIAN before FRAME", r.line); continue; }
             snprintf(path, sizeof(path), "assets/characters/civilians/%s", r[1].c_str());
             Image img;
             if (!TryLoadImage(path, img)) continue;
-            int frames = img.width / framePx;
-            if (img.height != framePx || frames < spritegen::PED_ATLAS_FRAMES || (!A.peds.empty() && frames != A.pedFrames)) {
-                TraceLog(LOG_WARNING, "civilians.cfg:%d '%s' is %dx%d px: expected %d px frames, %d or more of them, like the others",
-                         r.line, r[1].c_str(), img.width, img.height, framePx, spritegen::PED_ATLAS_FRAMES);
+            int n = img.width / framePx, needed = 0;
+            for (const PedFrames& f : layout) needed = std::max(needed, f.first + f.count);
+            bool complete = layout[(int)PedAnim::Walk].count > 0 && layout[(int)PedAnim::Idle].count > 0 &&
+                            layout[(int)PedAnim::Lying].count > 0 && layout[(int)PedAnim::Punch].count >= 2 &&
+                            layout[(int)PedAnim::Fist].count >= 2;
+            if (img.height != framePx || !complete || n < needed || (frames && n != frames)) {
+                TraceLog(LOG_WARNING, "civilians.cfg:%d '%s' is %dx%d px: expected %d px frames, at least %d of them, like the others",
+                         r.line, r[1].c_str(), img.width, img.height, framePx, needed);
                 UnloadImage(img);
                 continue;
             }
-            A.pedFrames = frames;
-            A.peds.push_back(MakeTexture(img, false, true));
+            frames = n;
+            uniform += (size_t)img.width * img.height * 4;
+            CivilianAtlas a;
+            a.walkCycleM = r.F(2, walkM);
+            bytes += PackCivilian(a, img, framePx);
+            A.peds.push_back(a);
         }
     }
     if (!A.peds.empty()) {
         A.pedFramePx = framePx;
         A.pedFrameM = frameM;
-        A.pedWalkCycleM = walkM;
         A.pedDrawScale = scale;
-        A.pedRunCycleM = A.pedFrames >= spritegen::PED_FRAME_RUN + spritegen::PED_WALK_FRAMES ? runM : 0;
-    } else {                    // procedural fallback: 28 looks in the 96 px / 1.4 m format
-        for (int i = 0; i < 28; i++) A.peds.push_back(MakeTexture(PedAtlas(RandomPedLook(1000 + i * 7)), false, true));
+        A.pedSway = sway;
+        for (int i = 0; i < (int)PedAnim::COUNT; i++) A.pedAnim[i] = layout[i];
+        A.pedJog = jog;
+        A.pedRun = run;
+    } else {                    // procedural fallback: 28 looks in the 96 px / 1.4 m format, no jog or run
+        using namespace spritegen;
+        A.pedAnim[(int)PedAnim::Walk] = { 0, PED_WALK_FRAMES };
+        A.pedAnim[(int)PedAnim::Idle] = { PED_FRAME_IDLE, 1 };
+        A.pedAnim[(int)PedAnim::Lying] = { PED_FRAME_DOWN, 1 };
+        A.pedAnim[(int)PedAnim::Punch] = { PED_FRAME_PUNCH, 2 };
+        A.pedAnim[(int)PedAnim::Fist] = { PED_FRAME_FIST, 2 };
+        for (int i = 0; i < 28; i++) {
+            Image img = PedAtlas(RandomPedLook(1000 + i * 7));
+            uniform += (size_t)img.width * img.height * 4;
+            CivilianAtlas a;
+            bytes += PackCivilian(a, img, PED_FRAME);
+            A.peds.push_back(a);
+        }
     }
-    TraceLog(LOG_INFO, "CIVILIANS: %d looks, %d frames of %d px for %.2f m, drawn x%.2f, walk cycle %.2f m, run cycle %.2f m",
-             (int)A.peds.size(), A.pedFrames, A.pedFramePx, A.pedFrameM, A.pedDrawScale, A.pedWalkCycleM, A.pedRunCycleM);
+    TraceLog(LOG_INFO, "CIVILIANS: %d looks, %d px frames for %.2f m, drawn x%.2f, %.1f MB packed from %.1f MB (before mipmaps)",
+             (int)A.peds.size(), A.pedFramePx, A.pedFrameM, A.pedDrawScale, bytes / 1048576.0, uniform / 1048576.0);
 }
 
 // -------------------------------------------------------------------------------------
@@ -840,7 +923,7 @@ void Assets::Unload() {
                         trainCar, playerUnarmed, lightRadial, lightCone, softCircle, spark, ring, blood, flare };
     for (auto& t : all) if (t.id) UnloadTexture(t);
     for (auto& v : vehicles) UnloadTexture(v.tex);
-    for (auto& p : peds) UnloadTexture(p);
+    for (auto& p : peds) UnloadTexture(p.tex);
     for (auto& t : trees) UnloadTexture(t);
     for (auto& t : bushes) UnloadTexture(t);
     for (auto& t : props) if (t.id) UnloadTexture(t);

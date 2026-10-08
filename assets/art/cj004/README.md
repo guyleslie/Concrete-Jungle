@@ -72,6 +72,7 @@ Civilians are built from 3D human models, animated, and rendered straight from a
 | [build_civilian.py](../../../tools/cj004/build_civilian.py) | Builds a civilian from a look file ([example](../../../tools/cj004/look-civilian-01.json)): MakeHuman macro details, skin, clothes, hair and the `game_engine` rig |
 | [retarget_ual.py](../../../tools/cj004/retarget_ual.py) | Copies library actions onto the civilian. The library rests in a T-pose and MPFB in an A-pose: the civilian is first posed along the library's rest bones, then every frame takes the library bone's world rotation times the constant roll offset, so hip and shoulder twist carries over |
 | [render_civilian.py](../../../tools/cj004/render_civilian.py) | Renders frames straight from above: orthographic, 1.4 m × 1.4 m per frame (the atlas frame before `CHAR_SCALE`), 384 px, facing the top of the image, sun from the upper left. Also writes a mask of the legs and shoes. The `idle` pose is built in the script: upright, arms hanging, feet under the hips |
+| [measure_gait.py](../../../tools/cj004/measure_gait.py) | Stride (the planted foot's travel per cycle), foot slip with the frames advanced as the game plays them, thigh swing, toe reach and the spread from the front toe to the back foot |
 | [measure_frames.py](../../../tools/cj004/measure_frames.py) | Visible legs and shoes, width and length of the silhouette, body centre drift and the silhouette change between frames, including the wrap-around of a cycle |
 | [stylize.py](../../../tools/cj004/stylize.py) | Reduces a render to the 96 px atlas frame with more contrast and saturation and a dark contour, like the player and the procedural civilians |
 | [make_civilians.py](../../../tools/cj004/make_civilians.py) | Runs the steps for every look in [looks.json](../../../tools/cj004/looks.json), writes the atlases and checks them (see [Full set](#full-set-2026-10-08)) |
@@ -118,7 +119,19 @@ What the full set changed in the pipeline:
 
 Results: every look meets the per-look criteria: idle legs and shoes at most 4 % of the silhouette (0.3–3.9 %), walk and run cycles closed, pelvis cycle mean at the frame centre. Width is a property of the set (agreed with the user): drawn with `SCALE 1.12`, the average man is 0.60 m wide standing (−7 % of the player) and 0.70 m walking (+7 %); women keep their real proportions (0.51 and 0.60 m).
 
-![The player, the procedural civilian and the 28 looks standing, walking and running, at game scale](civilian-3d-set.png)
+![The player, the procedural civilian and the 28 looks standing, walking, jogging and running, at game scale](civilian-3d-set.png)
+
+### Gaits (CJ-029, 2026-10-08)
+
+The library's walks lift the thigh 50° forward, and seen from above a walker's feet spread 0.87 m from the front toe to the back foot (1.4 m in the run), which the user found unnatural. The user chose a compact stride from three variants shown in motion; the retarget scales every leg joint's motion towards standing straight (`*k`) and turns the walking hips a little back (`~a,c`):
+
+| Gait | Retarget | Frames | Plays |
+|---|---|---|---|
+| Walk | `Walk_Formal_Loop~1,-6*0.65`, every second frame | 16 | By distance, at the look's measured stride |
+| Jog | `Jog_Fwd_Loop@12*0.55`, frames 0–19.25 in steps of 2.75 | 8 | By cadence, 2.5–2.8 steps/s from 2.0 m/s |
+| Run | `Sprint_Loop@25*0.5`, every second frame | 8 | By cadence, 2.8–3.3 steps/s from 4.0 m/s |
+
+The atlas is 38 frames: walk 0–15, idle 16, lying 17, punches 18–19, fist 20–21, jog 22–29, run 30–37, declared by the `ANIM` records of [civilians.cfg](../../data/civilians.cfg). [measure_gait.py](../../../tools/cj004/measure_gait.py) measures each look's stride from the planted foot, taking per foot the longest stretch on the ground (a foot still landing near its lowest point moves the other way), and `make_civilians.py` writes it on the look's `CIVILIAN` line; `--gait` re-measures without rendering. Results: stride 0.92–1.10 m for men and 0.82–0.91 m for women, planted-foot slip at most 1.7 cm, toe at most 0.29 m ahead of the hips, spread at most 0.67 m. The shorter stride means a quicker step: about 2.9 steps/s for a man and 3.4 for a woman at 1.5 m/s.
 
 ## Provenance
 

@@ -112,7 +112,7 @@ Contact rules keep the model honest:
 - Buildings and solid furniture are hard walls; bus shelters can be walked into.
 - A person who wants to move but makes no progress for 1.2 s turns round or takes another route.
 
-The walk cycle advances with the distance walked (8 frames per 1.3 m, two steps). Above 3.6 m/s, when fleeing or dodging, the run frames take over at 8 frames per 3.2 m; an atlas without run frames shows the walk at 0.7 of its rate instead. The cycle lengths come from [civilians.cfg](../guides/adding-content.md#civilians). The body sways by up to 0.05 rad with the steps.
+People are drawn in one of three gaits by their speed: a walk, a jog from 2.0 m/s (hurrying across a street) and a run from 4.0 m/s (fleeing and dodging); a faster gait holds until 0.3 m/s below its start, so that it does not flicker. The walk advances with the distance walked at the look's own stride, so that a planted foot stays put. The jog and run play at a cadence that rises with speed (2.5–2.8 and 2.8–3.3 steps/s), because their feet touch the ground for a frame at most. The gaits, their speeds and the strides come from [civilians.cfg](../guides/adding-content.md#civilians). The procedural fallback has only a walk; a fast person shows it at 0.7 of its rate, for longer strides.
 
 ## Injury and death
 
@@ -148,4 +148,5 @@ The 28 looks are atlases rendered from 3D models: men and women of three age gro
 | `PED_BODY_FADE`, `PED_BODY_GONE` | 24 s, 27 s | `pedestrian.h` |
 | `PEDESTRIANS`, `PED_KEEP_RADIUS`, `PED_SPAWN_MIN`, `PED_SPAWN_MAX` | 300, 110 m, 30 m, 100 m | `config.h` |
 | Standing / lying sprite size | 2.1 m frame × `CHAR_SCALE` × `SCALE` (1.12); lying bodies at real size | `civilians.cfg`, `pedestrian.cpp` |
-| `PED_RUN_FRAMES_SPEED` | 3.6 m/s: run frames from here | `pedestrian.cpp` |
+| Gaits | Jog from 2.0 m/s, run from 4.0 m/s, cadences and strides | `civilians.cfg` |
+| `GAIT_HYSTERESIS` | 0.3 m/s | `pedestrian.cpp` |

@@ -5,7 +5,12 @@
 <frames> (comma-separated) limits the copy to the frames that will be rendered; without it
 every frame of the action is copied. A suffix @<degrees> leans the upper body (spine_01 and
 everything above it, arms included) back by that angle about the hips: the library's sprint
-leans about 40 degrees, a real runner at 5 m/s about 15-20.
+leans about 40 degrees, a real runner at 5 m/s about 15-20. A suffix ~<a>,<c> remaps the
+forward swing of each thigh (degrees from straight down, forward positive) to a * angle + c by
+turning the whole leg about the hip; the library's walks lift the thigh 50 degrees forward,
+a casual walk about 30. A suffix *<k> (written last) scales every leg joint's motion to k of
+the way from standing straight: shorter steps at both ends of the stride, hip, knee and ankle
+alike.
 
 Both rigs use Unreal-style bone names and face -Y, but the library's rest pose is a T-pose
 and MPFB's an A-pose with bent elbows. The civilian's limbs are first posed so that every limb
@@ -90,6 +95,9 @@ for name in order:
     cur_dir = (m.to_3x3() @ Vector((0, 1, 0))).normalized()
     set_world_rotation(name, cur_dir.rotation_difference(src_dir) @ m.to_quaternion())
 offset = {n: world(source, names[n]).to_quaternion().inverted() @ world(target, n).to_quaternion() for n in order}
+# Leg joints in the matched rest stand straight; *<k> scales their motion towards it.
+LEGS = [n for n in order if n.startswith(("thigh_", "calf_", "foot_", "ball_"))]
+straight = {n: target.pose.bones[n].rotation_quaternion.copy() for n in LEGS}
 pelvis_rest_src = world(source, names["pelvis"]).to_translation()
 pelvis_rest_tgt = world(target, "pelvis").to_translation()
 hip_ratio = pelvis_rest_tgt.z / pelvis_rest_src.z
@@ -99,7 +107,11 @@ created = []
 upper = {"spine_01"} | {b.name for b in target.data.bones["spine_01"].children_recursive}
 
 for request in wanted:
+    request, _, amplitude = request.partition("*")
     request, _, upright = request.partition("@")
+    request, _, swing = request.partition("~")
+    leg_k = float(amplitude) if amplitude else None
+    swing_a, swing_c = (float(x) for x in swing.split(",")) if swing else (None, None)
     action_name, _, frame_list = request.partition("=")
     back = Quaternion((1, 0, 0), -math.radians(float(upright))) if upright else None
     src_action = library_actions[action_name]
@@ -123,6 +135,22 @@ for request in wanted:
             if back is not None and name in upper:
                 rot = back @ rot          # positions follow through the hierarchy from spine_01
             set_world_rotation(name, rot, head)
+        if leg_k is not None:
+            # every leg joint moves leg_k of the way from standing straight to the library's pose
+            for name in LEGS:
+                pb = target.pose.bones[name]
+                pb.rotation_quaternion = straight[name].slerp(pb.rotation_quaternion, leg_k)
+                update()
+        if swing_a is not None:
+            for side in ("l", "r"):
+                hip = world(target, "thigh_" + side).to_translation()
+                knee = world(target, "calf_" + side).to_translation()
+                d = knee - hip
+                angle = math.degrees(math.atan2(-d.y, -d.z))
+                delta = swing_a * angle + swing_c - angle
+                # a positive turn about +X swings a hanging leg backwards (+Y); the lower leg follows
+                turn = Quaternion((1, 0, 0), -math.radians(delta))
+                set_world_rotation("thigh_" + side, turn @ world(target, "thigh_" + side).to_quaternion())
         for name in order:
             pb = target.pose.bones[name]
             pb.keyframe_insert("rotation_quaternion", frame=f)

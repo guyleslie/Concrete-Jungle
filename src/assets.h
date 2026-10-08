@@ -6,7 +6,7 @@
 //    characters.cfg  ANIM / FEET / SCALE lines for animated character sprite sets
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
-//    civilians.cfg   FRAME / SCALE / WALK / RUN / CIVILIAN: pedestrian atlases
+//    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / WALK / CIVILIAN: pedestrian atlases
 //  Adding content = drop the image files in assets/ and add a line. Built-in defaults
 //  are used when a file is missing, and every image has a procedural fallback.
 //
@@ -19,6 +19,19 @@
 #include "sprite_gen.h"
 #include <vector>
 #include <string>
+
+// One civilian look. Its frames are cut to their visible part at load and packed side by side,
+// so the GPU stores and draws little of the transparent frame margins.
+struct CivilianAtlas {
+    Texture2D              tex{};
+    std::vector<Rectangle> src;          // per atlas frame: its visible part in tex
+    std::vector<Vector2>   offset;       // that part's centre minus the frame centre (frame px)
+    float                  walkCycleM = 1.3f;   // metres per walk cycle: the look's stride
+};
+struct PedFrames { int first = 0, count = 0; };
+// A gait whose cadence rises with speed: steps per second from 'fromSteps' at 'fromSpeed' to
+// 'toSteps' at 'toSpeed' (m/s); it shows from 'fromSpeed' up.
+struct PedGait { float fromSpeed = 0, fromSteps = 0, toSpeed = 0, toSteps = 0; };
 
 struct VehicleSprite {
     Texture2D tex{};
@@ -69,13 +82,14 @@ struct Assets {
     std::vector<std::vector<int>> byClass;       // skins per vehicle class
 
     // --- characters ---
-    std::vector<Texture2D>    peds;              // civilian atlases (civilians.cfg, else spritegen::PedAtlas)
+    std::vector<CivilianAtlas> peds;             // civilian looks (civilians.cfg, else spritegen::PedAtlas)
     int                       pedFramePx = spritegen::PED_FRAME;        // square atlas frame (px)
     float                     pedFrameM = 1.4f;                         // metres a frame covers at life size
-    int                       pedFrames = spritegen::PED_ATLAS_FRAMES;  // frames per atlas
-    float                     pedWalkCycleM = 1.3f;                     // metres per 8-frame walk cycle
-    float                     pedRunCycleM = 0;                         // per run cycle; 0 = no run frames
     float                     pedDrawScale = 1.0f;                      // standing civilians, on top of CHAR_SCALE
+    float                     pedSway = 0.05f;                          // body turn with the steps (rad)
+    PedFrames                 pedAnim[(int)spritegen::PedAnim::COUNT];  // atlas layout
+    PedGait                   pedJog, pedRun;                           // used when the atlas has those frames
+    const PedFrames& PedAnimFrames(spritegen::PedAnim a) const { return pedAnim[(int)a]; }
     Texture2D                 playerUnarmed{};   // Survivor-look atlas without weapon
     std::vector<CharacterSet> charSets;
     SpriteAnim                feet[(int)FeetAnim::COUNT];

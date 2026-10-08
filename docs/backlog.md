@@ -24,7 +24,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-029](#cj-029-civilian-gait-realism) Civilian gait realism** — specification agreed on 2026-10-08: a natural walk, a jog and the run, each locked to the distance walked.
+6. **[CJ-029](#cj-029-civilian-gait-realism) Civilian gait realism** — implemented on 2026-10-08 (compact walk, jog and run); awaits the user's playtest.
 7. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — the player's unarmed and armed walk without the combat stance; the civilian 3D pipeline of [CJ-004](#cj-004-replace-placeholder-art) may help.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
@@ -52,7 +52,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-026](#cj-026-bus-stops-and-bus-bays) | Bus stops and bus bays | Medium | Open |
 | [CJ-027](#cj-027-multi-lane-roads) | Multi-lane roads | Medium | Open |
 | [CJ-028](#cj-028-rule-breaking-drivers) | Rule-breaking drivers | Medium | Open |
-| [CJ-029](#cj-029-civilian-gait-realism) | Civilian gait realism | High | Specification agreed |
+| [CJ-029](#cj-029-civilian-gait-realism) | Civilian gait realism | High | Implemented, awaiting playtest |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
@@ -368,7 +368,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 ### CJ-029 Civilian gait realism
 
 - **Priority:** High
-- **Status:** Specification agreed on 2026-10-08
+- **Status:** Implemented on 2026-10-08, awaiting playtest
 
 **Problem (playtest, 2026-10-08).** Walking civilians reach too far forward with their legs, which does not look natural. The user also wants the movement and the animation frames to match. The library walk lifts the thigh 50° forward (a casual walk about 30°), so the toes land 0.46 m ahead of the hips on average. One eight-frame walk loop at 1.3 m per cycle serves every look and every walking speed, so the feet of short and tall people slip, and a hurried walk at 2–3 m/s needs four to five steps a second. The game also turns the sprite by up to 0.05 rad with the steps, on top of the sway the rendered walk already has.
 
@@ -385,6 +385,10 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 - The game's own step sway is switched off for the rendered atlases (a `civilians.cfg` value).
 
 **Acceptance criteria.** Per look: walk thigh forward swing at most 30°; a planted foot moves at most 2 cm while it is on the ground, simulated with the frames advanced by the distance as in the game; cycles closed, pelvis at the frame centre. Cadence within realistic bands at the speeds where each gait shows (walk 1.6–2.8 steps/s at 1.2–2.0 m/s, jog 2.4–3.4 at 2.0–4.0 m/s, run 2.8–3.8 at 4.0–5.7 m/s). The idle, punches, fist and lying frames and every other CJ-004 criterion unchanged. Before/after: the `civilians`, `day`, `rampage` and `brawl` scenarios (pedestrian metrics unchanged, FPS medians of alternating runs); then the user's playtest.
+
+**Refinements during the work (agreed with the user, 2026-10-08).** Turning only the thighs shortened the forward reach but left the trailing leg 0.5 m behind: from above, a walking person's feet spread like the splits (0.87 m from the front toe to the back foot in the library walk, 1.4 m in the run). The user chose, from three variants shown in motion, a compact stride: every leg joint moves 0.65 (walk), 0.55 (jog) and 0.5 (run) of the library's range from standing straight, the walking hips a little further back. A shorter stride needs a quicker step to keep the feet planted, so the walk's cadence follows from each look's stride (about 2.9 steps/s for a man at 1.5 m/s, as the user accepted) instead of the agreed bands; the thigh limit became the measure of the actual complaint: toe at most 0.30 m ahead of the hips and at most 0.70 m from front toe to back foot. The jog and run play by cadence as agreed.
+
+**Result (2026-10-08).** All 28 looks pass: walk stride 0.92–1.10 m for men and 0.82–0.91 m for women, measured per look and written to `civilians.cfg`; a planted foot moves at most 1.7 cm; toe at most 0.29 m ahead, spread at most 0.67 m (was 0.87 m); jog and run feet touch the ground for one frame at most, so nothing slips. Atlases hold 38 frames (walk 16, jog 8, run 8) in the layout that `civilians.cfg` declares; at load every frame is cut to its visible part and packed, 25.9 MB of video memory instead of 84.2 MB before mipmaps, and the procedural fallback draws exactly as before. The `traffic-incident` fixture, which now asks for the drawn pose instead of a frame number, passes 80 of 80 cases. FPS medians of alternating runs against the previous build: `day` −1.6 %, `brawl` +2.1 %, `rampage` +1.8 %; the `PEDS` lines are identical. Remaining: the user's playtest.
 
 ## Done
 

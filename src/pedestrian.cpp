@@ -18,7 +18,8 @@ static const float SLOW_VEHICLE = 20.0f / 3.6f * M;  // slower vehicles are step
 static const float RUN_SPEED    = 5.2f * M;          // fleeing, for an average walker
 static const float DODGE_SPEED  = 5.5f * M;          // jumping out of a vehicle's path
 static const float STEP_SPEED   = 1.8f * M;          // stepping aside for a slow vehicle
-static const float PED_RUN_FRAMES_SPEED = 3.6f * M;  // run frames from here: above a hurried walk (3.2 m/s)
+static const float GAIT_HYSTERESIS = 0.3f;          // m/s: a faster gait holds until this much below its start
+static int PedGaitFor(float mps, int current);
 // Anticipatory avoidance (Karamouzas, Skinner & Guy 2014): E(tau) = k / tau^2 * e^(-tau / tau0)
 static const float TTC_K        = 1.5f * M * M;      // 1.5 m^2
 static const float TTC_TAU0     = 3.0f;              // s: interactions fade out beyond this
@@ -352,7 +353,7 @@ void InitPed(Pedestrian& p, Vector2 pos, int skin, const CityMap& map) {
     p.target = CornerTarget(map, p.bi, p.bj, p.corner, p.laneOffset);
     p.angle = AngleOf(p.target - p.pos);
     p.state = PedState::Walk;
-    p.anim = r.Range(0, 8);
+    p.anim = r.Range(0, 8) / 8.0f;
 }
 
 static void PickNextLeg(Pedestrian& p, Game& g) {
@@ -754,16 +755,26 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
         p.pos = p.pos + V2(r.Range(-3, 3), r.Range(-3, 3));
     }
 
-    // stride-matched cycles of 8 frames (two steps): the walk per WALK metres, the run frames per
-    // RUN metres (civilians.cfg). Atlases without run frames show a fast person's longer strides
-    // by slowing the walk frames. Turning on the spot steps round as well.
+    // Drawn gait. The walk advances with the distance walked at the look's stride, so a planted
+    // foot stays put; jog and run play at a cadence that rises with speed (their feet touch the
+    // ground for a frame at most). Atlases without a run show a fast person's longer strides by
+    // slowing the walk. Turning on the spot steps round as well.
     float spd = Len(p.vel);
-    bool runFrames = gAssets.pedRunCycleM > 0;
-    float cycle = runFrames && spd >= PED_RUN_FRAMES_SPEED ? gAssets.pedRunCycleM : gAssets.pedWalkCycleM;
-    float slow = !runFrames && (p.state == PedState::Flee || p.state == PedState::Dodge) ? 0.7f : 1.0f;
-    p.anim += spd * dt * (8.0f / (cycle * M)) * slow;
-    if (spd < 10) p.anim += fabsf(p.turnRate) * dt * (4.0f / PI);
-    p.sway = sinf(p.anim * PI * 0.25f) * Saturate(spd / 20.0f) * 0.05f;
+    p.gait = (uint8_t)PedGaitFor(spd / M, p.gait);
+    float cycles;                                  // walk / jog / run cycles per second
+    if (p.gait == 0) {
+        bool noRun = gAssets.PedAnimFrames(spritegen::PedAnim::Run).count == 0;
+        float slow = noRun && (p.state == PedState::Flee || p.state == PedState::Dodge) ? 0.7f : 1.0f;
+        cycles = spd / (gAssets.peds[p.skin % gAssets.peds.size()].walkCycleM * M) * slow;
+    } else {
+        const PedGait& g = p.gait == 2 ? gAssets.pedRun : gAssets.pedJog;
+        float t = g.toSpeed > g.fromSpeed ? Saturate((spd / M - g.fromSpeed) / (g.toSpeed - g.fromSpeed)) : 0.0f;
+        cycles = 0.5f * (g.fromSteps + (g.toSteps - g.fromSteps) * t);
+    }
+    p.anim += cycles * dt;
+    if (spd < 10) p.anim += fabsf(p.turnRate) * dt * (0.5f / PI);
+    p.anim -= floorf(p.anim);
+    p.sway = sinf(p.anim * 2 * PI) * Saturate(spd / 20.0f) * gAssets.pedSway;
 }
 
 // -------------------------------------------------------------------------------------
@@ -780,34 +791,57 @@ void DrawPedShadow(const Pedestrian& p, Vector2 sv) {
     DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, p.pos + sv * (lying ? 2.0f : 12.0f), 0, s, s * (lying ? 0.6f : 1.0f), p.angle, ColorA(BLACK, 0.8f * fade));
 }
 
+// Walk, jog or run for a speed (m/s); a faster gait holds until GAIT_HYSTERESIS below its start.
+static int PedGaitFor(float mps, int current) {
+    const Assets& A = gAssets;
+    bool jog = A.PedAnimFrames(spritegen::PedAnim::Jog).count > 0, run = A.PedAnimFrames(spritegen::PedAnim::Run).count > 0;
+    int want = run && mps >= A.pedRun.fromSpeed ? 2 : jog && mps >= A.pedJog.fromSpeed ? 1 : 0;
+    if (want < current && mps > (current == 2 ? A.pedRun.fromSpeed : A.pedJog.fromSpeed) - GAIT_HYSTERESIS) want = current;
+    return want;
+}
+
+spritegen::PedAnim PedDrawPose(const Pedestrian& p, int* index) {
+    using spritegen::PedAnim;
+    int i = 0;
+    PedAnim a;
+    if (p.state == PedState::Down || p.state == PedState::Dead) a = PedAnim::Lying;
+    else if ((p.state == PedState::Fight || p.state == PedState::Confront) && p.punchT > 0) {
+        a = PedAnim::Punch;
+        i = p.punchT > 0.12f ? 0 : 1;
+    } else if (p.state == PedState::Confront && p.shoutT > 0 && (p.argue > 0 || Len(p.vel) < 8)) {
+        // shouting face to face, or standing: the raised fist, shaken about four times a second;
+        // walking up, the legs keep walking and only the voice carries
+        a = PedAnim::Fist;
+        i = (int)(p.shoutT * 8) & 1;
+    } else if (Len(p.vel) < 4 && fabsf(p.turnRate) < 1.0f) a = PedAnim::Idle;
+    else {
+        a = p.gait == 2 ? PedAnim::Run : p.gait == 1 ? PedAnim::Jog : PedAnim::Walk;
+        i = (int)(p.anim * gAssets.PedAnimFrames(a).count);
+    }
+    if (index) *index = i;
+    return a;
+}
+
 int PedDrawFrame(const Pedestrian& p) {
-    bool lying = p.state == PedState::Down || p.state == PedState::Dead;
-    if (lying) return spritegen::PED_FRAME_DOWN;
-    if ((p.state == PedState::Fight || p.state == PedState::Confront) && p.punchT > 0)
-        return spritegen::PED_FRAME_PUNCH + (p.punchT > 0.12f ? 0 : 1);
-    // Shouting face to face, or standing: the raised fist, shaken about four times a second.
-    // Walking up, the legs keep walking and only the voice carries.
-    if (p.state == PedState::Confront && p.shoutT > 0 && (p.argue > 0 || Len(p.vel) < 8))
-        return spritegen::PED_FRAME_FIST + ((int)(p.shoutT * 8) & 1);
-    if (Len(p.vel) < 4 && fabsf(p.turnRate) < 1.0f) return spritegen::PED_FRAME_IDLE;
-    int phase = (int)p.anim % spritegen::PED_WALK_FRAMES;
-    if (gAssets.pedRunCycleM > 0 && Len(p.vel) >= PED_RUN_FRAMES_SPEED) return spritegen::PED_FRAME_RUN + phase;
-    return phase;
+    int i = 0;
+    const PedFrames& f = gAssets.PedAnimFrames(PedDrawPose(p, &i));
+    return f.first + std::clamp(i, 0, std::max(0, f.count - 1));
 }
 
 void DrawPed(const Pedestrian& p) {
     if (gAssets.peds.empty()) return;
-    const Texture2D& t = gAssets.peds[p.skin % gAssets.peds.size()];
+    const CivilianAtlas& a = gAssets.peds[p.skin % gAssets.peds.size()];
     bool lying = p.state == PedState::Down || p.state == PedState::Dead;
     int frame = PedDrawFrame(p);
-    const float F = (float)gAssets.pedFramePx;
-    Rectangle src = { frame * F, 0, F, F };
     // A frame covers pedFrameM at life size; standing people are drawn CHAR_SCALE (and the
     // civilians' SCALE) times larger, and the lying frame is made CHAR_SCALE times wider so that
-    // the body shows at real size.
-    float size = gAssets.pedFrameM * M * CHAR_SCALE * (lying ? PED_LYING : gAssets.pedDrawScale);
+    // the body shows at real size. Only the frame's visible part is drawn, at its offset.
+    float k = gAssets.pedFrameM * M * CHAR_SCALE * (lying ? PED_LYING : gAssets.pedDrawScale) / gAssets.pedFramePx;
+    const Rectangle& src = a.src[frame];
+    float angle = p.angle + (lying ? 0.0f : p.sway);
+    Vector2 at = p.pos + RightOf(angle) * (a.offset[frame].x * k) - Forward(angle) * (a.offset[frame].y * k);
     float h = lying ? 1.5f : H_PED;
     Color tint = WHITE;
     if (p.state == PedState::Dead) tint = ColorA({ 200, 190, 190, 255 }, 1.0f - Saturate((p.deadTime - PED_BODY_FADE) / (PED_BODY_GONE - PED_BODY_FADE)));
-    DrawFlatSprite(t, src, p.pos, h, size, size, p.angle + (lying ? 0.0f : p.sway), tint);
+    DrawFlatSprite(a.tex, src, at, h, src.width * k, src.height * k, angle, tint);
 }

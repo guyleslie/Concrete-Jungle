@@ -184,10 +184,9 @@ struct TrafficIncidentTests::State {
         phaseTime += step;
         for (const Pedestrian& p : g.peds) {
             if (!p.active || p.state != PedState::Confront) continue;
-            int frame = PedDrawFrame(p);
-            if ((frame == spritegen::PED_FRAME_PUNCH || frame == spritegen::PED_FRAME_PUNCH + 1) && p.foeVehicle < 0)
-                arguePunchS += step;
-            if (frame == spritegen::PED_FRAME_FIST || frame == spritegen::PED_FRAME_FIST + 1) argueFistS += step;
+            spritegen::PedAnim pose = PedDrawPose(p, nullptr);
+            if (pose == spritegen::PedAnim::Punch && p.foeVehicle < 0) arguePunchS += step;
+            if (pose == spritegen::PedAnim::Fist) argueFistS += step;
         }
         const Case& c = Current();
         for (const ImpactEvent& e : g.physics.events)

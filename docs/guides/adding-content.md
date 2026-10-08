@@ -206,19 +206,24 @@ File: `assets/data/civilians.cfg`. Atlases go in `assets/characters/civilians/` 
 ```
 FRAME    <px> <metres>
 SCALE    <factor>
+SWAY     <radians>
+ANIM     <animation> <first frame> <frames>
+GAIT     <jog|run> <from m/s> <steps/s> <to m/s> <steps/s>
 WALK     <metres>
-RUN      <metres>
-CIVILIAN <file>
+CIVILIAN <file> [walk cycle m]
 ```
 
 | Record | Meaning |
 |---|---|
 | `FRAME` | Frame size in pixels and the metres one frame covers at life size |
 | `SCALE` | How much larger standing civilians are drawn, on top of `CHAR_SCALE`, so that an average man reads as large as the player |
-| `WALK`, `RUN` | Distance of one eight-frame walk and run cycle; the run frames show above 3.6 m/s |
-| `CIVILIAN` | One look |
+| `SWAY` | How far the game turns a walking person with the steps; 0 for rendered walks, which sway by themselves |
+| `ANIM` | Where an animation's frames are: `walk`, `idle`, `lying`, `punch` (right, left), `fist` (two shake positions), `jog`, `run`; jog and run are optional |
+| `GAIT` | From which speed a jog or run shows (it holds until 0.3 m/s below that), and its cadence, rising linearly between the two points |
+| `WALK` | Walk cycle (two steps) for `CIVILIAN` lines that give none |
+| `CIVILIAN` | One look and its walk cycle: the look's stride, so that a planted foot stays put |
 
-Frames: 0–7 walk, 8 idle, 9 lying, 10 right punch, 11 left punch, 12–13 raised fist, 14–21 run. The run frames are optional; every atlas needs the same frame size and count. The lying frame covers `FRAME` × `CHAR_SCALE` metres, so that the body shows at real size. Without a loadable `CIVILIAN` line the game draws 28 procedural looks.
+The walk advances with the distance walked; the jog and run play by cadence, because their feet touch the ground for a frame at most. Every atlas needs the same frame size and count. The lying frame covers `FRAME` × `CHAR_SCALE` metres, so that the body shows at real size. At load, every frame is cut to its visible part and packed, so the transparent margins of the frames cost no video memory. Without a loadable `CIVILIAN` line the game draws 28 procedural looks.
 
 The shipped looks are rendered from 3D models: to change or add one, edit [looks.json](../../tools/cj004/looks.json) and run `python tools/cj004/make_civilians.py` (see the [civilian 3D pipeline](../../assets/art/cj004/README.md#civilian-3d-pipeline)).
 

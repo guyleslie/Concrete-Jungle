@@ -39,7 +39,8 @@ constexpr int PED_FRAME = 96;          // square frame size in the procedural at
 constexpr int PED_WALK_FRAMES = 8;     // frames 0..7 walk, 8 idle, 9 knocked down, 10/11 punch, 12/13 raised fist
 constexpr int PED_FRAME_IDLE = 8, PED_FRAME_DOWN = 9, PED_FRAME_PUNCH = 10, PED_FRAME_FIST = 12;
 constexpr int PED_ATLAS_FRAMES = 14;
-constexpr int PED_FRAME_RUN = 14;      // 14..21 run: only in image atlases (assets/data/civilians.cfg)
+// The animations of a pedestrian atlas; image atlases declare where each one is (civilians.cfg ANIM).
+enum class PedAnim : uint8_t { Walk, Idle, Lying, Punch, Fist, Jog, Run, COUNT };
 PedLook PlayerLook();                  // matches the Survivor sprite (unarmed player)
 Image PedAtlas(const PedLook& look);
 

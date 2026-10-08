@@ -18,6 +18,7 @@
 #include "raylib.h"
 #include "config.h"
 #include "math_utils.h"
+#include "sprite_gen.h"
 #include <vector>
 
 class Game;
@@ -35,7 +36,9 @@ struct Pedestrian {
     int      skin = 0;
     PedState state = PedState::Walk;
     PedState resume = PedState::Walk;   // after a dodge or a startled pause
-    float    timer = 0, anim = 0;
+    float    timer = 0;
+    float    anim = 0;               // phase of the walk / jog / run cycle, 0..1
+    uint8_t  gait = 0;               // drawn gait: 0 walk, 1 jog, 2 run (switches with hysteresis)
     float    health = 100;
     int      bi = 0, bj = 0, corner = 0, dirSign = 1;
     Vector2  target{};
@@ -116,5 +119,7 @@ void AlarmPed(Pedestrian& p, Vector2 from, float duration, bool secondHand); // 
 void KnockDownPed(Pedestrian& p, Vector2 impulse);
 void ProvokePed(Pedestrian& p, const Game& g);                                // punched by the player
 void DrawPed(const Pedestrian& p);
-int  PedDrawFrame(const Pedestrian& p);     // the atlas frame DrawPed shows (spritegen::PED_FRAME_*)
+// The animation DrawPed shows, and the frame within it ('index'); PedDrawFrame is the atlas frame.
+spritegen::PedAnim PedDrawPose(const Pedestrian& p, int* index);
+int  PedDrawFrame(const Pedestrian& p);
 void DrawPedShadow(const Pedestrian& p, Vector2 sv);

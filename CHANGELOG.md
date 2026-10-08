@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `civilians.cfg` records `SWAY`, `ANIM` (the atlas layout), `GAIT` (jog and run speeds and cadences) and a walk stride per `CIVILIAN` line, replacing `RUN`; `tools/cj004/measure_gait.py`, which measures stride, foot slip, toe reach and leg spread as the game plays the frames (CJ-029).
 - `WIDTH <class> <width m>` and `BIKE <class> <empty file> <ridden file>` records in `vehicles.cfg`, the `bikes` test scenario, and a `VEHICLE` start-up log line with each class's collision and drawn width (CJ-004).
 - `assets/data/civilians.cfg` (`FRAME`, `SCALE`, `WALK`, `RUN`, `CIVILIAN`): pedestrian atlases with run frames, the `civilians` test scenario and `tools/cj004/make_civilians.py` with `looks.json`, which builds, animates, renders and checks every look (CJ-004).
 - CJ-004 civilian 3D pipeline (`tools/cj004/`): Blender scripts that build a civilian from MakeHuman CC0 assets, retarget Quaternius Universal Animation Library actions onto it, render top-down frames, measure them and reduce them to stylized 96 px atlas frames. The proof of concept, one civilian with an idle and an eight-frame walk, is accepted; the game is unchanged.
@@ -15,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Civilians walk, jog and run with compact, natural steps (CJ-029): the legs no longer reach out like the splits (0.67 m at most from the front toe to the back foot, 0.87 m before), the walk advances with each look's own measured stride so planted feet stay put (at most 1.7 cm), people hurrying across a street jog (from 2.0 m/s) and fleeing people run (from 4.0 m/s), with a cadence that rises with speed. The walk has 16 frames instead of 8, and the game no longer turns the sprite with the steps (the rendered walk sways by itself). Civilian atlases take about a third of their former video memory: every frame is cut to its visible part at load. Awaits playtest.
 - Civilians are rendered from 3D models (CJ-004): 28 looks, men and women of three age groups and real heights (1.55–1.86 m) in ordinary clothes, with a relaxed walk, a run for fleeing and dodging, two punches, the raised fist and a body on the ground at real size, replacing the procedural looks (which remain the fallback). Standing civilians are drawn 12 % larger than life on top of the usual character scale, so that an average man reads as large as the player.
 - CJ-004 (replace placeholder art) is done: the user playtested and accepted the civilians on 2026-10-08, after the motorbikes earlier the same day.
 - Motorbikes use the new CJ-004 art instead of the procedural placeholders: a sportbike, a chopper and a scooter, each with and without a rider. The art keeps its proportions at the class length, so its mirrors and handlebars (0.93–1.24 m) reach beyond the collision box, which keeps the handlebar width of real bikes: Sportbike 0.75 m, Chopper 0.95 m, Scooter 0.70 m (0.77, 0.95 and 0.69 m before). One look per class for now, instead of 11 colour and outfit combinations.
