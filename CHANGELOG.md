@@ -13,7 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Motorbikes use the new CJ-004 art instead of the procedural placeholders: a sportbike, a chopper and a scooter, each with and without a rider. The art keeps its proportions at the class length, so its mirrors and handlebars (0.93–1.24 m) reach beyond the collision box, which keeps the handlebar width of real bikes: Sportbike 0.75 m, Chopper 0.95 m, Scooter 0.70 m (0.77, 0.95 and 0.69 m before). One look per class for now, instead of 11 colour and outfit combinations. Awaits playtest.
+- Motorbikes use the new CJ-004 art instead of the procedural placeholders: a sportbike, a chopper and a scooter, each with and without a rider. The art keeps its proportions at the class length, so its mirrors and handlebars (0.93–1.24 m) reach beyond the collision box, which keeps the handlebar width of real bikes: Sportbike 0.75 m, Chopper 0.95 m, Scooter 0.70 m (0.77, 0.95 and 0.69 m before). One look per class for now, instead of 11 colour and outfit combinations.
+- CJ-004 motorbikes are done: the user playtested and accepted them on 2026-10-08. CJ-004 stays open for the civilians.
 
 ## [0.4.0] - 2026-10-07
 

@@ -29,6 +29,6 @@
     "runtime_corrections": "none; no per-image pivot, offset or scale configuration",
     "export_validation": "all six saved PNGs pass the runtime alpha-border size and centre checks",
     "physics_width_status": "WIDTH records in assets/data/vehicles.cfg set the collision widths (Sportbike 0.75 m, Chopper 0.95 m, Scooter 0.70 m); the drawn mirrors overhang them",
-    "runtime_status": "integrated 2026-10-07 through BIKE records in assets/data/vehicles.cfg; awaiting user playtest"
+    "runtime_status": "integrated 2026-10-07 through BIKE records in assets/data/vehicles.cfg; playtested and accepted by the user 2026-10-08"
   }
 }

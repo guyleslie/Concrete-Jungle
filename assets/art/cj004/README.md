@@ -1,6 +1,6 @@
 # CJ-004 art preparation
 
-The user accepted the motorbike designs on 2026-10-07, subject to correct size, and rejected the earlier civilian sheets and idle masters. The accepted bike source is preserved, and its six exports, which follow the shared vehicle convention below, replaced the procedural motorbikes in the game on 2026-10-07; they await the user's playtest. A new v4 civilian idle candidate awaits review. CJ-004 remains open for the civilians and the motorbike playtest.
+The user accepted the motorbike designs on 2026-10-07, subject to correct size, and rejected the earlier civilian sheets and idle masters. The accepted bike source is preserved, and its six exports, which follow the shared vehicle convention below, replaced the procedural motorbikes in the game on 2026-10-07, and the user accepted them in a playtest on 2026-10-08. A new v4 civilian idle candidate awaits review. CJ-004 remains open for the civilians.
 
 ## Motorbike exports
 
@@ -39,7 +39,7 @@ Run without `--export` to check the saved PNGs and view the gallery without rewr
 
 ![Normalized motorbike gallery, 1 m grid](motorbike-export-preview.png)
 
-The exporter compiles without warnings, and its check passes on the files in `assets/vehicles/`. In the game the empty and ridden images switch without a visible jump: the uncovered front tyre and tail differ by at most 1 px (0.5 cm) between the pair members. There is one look per class. More colours come as more exported pairs and `BIKE` lines, because the game's automatic paint variants also recolour the lights and cannot recolour the black chopper. The user playtest is pending.
+The exporter compiles without warnings, and its check passes on the files in `assets/vehicles/`. In the game the empty and ridden images switch without a visible jump: the uncovered front tyre and tail differ by at most 1 px (0.5 cm) between the pair members. There is one look per class. More colours come as more exported pairs and `BIKE` lines, because the game's automatic paint variants also recolour the lights and cannot recolour the black chopper. The user playtested and accepted the motorbikes on 2026-10-08.
 
 ## Rejected civilian experiments
 
