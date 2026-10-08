@@ -74,7 +74,8 @@ Civilians are built from 3D human models, animated, and rendered straight from a
 | [render_civilian.py](../../../tools/cj004/render_civilian.py) | Renders frames straight from above: orthographic, 1.4 m × 1.4 m per frame (the atlas frame before `CHAR_SCALE`), 384 px, facing the top of the image, sun from the upper left. Also writes a mask of the legs and shoes. The `idle` pose is built in the script: upright, arms hanging, feet under the hips |
 | [measure_frames.py](../../../tools/cj004/measure_frames.py) | Visible legs and shoes, width and length of the silhouette, body centre drift and the silhouette change between frames, including the wrap-around of a cycle |
 | [stylize.py](../../../tools/cj004/stylize.py) | Reduces a render to the 96 px atlas frame with more contrast and saturation and a dark contour, like the player and the procedural civilians |
-| [compare_scale.py](../../../tools/cj004/compare_scale.py), [walk_preview.py](../../../tools/cj004/walk_preview.py), [preview_frames.py](../../../tools/cj004/preview_frames.py), [debug_side.py](../../../tools/cj004/debug_side.py) | Comparison at game scale on the sidewalk, the atlas strip and an animated walk, a contact sheet with the visible legs marked, and side views of a retarget next to the library mannequin |
+| [make_civilians.py](../../../tools/cj004/make_civilians.py) | Runs the steps for every look in [looks.json](../../../tools/cj004/looks.json), writes the atlases and checks them (see [Full set](#full-set-2026-10-08)) |
+| [compare_scale.py](../../../tools/cj004/compare_scale.py), [walk_preview.py](../../../tools/cj004/walk_preview.py), [atlas_preview.py](../../../tools/cj004/atlas_preview.py), [preview_frames.py](../../../tools/cj004/preview_frames.py), [debug_side.py](../../../tools/cj004/debug_side.py) | Comparison at game scale on the sidewalk, the atlas strip and an animated walk, the finished atlases frame by frame, a contact sheet with the visible legs marked, and side views of a retarget next to the library mannequin |
 
 ### Proof of concept (2026-10-08)
 
@@ -92,6 +93,32 @@ One civilian (jacket, jeans, dark shoes, short brown hair, 1.69 m) with the upri
 | Pelvis drift | Front to back 0.02 px; side to side 3.1 px (4.5 cm), the natural sway of a walk, averaging at the frame centre |
 
 The library's `Walk_Loop` swings bent arms with closed fists, like a boxer; `Walk_Formal_Loop`, with relaxed hanging arms, is the civilian walk. The library's `Idle_Loop` stands contrapposto with one leg back (23 % legs) and is not used. Walking leans the body slightly forward, so the silhouette lengthens a little when a civilian sets off. A raw render reads grey on the sidewalk; the stylized frames match the game. A grey jacket still blends in; the variants need firmer colours.
+
+### Full set (2026-10-08)
+
+[make_civilians.py](../../../tools/cj004/make_civilians.py) builds every look of [looks.json](../../../tools/cj004/looks.json) and writes `assets/characters/civilians/<id>.png`: 22 frames of 144 px, 2.1 m each (a running stride and a punch need about 2 m; the 96 px / 1.4 m frames of the procedural atlas fit only a walk). It runs three looks at a time; the full set takes about 35 minutes on the CPU. `--poses idle,fist` re-renders only those frames, `--summary` re-checks the report.
+
+| Frames | Content | Source |
+|---|---|---|
+| 0–7 | Walk | `Walk_Formal_Loop`, every fourth frame |
+| 8 | Idle | Built by the render script |
+| 9 | Lying, real size | Last frame of `Death01`, turned head up and centred |
+| 10, 11 | Right and left punch | `Punch_Cross` frame 7, `Punch_Jab` frame 5 (the hand furthest forward) |
+| 12, 13 | Raised fist, two shake positions | Built by the render script |
+| 14–21 | Run | `Sprint_Loop`, every second frame, upper body leaned back by 25° |
+
+What the full set changed in the pipeline:
+
+- **Torso retarget.** Aiming MPFB's torso bones along the library's tipped the hips and added about 10° of forward lean, because the two rigs' pelvis bones point different ways. The torso now keeps its own rest orientation; the walk leans 12° from pelvis to head (the library 11°).
+- **Run.** The library's sprint leans about 40° from pelvis to head; a runner at 5 m/s leans 15–20°, and from above the steep lean shows the whole back, so a runner looked twice the size of a walker. The upper body is leaned back by 25° (to about 23°). The sprint's cadence matches the 5.2 m/s of a fleeing civilian; the jog's would need 1.9 m steps.
+- **Registration.** Every standing job is centred on its mean pelvis position: idle, walk and run share the pivot, and the pelvis averages at the frame centre.
+- **Stance.** Standing, the hips are a few centimetres in front of the ankles. The render script searches feet 0–8 cm back and 3–9° inwards for the stance that shows the least of the legs and shoes, separately for every look: slim shoes hide best with the feet back, boots and sneakers with the feet under the hips.
+- **Heights.** MakeHuman's race and age settings shift its heights a lot (an Asian man came out 1.45 m tall). A look gives its height in metres, and the build script searches the height slider until the body matches.
+- **Clothes.** Baggy trousers show their seat beside a slim torso: harem and cargo trousers, the overalls and two pairs of bulky shoes were replaced.
+
+Results: every look meets the per-look criteria: idle legs and shoes at most 4 % of the silhouette (0.3–3.9 %), walk and run cycles closed, pelvis cycle mean at the frame centre. Width is a property of the set (agreed with the user): drawn with `SCALE 1.12`, the average man is 0.60 m wide standing (−7 % of the player) and 0.70 m walking (+7 %); women keep their real proportions (0.51 and 0.60 m).
+
+![The player, the procedural civilian and the 28 looks standing, walking and running, at game scale](civilian-3d-set.png)
 
 ## Provenance
 

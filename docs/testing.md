@@ -42,6 +42,7 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `drive`, `nightdrive` | The player in the starter car with a simple autopilot (steady throttle, gentle weaving) |
 | `chase` | As `drive`, with three wanted stars |
 | `bikes` | At 13:00, on foot beside every two-wheeler class, parked (empty) and ridden, and a parked Stinger for scale. The ridden bikes are traffic placed off the lane, so run it for about 20 frames before they start to move. |
+| `civilians` | At 13:00, on foot beside every civilian look standing in rows of 14, facing up; run it for about 20 frames |
 | `overview` | A zoomed-out view of the traffic around the player, each car ringed by the reason it is stopped |
 | `crash` | Scripted crash course: grinding along a wall at 35°, reversing, a full-speed head-on hit, a building corner at 45°, a lamp post at about 60 km/h, a hydrant, a steel bollard, and shoving three parked cars into a wall. Every impact is logged. |
 | `derby` | Full throttle through traffic with random steering; reverses when stuck |

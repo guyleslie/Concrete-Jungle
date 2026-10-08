@@ -366,6 +366,41 @@ WEAPON Rifle      rifle       22  10   4  1  60   30  180  2.0  auto  rifle
 WEAPON Flashlight flashlight  10  2.0  0  1  1.4  0   0    0    melee punch light
 )";
 
+static const char* DEFAULT_CIVILIANS = R"(
+FRAME 144 2.1
+SCALE 1.12
+WALK 1.3
+RUN 3.2
+CIVILIAN civilian-01.png
+CIVILIAN civilian-02.png
+CIVILIAN civilian-03.png
+CIVILIAN civilian-04.png
+CIVILIAN civilian-05.png
+CIVILIAN civilian-06.png
+CIVILIAN civilian-07.png
+CIVILIAN civilian-08.png
+CIVILIAN civilian-09.png
+CIVILIAN civilian-10.png
+CIVILIAN civilian-11.png
+CIVILIAN civilian-12.png
+CIVILIAN civilian-13.png
+CIVILIAN civilian-14.png
+CIVILIAN civilian-15.png
+CIVILIAN civilian-16.png
+CIVILIAN civilian-17.png
+CIVILIAN civilian-18.png
+CIVILIAN civilian-19.png
+CIVILIAN civilian-20.png
+CIVILIAN civilian-21.png
+CIVILIAN civilian-22.png
+CIVILIAN civilian-23.png
+CIVILIAN civilian-24.png
+CIVILIAN civilian-25.png
+CIVILIAN civilian-26.png
+CIVILIAN civilian-27.png
+CIVILIAN civilian-28.png
+)";
+
 static const char* DEFAULT_FOLIAGE = R"(
 TREE oaktoonbranchesgreen.png
 TREE oaktoonbranchesolivegreen.png
@@ -596,6 +631,47 @@ static void LoadVehicles(Assets& A) {
 }
 
 // -------------------------------------------------------------------------------------
+//  Civilians (civilians.cfg): one atlas strip per look, all in the same frame format
+// -------------------------------------------------------------------------------------
+static void LoadCivilians(Assets& A) {
+    int framePx = 0;
+    float frameM = 0, walkM = 1.3f, runM = 0, scale = 1.0f;
+    char path[256];
+    for (const DataRecord& r : ReadDataFile("assets/data/civilians.cfg", DEFAULT_CIVILIANS)) {
+        if (r.Is("FRAME") && r.size() >= 3) { framePx = r.I(1); frameM = r.F(2); }
+        else if (r.Is("SCALE") && r.size() >= 2) scale = r.F(1);
+        else if (r.Is("WALK") && r.size() >= 2) walkM = r.F(1);
+        else if (r.Is("RUN") && r.size() >= 2) runM = r.F(1);
+        else if (r.Is("CIVILIAN") && r.size() >= 2) {
+            if (framePx <= 0 || frameM <= 0) { TraceLog(LOG_WARNING, "civilians.cfg:%d CIVILIAN before FRAME", r.line); continue; }
+            snprintf(path, sizeof(path), "assets/characters/civilians/%s", r[1].c_str());
+            Image img;
+            if (!TryLoadImage(path, img)) continue;
+            int frames = img.width / framePx;
+            if (img.height != framePx || frames < spritegen::PED_ATLAS_FRAMES || (!A.peds.empty() && frames != A.pedFrames)) {
+                TraceLog(LOG_WARNING, "civilians.cfg:%d '%s' is %dx%d px: expected %d px frames, %d or more of them, like the others",
+                         r.line, r[1].c_str(), img.width, img.height, framePx, spritegen::PED_ATLAS_FRAMES);
+                UnloadImage(img);
+                continue;
+            }
+            A.pedFrames = frames;
+            A.peds.push_back(MakeTexture(img, false, true));
+        }
+    }
+    if (!A.peds.empty()) {
+        A.pedFramePx = framePx;
+        A.pedFrameM = frameM;
+        A.pedWalkCycleM = walkM;
+        A.pedDrawScale = scale;
+        A.pedRunCycleM = A.pedFrames >= spritegen::PED_FRAME_RUN + spritegen::PED_WALK_FRAMES ? runM : 0;
+    } else {                    // procedural fallback: 28 looks in the 96 px / 1.4 m format
+        for (int i = 0; i < 28; i++) A.peds.push_back(MakeTexture(PedAtlas(RandomPedLook(1000 + i * 7)), false, true));
+    }
+    TraceLog(LOG_INFO, "CIVILIANS: %d looks, %d frames of %d px for %.2f m, drawn x%.2f, walk cycle %.2f m, run cycle %.2f m",
+             (int)A.peds.size(), A.pedFrames, A.pedFramePx, A.pedFrameM, A.pedDrawScale, A.pedWalkCycleM, A.pedRunCycleM);
+}
+
+// -------------------------------------------------------------------------------------
 //  Character animation sets (characters.cfg) and weapons (weapons.cfg)
 // -------------------------------------------------------------------------------------
 static SpriteAnim LoadAnim(const std::string& dir, const std::string& prefix, int frames, Vector2 pivot, bool centrePivot) {
@@ -704,7 +780,7 @@ bool Assets::Load() {
     // ---- vehicles, characters, weapons ----
     LoadVehicles(*this);
     trainCar = MakeTexture(TrainCar({ 30, 110, 200, 255 }), false, true);
-    for (int i = 0; i < 28; i++) peds.push_back(MakeTexture(PedAtlas(RandomPedLook(1000 + i * 7)), false, true));
+    LoadCivilians(*this);
     playerUnarmed = MakeTexture(PedAtlas(PlayerLook()), false, true);
     LoadCharacters(*this);
 

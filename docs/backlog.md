@@ -39,7 +39,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | In progress |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
-| [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Motorbikes done; civilians open |
+| [CJ-004](#cj-004-replace-placeholder-art) | Replace placeholder art | High | Motorbikes done; civilians awaiting playtest |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
@@ -167,7 +167,7 @@ Remaining: the playtest.
 ### CJ-004 Replace placeholder art
 
 - **Priority:** High
-- **Status:** In progress: motorbikes playtested and accepted on 2026-10-08; civilians: 3D proof of concept accepted on 2026-10-08, full set open
+- **Status:** In progress: motorbikes playtested and accepted on 2026-10-08; civilians integrated on 2026-10-08, awaiting playtest
 
 **Art session (2026-10-07).** The user rejected all civilian sheets and earlier idle masters: idle must hide legs and shoes completely, with vertical hanging arms, compact integrated shoulders and ordinary clothing. V3 was rejected for enormous shoulder/upper-arm blobs; the [v4 idle candidate](../assets/art/cj004/civilian-idle-master-v4.png) awaits review, with no animations generated from it. The [revised workflow](../assets/art/cj004/civilian-prompts-v2.md) uses the player's moderate detail and separate walk, run and action groups after master acceptance. The sportbike, chopper and scooter designs with and without riders are accepted, subject to correct size. Keep the [source art and historical prompts](../assets/art/cj004/README.md). Six vehicle PNG exports follow a shared facing, centre and size convention, with position and scale baked into the pixels and no per-image runtime correction configuration. Remaining for the civilians: approve and animate them, register and validate loops and posture, preserve appearance variety, add data-driven loading, measure before and after, and playtest. CJ-011 player posture is not implemented by these images.
 
@@ -192,6 +192,8 @@ Remaining: the playtest.
 - **Integration, data-driven:** atlases in `assets/characters/civilians/`, listed in a new `assets/data/civilians.cfg`; a missing file keeps the procedural civilian. Run frames show only at running speed; an atlas without them keeps the walk frames. No other behaviour changes.
 - **Criteria per variant:** idle legs and shoes at most 4 % of the silhouette; width within ±10 % of the player's (0.59–0.72 m); walk and run cycles closed; pelvis cycle average within 1 px of the frame centre.
 - **Criteria in the game:** a new `civilians` scenario lines up every variant beside the player (screenshots before and after); `day`, `rampage` and `brawl` change FPS by at most 5 % and leave the pedestrian metrics unchanged; then the user's playtest.
+
+**Civilians integrated (2026-10-08).** 28 looks: 14 men and 14 women of three age groups, 1.55–1.86 m tall, in ordinary clothes from the CC0 packs, several recoloured ([full set](../assets/art/cj004/README.md#full-set-2026-10-08)). Width per look against the player could not be met: women and slim men are narrower than the player, whose combat stance and vest make him broad. The user chose to draw standing civilians 12 % larger (`SCALE 1.12` in `civilians.cfg`) and to apply the width criterion to the average man: −7 % standing, +7 % walking. Every look meets the other per-look criteria (idle legs and shoes 0.3–3.9 %, closed cycles, pelvis at the frame centre). The atlases load from [civilians.cfg](guides/adding-content.md#civilians) (144 px frames covering 2.1 m, a 3.2 m run cycle above 3.6 m/s); the procedural looks remain the fallback. In the game: the `civilians` scenario shows all 28 beside the player; single runs of the same build vary by up to 15 %, so FPS is compared as the median of four alternating runs: `day` 326.2 â†’ 314.9 FPS (âˆ’3.5 %), `brawl` 256.6 â†’ 271.9 FPS (+6.0 %); one `rampage` run 161.7 â†’ 155.9 FPS (âˆ’3.6 %), within that spread; the `PEDS` lines of all three scenarios are identical before and after. Remaining: the user's playtest.
 
 **Problem.** Motorbikes and civilian pedestrians use procedural placeholder sprites that do not match the quality of the rest of the art. Playtest feedback (2026-09-27): the civilians look much cheaper than the player, their walk animation does not look real, and standing civilians look smaller than the player, because the player sprite holds its arms forward while the civilians are drawn thin from the top.
 

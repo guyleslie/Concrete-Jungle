@@ -4,9 +4,10 @@
 //  A tiny anti-aliased "vector painter": every shape is a signed distance function that
 //  is rasterised with analytic coverage and shaded with a bevel/specular model. This
 //  yields smooth, glossy, high-resolution sprites in the same style as the Unlucky
-//  Studio vehicles, for everything the asset packs don't cover (civilians, street
-//  furniture, the metro train), and fallbacks (cars, buses, trucks, motorbikes, trees)
-//  used when an image file is missing or a GEN line asks for them.
+//  Studio vehicles, for everything the asset packs don't cover (street furniture, the
+//  metro train, the unarmed player's look), and fallbacks (cars, buses, trucks,
+//  motorbikes, civilians, trees) used when an image file is missing or a GEN line asks
+//  for them.
 //
 //  All generators take real-world proportions (16 world px == 1 m) into account; the
 //  canvas resolution is ~3x the on-screen size so mipmapping keeps them crisp.
@@ -34,10 +35,11 @@ struct PedLook {
     float build;       // shoulder width multiplier (0.85 .. 1.1)
 };
 PedLook RandomPedLook(uint32_t seed);
-constexpr int PED_FRAME = 96;          // square frame size in the atlas
+constexpr int PED_FRAME = 96;          // square frame size in the procedural atlas (1.4 m)
 constexpr int PED_WALK_FRAMES = 8;     // frames 0..7 walk, 8 idle, 9 knocked down, 10/11 punch, 12/13 raised fist
 constexpr int PED_FRAME_IDLE = 8, PED_FRAME_DOWN = 9, PED_FRAME_PUNCH = 10, PED_FRAME_FIST = 12;
 constexpr int PED_ATLAS_FRAMES = 14;
+constexpr int PED_FRAME_RUN = 14;      // 14..21 run: only in image atlases (assets/data/civilians.cfg)
 PedLook PlayerLook();                  // matches the Survivor sprite (unarmed player)
 Image PedAtlas(const PedLook& look);
 

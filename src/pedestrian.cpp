@@ -18,6 +18,7 @@ static const float SLOW_VEHICLE = 20.0f / 3.6f * M;  // slower vehicles are step
 static const float RUN_SPEED    = 5.2f * M;          // fleeing, for an average walker
 static const float DODGE_SPEED  = 5.5f * M;          // jumping out of a vehicle's path
 static const float STEP_SPEED   = 1.8f * M;          // stepping aside for a slow vehicle
+static const float PED_RUN_FRAMES_SPEED = 3.6f * M;  // run frames from here: above a hurried walk (3.2 m/s)
 // Anticipatory avoidance (Karamouzas, Skinner & Guy 2014): E(tau) = k / tau^2 * e^(-tau / tau0)
 static const float TTC_K        = 1.5f * M * M;      // 1.5 m^2
 static const float TTC_TAU0     = 3.0f;              // s: interactions fade out beyond this
@@ -753,10 +754,14 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
         p.pos = p.pos + V2(r.Range(-3, 3), r.Range(-3, 3));
     }
 
-    // stride-matched walk cycle: 8 frames per ~1.3 m (two steps); turning on the spot
-    // steps round as well
+    // stride-matched cycles of 8 frames (two steps): the walk per WALK metres, the run frames per
+    // RUN metres (civilians.cfg). Atlases without run frames show a fast person's longer strides
+    // by slowing the walk frames. Turning on the spot steps round as well.
     float spd = Len(p.vel);
-    p.anim += spd * dt * (8.0f / (1.3f * M)) * (p.state == PedState::Flee || p.state == PedState::Dodge ? 0.7f : 1.0f);
+    bool runFrames = gAssets.pedRunCycleM > 0;
+    float cycle = runFrames && spd >= PED_RUN_FRAMES_SPEED ? gAssets.pedRunCycleM : gAssets.pedWalkCycleM;
+    float slow = !runFrames && (p.state == PedState::Flee || p.state == PedState::Dodge) ? 0.7f : 1.0f;
+    p.anim += spd * dt * (8.0f / (cycle * M)) * slow;
     if (spd < 10) p.anim += fabsf(p.turnRate) * dt * (4.0f / PI);
     p.sway = sinf(p.anim * PI * 0.25f) * Saturate(spd / 20.0f) * 0.05f;
 }
@@ -764,7 +769,6 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
 // -------------------------------------------------------------------------------------
 //  Drawing
 // -------------------------------------------------------------------------------------
-static const float PED_DRAW = 1.4f * M * CHAR_SCALE;   // atlas frame size in the world (standing)
 static const float PED_LYING = 1.0f;                   // lying frame scale: a real-size 1.7 m body (standing people
                                                        // are drawn larger than life, a body on the ground is not)
 
@@ -786,7 +790,9 @@ int PedDrawFrame(const Pedestrian& p) {
     if (p.state == PedState::Confront && p.shoutT > 0 && (p.argue > 0 || Len(p.vel) < 8))
         return spritegen::PED_FRAME_FIST + ((int)(p.shoutT * 8) & 1);
     if (Len(p.vel) < 4 && fabsf(p.turnRate) < 1.0f) return spritegen::PED_FRAME_IDLE;
-    return (int)p.anim % spritegen::PED_WALK_FRAMES;
+    int phase = (int)p.anim % spritegen::PED_WALK_FRAMES;
+    if (gAssets.pedRunCycleM > 0 && Len(p.vel) >= PED_RUN_FRAMES_SPEED) return spritegen::PED_FRAME_RUN + phase;
+    return phase;
 }
 
 void DrawPed(const Pedestrian& p) {
@@ -794,9 +800,12 @@ void DrawPed(const Pedestrian& p) {
     const Texture2D& t = gAssets.peds[p.skin % gAssets.peds.size()];
     bool lying = p.state == PedState::Down || p.state == PedState::Dead;
     int frame = PedDrawFrame(p);
-    const float F = (float)spritegen::PED_FRAME;
+    const float F = (float)gAssets.pedFramePx;
     Rectangle src = { frame * F, 0, F, F };
-    float size = PED_DRAW * (lying ? PED_LYING : 1.0f);
+    // A frame covers pedFrameM at life size; standing people are drawn CHAR_SCALE (and the
+    // civilians' SCALE) times larger, and the lying frame is made CHAR_SCALE times wider so that
+    // the body shows at real size.
+    float size = gAssets.pedFrameM * M * CHAR_SCALE * (lying ? PED_LYING : gAssets.pedDrawScale);
     float h = lying ? 1.5f : H_PED;
     Color tint = WHITE;
     if (p.state == PedState::Dead) tint = ColorA({ 200, 190, 190, 255 }, 1.0f - Saturate((p.deadTime - PED_BODY_FADE) / (PED_BODY_GONE - PED_BODY_FADE)));

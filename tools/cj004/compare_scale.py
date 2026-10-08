@@ -3,8 +3,8 @@
     python tools/cj004/compare_scale.py <out.png> <label=render.png> [<label=render.png> ...]
 
 Everything is drawn as the game draws it on foot at 1080p: 19 m of world on 1080 px, people
-CHAR_SCALE (1.35) times life size. Renders are 1.4 m frames (render_civilian.py); they are
-reduced to the 96 px atlas frame first, as the game would store them, then drawn. The
+CHAR_SCALE (1.35) times life size. Renders are CJ_FRAME_M metres square (render_civilian.py,
+2.1 by default); they are reduced to the atlas frame (96 px per 1.4 m) first, then drawn. The
 background is the game's sidewalk texture. The display is doubled for inspection.
 """
 import os, sys
@@ -16,7 +16,8 @@ from stylize import stylize
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CHAR_SCALE = 1.35
 PX_PER_M = 1080 / 19.0 * 2          # on-foot camera at 1080p, doubled
-ATLAS_FRAME = 96
+FRAME_M = float(os.environ.get("CJ_FRAME_M", "2.1"))
+ATLAS_FRAME = round(96 * FRAME_M / 1.4)
 
 
 def alpha_crop(im, thr=26):
@@ -46,7 +47,7 @@ for arg in sys.argv[2:]:
     raw = label.endswith("(raw)")
     frame = Image.open(path).convert("RGBA")
     frame = frame.resize((ATLAS_FRAME, ATLAS_FRAME), Image.LANCZOS) if raw else stylize(frame, ATLAS_FRAME)
-    tiles.append((label, scaled(alpha_crop(frame), 1.4 / ATLAS_FRAME)))
+    tiles.append((label, scaled(alpha_crop(frame), FRAME_M / ATLAS_FRAME)))
 
 pad = 40
 W = sum(t.width for _, t in tiles) + pad * (len(tiles) + 1) + 60 * len(tiles)

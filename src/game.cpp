@@ -49,7 +49,7 @@ void Game::DebugScenario(const char* name) {
         Rectangle area = { 0, 0, bikes.size() * gap + 3.0f * M, 2 * row };
         Vector2 at = player.pos + V2(-area.width * 0.5f, -area.height - 1.5f * M);
         for (int tries = 0; tries < 200; tries++) {
-            Vector2 c = player.pos + V2(-area.width * 0.5f + (tries % 9 - 4) * 1.0f * M, -area.height - (1.5f + float(tries / 9)) * M);
+            Vector2 c = player.pos + V2(-area.width * 0.5f + (tries % 9 - 4) * 1.0f * M, -area.height - (1.5f + std::floor(tries / 9.0f)) * M);
             if (map.AreaFree({ c.x, c.y, area.width, area.height })) { at = c; break; }
         }
         for (size_t k = 0; k < bikes.size(); k++) {
@@ -59,6 +59,30 @@ void Game::DebugScenario(const char* name) {
         }
         int car = gAssets.RandomSkin(FindVehicleClass("Stinger"));
         if (car >= 0) SpawnVehicle(car, at + V2(bikes.size() * gap + 1.5f * M, row), 0, DriverType::Parked);
+    }
+    if (n == "civilians") {            // every civilian look standing in two rows beside the player
+        dn.hour = 13.0f;
+        const int perRow = 14;
+        const float gap = 1.2f * M, row = 2.2f * M;
+        int looks = (int)gAssets.peds.size(), rows = (looks + perRow - 1) / perRow;
+        Rectangle area = { 0, 0, perRow * gap, rows * row };
+        Vector2 at = player.pos + V2(-area.width * 0.5f, -area.height - 1.5f * M);
+        for (int tries = 0; tries < 200; tries++) {
+            Vector2 c = player.pos + V2(-area.width * 0.5f + (tries % 9 - 4) * 1.0f * M, -area.height - (1.5f + std::floor(tries / 9.0f)) * M);
+            Rectangle r = { c.x, c.y, area.width, area.height };
+            bool clear = map.AreaFree(r);
+            for (const Vehicle& v : vehicles)
+                if (clear && v.active && CheckCollisionCircleRec(v.pos, v.length * 0.6f, r)) clear = false;
+            if (clear) { at = c; break; }
+        }
+        for (int k = 0; k < looks; k++) {
+            int idx = SpawnPed(at + V2(gap * (k % perRow + 0.5f), row * (std::floor((float)k / perRow) + 0.5f)), k);
+            Pedestrian& p = peds[idx];
+            p.state = p.resume = PedState::Idle;
+            p.timer = 1e6f;
+            p.angle = 0;
+            p.vel = { 0, 0 };
+        }
     }
     if (n == "overview") { debugOverview = true; dn.hour = 13.0f; }
     if (n == "brawl") { autoMode = 4; dn.hour = 13.0f; }

@@ -16,6 +16,7 @@ Source: `src/pedestrian.h`, `src/pedestrian.cpp`; drivers on foot in `src/traffi
 - [Locomotion and avoidance](#locomotion-and-avoidance)
 - [Injury and death](#injury-and-death)
 - [Population](#population)
+- [Appearance](#appearance)
 - [Tuning reference](#tuning-reference)
 
 ## States
@@ -111,7 +112,7 @@ Contact rules keep the model honest:
 - Buildings and solid furniture are hard walls; bus shelters can be walked into.
 - A person who wants to move but makes no progress for 1.2 s turns round or takes another route.
 
-The walk cycle advances with the distance walked (8 frames per 1.3 m, two steps), and the body sways by up to 0.05 rad with the steps.
+The walk cycle advances with the distance walked (8 frames per 1.3 m, two steps). Above 3.6 m/s, when fleeing or dodging, the run frames take over at 8 frames per 3.2 m; an atlas without run frames shows the walk at 0.7 of its rate instead. The cycle lengths come from [civilians.cfg](../guides/adding-content.md#civilians). The body sways by up to 0.05 rad with the steps.
 
 ## Injury and death
 
@@ -130,6 +131,10 @@ Slower vehicles push people aside. People who are knocked down but alive get up 
 
 A uniform grid with one cell per tile (`PedGrid`) answers "who is near this point" for the pedestrians themselves, for traffic looking for people in the road, and for vehicle–pedestrian collisions. It is rebuilt before vehicles and before pedestrians update. The whole pedestrian update costs about 0.4 ms per frame for 300 people (see [Testing › Metrics](../testing.md#metrics)).
 
+## Appearance
+
+The 28 looks are atlases rendered from 3D models: men and women of three age groups, 1.55–1.86 m tall, in ordinary clothes ([pipeline](../../assets/art/cj004/README.md#civilian-3d-pipeline)). Each atlas holds the walk, idle, lying, two punches, two raised-fist positions and a run cycle, seen straight from above. A standing civilian is drawn `CHAR_SCALE` times life size and then the `SCALE` of [civilians.cfg](../guides/adding-content.md#civilians) larger again (1.12), so that an average man reads as large as the player, whose combat stance and vest make him broad; men and women keep their real proportions to each other. A body on the ground shows at real size. Without the atlases the game falls back to procedural looks.
+
 ## Tuning reference
 
 | Constant | Value | Where |
@@ -142,4 +147,5 @@ A uniform grid with one cell per tile (`PedGrid`) answers "who is near this poin
 | `NEIGHBOUR_R`, `GOAL_TIME` | 5 m, 0.5 s | `pedestrian.cpp` |
 | `PED_BODY_FADE`, `PED_BODY_GONE` | 24 s, 27 s | `pedestrian.h` |
 | `PEDESTRIANS`, `PED_KEEP_RADIUS`, `PED_SPAWN_MIN`, `PED_SPAWN_MAX` | 300, 110 m, 30 m, 100 m | `config.h` |
-| Standing / lying sprite size | 1.4 m × `CHAR_SCALE` frame; lying bodies at real size (1.7 m) | `pedestrian.cpp` |
+| Standing / lying sprite size | 2.1 m frame × `CHAR_SCALE` × `SCALE` (1.12); lying bodies at real size | `civilians.cfg`, `pedestrian.cpp` |
+| `PED_RUN_FRAMES_SPEED` | 3.6 m/s: run frames from here | `pedestrian.cpp` |

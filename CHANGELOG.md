@@ -9,11 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `WIDTH <class> <width m>` and `BIKE <class> <empty file> <ridden file>` records in `vehicles.cfg`, the `bikes` test scenario, and a `VEHICLE` start-up log line with each class's collision and drawn width (CJ-004).
+- `assets/data/civilians.cfg` (`FRAME`, `SCALE`, `WALK`, `RUN`, `CIVILIAN`): pedestrian atlases with run frames, the `civilians` test scenario and `tools/cj004/make_civilians.py` with `looks.json`, which builds, animates, renders and checks every look (CJ-004).
 - CJ-004 civilian 3D pipeline (`tools/cj004/`): Blender scripts that build a civilian from MakeHuman CC0 assets, retarget Quaternius Universal Animation Library actions onto it, render top-down frames, measure them and reduce them to stylized 96 px atlas frames. The proof of concept, one civilian with an idle and an eight-frame walk, is accepted; the game is unchanged.
 - CJ-004 art review: motorcycle designs are accepted; civilian sheets and earlier idle masters are rejected experiments. The [v4 idle candidate](assets/art/cj004/civilian-idle-master-v4.png) awaits review before animation groups: fully hidden idle legs/shoes, vertical arms, compact shoulders, ordinary clothing and the player's moderate detail. [Source art and historical prompts](assets/art/cj004/README.md) and the [smaller-group workflow](assets/art/cj004/civilian-prompts-v2.md) are recorded. Vehicle exports bake position and scale into PNGs using a shared facing, centre and size convention. For the civilians, animation validation, appearance variants and playtest remain open.
 
 ### Changed
 
+- Civilians are rendered from 3D models (CJ-004): 28 looks, men and women of three age groups and real heights (1.55–1.86 m) in ordinary clothes, with a relaxed walk, a run for fleeing and dodging, two punches, the raised fist and a body on the ground at real size, replacing the procedural looks (which remain the fallback). Standing civilians are drawn 12 % larger than life on top of the usual character scale, so that an average man reads as large as the player. Awaits playtest.
 - Motorbikes use the new CJ-004 art instead of the procedural placeholders: a sportbike, a chopper and a scooter, each with and without a rider. The art keeps its proportions at the class length, so its mirrors and handlebars (0.93–1.24 m) reach beyond the collision box, which keeps the handlebar width of real bikes: Sportbike 0.75 m, Chopper 0.95 m, Scooter 0.70 m (0.77, 0.95 and 0.69 m before). One look per class for now, instead of 11 colour and outfit combinations.
 - CJ-004 motorbikes are done: the user playtested and accepted them on 2026-10-08. CJ-004 stays open for the civilians.
 

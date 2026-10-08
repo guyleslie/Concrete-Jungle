@@ -8,6 +8,7 @@ Vehicles, characters, weapons, foliage and sounds are data-driven: you add them 
 - [Vehicles](#vehicles)
 - [Traffic behaviour](#traffic-behaviour)
 - [Characters](#characters)
+- [Civilians](#civilians)
 - [Weapons](#weapons)
 - [Foliage](#foliage)
 - [Sounds](#sounds)
@@ -197,6 +198,29 @@ FEET  <anim> <frames> <folder> <file prefix>
 | `FEET` | Leg animation drawn under the body; `anim` is `idle`, `walk`, `run`, `strafe_left` or `strafe_right` |
 
 A weapon chooses which set the player's body uses.
+
+## Civilians
+
+File: `assets/data/civilians.cfg`. Atlases go in `assets/characters/civilians/` as horizontal strips of square frames, the person **facing up**.
+
+```
+FRAME    <px> <metres>
+SCALE    <factor>
+WALK     <metres>
+RUN      <metres>
+CIVILIAN <file>
+```
+
+| Record | Meaning |
+|---|---|
+| `FRAME` | Frame size in pixels and the metres one frame covers at life size |
+| `SCALE` | How much larger standing civilians are drawn, on top of `CHAR_SCALE`, so that an average man reads as large as the player |
+| `WALK`, `RUN` | Distance of one eight-frame walk and run cycle; the run frames show above 3.6 m/s |
+| `CIVILIAN` | One look |
+
+Frames: 0–7 walk, 8 idle, 9 lying, 10 right punch, 11 left punch, 12–13 raised fist, 14–21 run. The run frames are optional; every atlas needs the same frame size and count. The lying frame covers `FRAME` × `CHAR_SCALE` metres, so that the body shows at real size. Without a loadable `CIVILIAN` line the game draws 28 procedural looks.
+
+The shipped looks are rendered from 3D models: to change or add one, edit [looks.json](../../tools/cj004/looks.json) and run `python tools/cj004/make_civilians.py` (see the [civilian 3D pipeline](../../assets/art/cj004/README.md#civilian-3d-pipeline)).
 
 ## Weapons
 

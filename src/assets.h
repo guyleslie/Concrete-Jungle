@@ -6,6 +6,7 @@
 //    characters.cfg  ANIM / FEET / SCALE lines for animated character sprite sets
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
+//    civilians.cfg   FRAME / SCALE / WALK / RUN / CIVILIAN: pedestrian atlases
 //  Adding content = drop the image files in assets/ and add a line. Built-in defaults
 //  are used when a file is missing, and every image has a procedural fallback.
 //
@@ -68,7 +69,13 @@ struct Assets {
     std::vector<std::vector<int>> byClass;       // skins per vehicle class
 
     // --- characters ---
-    std::vector<Texture2D>    peds;              // civilian atlases (spritegen::PedAtlas)
+    std::vector<Texture2D>    peds;              // civilian atlases (civilians.cfg, else spritegen::PedAtlas)
+    int                       pedFramePx = spritegen::PED_FRAME;        // square atlas frame (px)
+    float                     pedFrameM = 1.4f;                         // metres a frame covers at life size
+    int                       pedFrames = spritegen::PED_ATLAS_FRAMES;  // frames per atlas
+    float                     pedWalkCycleM = 1.3f;                     // metres per 8-frame walk cycle
+    float                     pedRunCycleM = 0;                         // per run cycle; 0 = no run frames
+    float                     pedDrawScale = 1.0f;                      // standing civilians, on top of CHAR_SCALE
     Texture2D                 playerUnarmed{};   // Survivor-look atlas without weapon
     std::vector<CharacterSet> charSets;
     SpriteAnim                feet[(int)FeetAnim::COUNT];
