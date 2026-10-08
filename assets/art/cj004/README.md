@@ -1,6 +1,6 @@
 # CJ-004 art preparation
 
-The user accepted the motorbike designs on 2026-10-07, subject to correct size, and rejected the earlier civilian sheets and idle masters. The accepted bike source is preserved, and its six exports, which follow the shared vehicle convention below, replaced the procedural motorbikes in the game on 2026-10-07, and the user accepted them in a playtest on 2026-10-08. A new v4 civilian idle candidate awaits review. CJ-004 remains open for the civilians.
+The user accepted the motorbike designs on 2026-10-07, subject to correct size, and rejected the earlier civilian sheets and idle masters. The accepted bike source is preserved, and its six exports, which follow the shared vehicle convention below, replaced the procedural motorbikes in the game on 2026-10-07, and the user accepted them in a playtest on 2026-10-08. Since 2026-10-08 the civilians are rendered from 3D models instead of generated images; the generated civilian art below is superseded. CJ-004 remains open for the civilians.
 
 ## Motorbike exports
 
@@ -47,9 +47,51 @@ The exporter compiles without warnings, and its check passes on the files in `as
 
 Earlier idle attempts projected arms and legs forward. [V3](civilian-idle-master-v3.png) hid the legs but was rejected for enormous rounded shoulder/upper-arm blobs. Preserve failed experiments; do not animate them.
 
-## Civilian idle candidate
+[V4 idle master](civilian-idle-master-v4.png), based on the [revised upright pose guide](civilian-upright-pose-guide-v2.png), was the last generated candidate. It was not reviewed further: image generation could not deliver a consistent, correctly projected walk cycle, so the [revised prompts](civilian-prompts-v2.md) are superseded by the 3D pipeline below.
 
-[V4 idle master](civilian-idle-master-v4.png), based on the [revised upright pose guide](civilian-upright-pose-guide-v2.png), awaits user review. The target completely occludes idle legs and shoes, with arms hanging vertically, small integrated upper arms, ordinary clothing and the player's moderate detail. No walk, run or action groups have been generated from this candidate. After acceptance, follow the [revised prompts and quality gates](civilian-prompts-v2.md) to generate those groups separately.
+## Civilian 3D pipeline
+
+Civilians are built from 3D human models, animated, and rendered straight from above in Blender. The geometry, the walk cycle and the frame registration then come from the model rather than from an image generator.
+
+| Part | Source | Licence |
+|---|---|---|
+| Body, clothes, hair, skins | [MakeHuman](https://static.makehumancommunity.org/assets/assetpacks.html) asset packs: system assets, shirts01, pants01, shoes01, hair01, skins01, eyebrows01 | CC0 |
+| Character tool | [MPFB 2.0.17](https://extensions.blender.org/add-ons/mpfb/), the MakeHuman add-on for Blender | GPL-3.0 (a tool; its output is not covered) |
+| Animations | [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html) by Quaternius, Standard | CC0 |
+
+### Setting up
+
+1. Install Blender 5.2. Install the MPFB extension from its zip (`blender --command extension install-file -r user_default -e add-on-mpfb-v2.0.17.zip`) and load the asset pack zips with MPFB's *Load pack from zip file*.
+2. Download the Universal Animation Library (Standard) from itch.io and unpack it. The scripts use `Unreal-Godot/UAL1_Standard.glb`, the version without root motion.
+3. Keep downloads, unpacked packs and `.blend` files in `build/art-sources/`, which Git ignores.
+
+### Steps
+
+| Script | What it does |
+|---|---|
+| [build_civilian.py](../../../tools/cj004/build_civilian.py) | Builds a civilian from a look file ([example](../../../tools/cj004/look-civilian-01.json)): MakeHuman macro details, skin, clothes, hair and the `game_engine` rig |
+| [retarget_ual.py](../../../tools/cj004/retarget_ual.py) | Copies library actions onto the civilian. The library rests in a T-pose and MPFB in an A-pose: the civilian is first posed along the library's rest bones, then every frame takes the library bone's world rotation times the constant roll offset, so hip and shoulder twist carries over |
+| [render_civilian.py](../../../tools/cj004/render_civilian.py) | Renders frames straight from above: orthographic, 1.4 m × 1.4 m per frame (the atlas frame before `CHAR_SCALE`), 384 px, facing the top of the image, sun from the upper left. Also writes a mask of the legs and shoes. The `idle` pose is built in the script: upright, arms hanging, feet under the hips |
+| [measure_frames.py](../../../tools/cj004/measure_frames.py) | Visible legs and shoes, width and length of the silhouette, body centre drift and the silhouette change between frames, including the wrap-around of a cycle |
+| [stylize.py](../../../tools/cj004/stylize.py) | Reduces a render to the 96 px atlas frame with more contrast and saturation and a dark contour, like the player and the procedural civilians |
+| [compare_scale.py](../../../tools/cj004/compare_scale.py), [walk_preview.py](../../../tools/cj004/walk_preview.py), [preview_frames.py](../../../tools/cj004/preview_frames.py), [debug_side.py](../../../tools/cj004/debug_side.py) | Comparison at game scale on the sidewalk, the atlas strip and an animated walk, a contact sheet with the visible legs marked, and side views of a retarget next to the library mannequin |
+
+### Proof of concept (2026-10-08)
+
+One civilian (jacket, jeans, dark shoes, short brown hair, 1.69 m) with the upright idle and an eight-frame walk, rendered, stylized and compared at game scale:
+
+![Proof of concept at game scale](civilian-3d-poc-compare.png)
+
+![Atlas frames: idle, walk 0-7](civilian-3d-poc-strip.png)
+
+| Criterion | Result |
+|---|---|
+| Idle: visible legs and shoes at most 4 % of the silhouette (the user's choice; 0 px is impossible, because standing upright the toes reach beyond the chest) | 3.3 % with the jacket; 10.7 % with a slimmer sweater |
+| Width within ±10 % of the player's 0.65 m | Idle 0.59 m (−9 %), walk 0.68–0.69 m (+5 %) |
+| The walk loops: the step from frame 7 to frame 0 like the others | Silhouette change 0.0327 against 0.0233–0.0377 |
+| Pelvis drift | Front to back 0.02 px; side to side 3.1 px (4.5 cm), the natural sway of a walk, averaging at the frame centre |
+
+The library's `Walk_Loop` swings bent arms with closed fists, like a boxer; `Walk_Formal_Loop`, with relaxed hanging arms, is the civilian walk. The library's `Idle_Loop` stands contrapposto with one leg back (23 % legs) and is not used. Walking leans the body slightly forward, so the silhouette lengthens a little when a civilian sets off. A raw render reads grey on the sidewalk; the stylized frames match the game. A grey jacket still blends in; the variants need firmer colours.
 
 ## Provenance
 

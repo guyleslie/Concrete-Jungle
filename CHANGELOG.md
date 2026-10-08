@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `WIDTH <class> <width m>` and `BIKE <class> <empty file> <ridden file>` records in `vehicles.cfg`, the `bikes` test scenario, and a `VEHICLE` start-up log line with each class's collision and drawn width (CJ-004).
+- CJ-004 civilian 3D pipeline (`tools/cj004/`): Blender scripts that build a civilian from MakeHuman CC0 assets, retarget Quaternius Universal Animation Library actions onto it, render top-down frames, measure them and reduce them to stylized 96 px atlas frames. The proof of concept, one civilian with an idle and an eight-frame walk, is accepted; the game is unchanged.
 - CJ-004 art review: motorcycle designs are accepted; civilian sheets and earlier idle masters are rejected experiments. The [v4 idle candidate](assets/art/cj004/civilian-idle-master-v4.png) awaits review before animation groups: fully hidden idle legs/shoes, vertical arms, compact shoulders, ordinary clothing and the player's moderate detail. [Source art and historical prompts](assets/art/cj004/README.md) and the [smaller-group workflow](assets/art/cj004/civilian-prompts-v2.md) are recorded. Vehicle exports bake position and scale into PNGs using a shared facing, centre and size convention. For the civilians, animation validation, appearance variants and playtest remain open.
 
 ### Changed

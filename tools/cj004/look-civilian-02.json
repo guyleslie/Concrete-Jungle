@@ -1,0 +1,7 @@
+{
+  "macro": {"gender": 1.0, "age": 0.58, "muscle": 0.6, "weight": 0.55, "height": 0.6, "proportions": 0.5},
+  "race": {"caucasian": 1.0},
+  "skin": "middleage_caucasian_male",
+  "clothes": ["male_casualsuit02", "shoes03"],
+  "hair": "short02"
+}

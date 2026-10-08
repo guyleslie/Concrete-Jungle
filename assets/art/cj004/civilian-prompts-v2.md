@@ -1,5 +1,7 @@
 # Civilian art workflow, second attempt
 
+> **Superseded (2026-10-08).** Civilians are now rendered from 3D models; see the [civilian 3D pipeline](README.md#civilian-3d-pipeline). This workflow is kept as a record.
+
 The user rejected the civilian sheets and earlier idle masters on 2026-10-07. The [v4 idle candidate](civilian-idle-master-v4.png), based on the [revised upright pose guide](civilian-upright-pose-guide-v2.png), awaits user review; no animation groups have been generated from it. Idle must completely occlude legs and shoes, with arms hanging vertically and compact, integrated shoulders rather than separate rounded blobs or bulky clothing. Match the existing player's moderate painted detail.
 
 ## What failed
