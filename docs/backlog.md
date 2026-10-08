@@ -177,6 +177,22 @@ Remaining: the playtest.
 
 **Civilians from 3D (2026-10-08).** Image generation could not keep 22 frames consistent and correctly projected (the camera rarely occurs in its training data, a reference image overrode the prompt, the target moved between iterations), so the civilians are now built with MakeHuman (MPFB, CC0 assets) in Blender, animated with the Quaternius Universal Animation Library (CC0) and rendered straight from above ([pipeline](../assets/art/cj004/README.md#civilian-3d-pipeline)). The user's decisions: an upright idle in which legs and shoes are at most 4 % of the silhouette, and a stylized look with a dark contour and firmer colours. The proof of concept, one civilian with the idle and an eight-frame walk, met the idle, width and loop criteria; its side-to-side pelvis sway of 3.1 px is the natural sway of a walk. The user accepted it and asked for the full set: run, punch, lying, the raised-fist gestures and appearance variants, then integration, a before/after measurement and the playtest.
 
+**Agreed civilian specification (2026-10-08).**
+
+| Frames (96 px, facing up) | Content | Source |
+|---|---|---|
+| 0–7 | Walk | `Walk_Formal_Loop` |
+| 8 | Idle | Upright pose built by the render script |
+| 9 | Lying (knocked down or dead), real size | Last frame of `Death01` |
+| 10–11 | Right and left punch | Peak of `Punch_Cross` / `Punch_Jab` |
+| 12–13 | Raised fist, two shake positions | Pose built by the render script |
+| 14–21 | Run (new) | `Jog_Fwd_Loop` or `Sprint_Loop`, whichever looks more natural |
+
+- **Variants:** 28, as today: men and women, three age groups, three builds, several skin tones, at least eight outfits and eight hairstyles from the CC0 packs with recoloured clothes; no two with the same outfit, colour and hair.
+- **Integration, data-driven:** atlases in `assets/characters/civilians/`, listed in a new `assets/data/civilians.cfg`; a missing file keeps the procedural civilian. Run frames show only at running speed; an atlas without them keeps the walk frames. No other behaviour changes.
+- **Criteria per variant:** idle legs and shoes at most 4 % of the silhouette; width within ±10 % of the player's (0.59–0.72 m); walk and run cycles closed; pelvis cycle average within 1 px of the frame centre.
+- **Criteria in the game:** a new `civilians` scenario lines up every variant beside the player (screenshots before and after); `day`, `rampage` and `brawl` change FPS by at most 5 % and leave the pedestrian metrics unchanged; then the user's playtest.
+
 **Problem.** Motorbikes and civilian pedestrians use procedural placeholder sprites that do not match the quality of the rest of the art. Playtest feedback (2026-09-27): the civilians look much cheaper than the player, their walk animation does not look real, and standing civilians look smaller than the player, because the player sprite holds its arms forward while the civilians are drawn thin from the top.
 
 **Notes.** No free, high-resolution top-down motorbike or civilian art has been found yet. itch.io listings show a bot check to automated browsers, so they must be searched manually. The player's Survivor sprites are a soldier in a combat stance, so recolouring them into civilians (GTA 2 style remaps) was considered and rejected. Any new art must meet the [art requirements](guides/adding-content.md#art-and-licence-requirements); consider rendering sprites from open-source 3D character models (for example CC0 models rendered top-down) if no 2D set exists.
