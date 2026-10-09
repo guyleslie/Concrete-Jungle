@@ -24,6 +24,7 @@
 #pragma once
 #include "vehicle.h"
 #include <vector>
+namespace startup { class Reporter; }
 
 struct TurnPoint {
     Vector2 p{};            // junction frame: centre at the origin, approach northwards in the lane x = +LANE_OFFSET
@@ -46,4 +47,4 @@ struct TurnPath {
 // The turn path of this vehicle's class and size: 1 right, 2 left. Built on first use.
 const TurnPath& RailTurnPath(const Vehicle& v, int turnType);
 // Builds the turn paths of every traffic class and sprite (about half a second, at load).
-void RailPlanTurns();
+bool RailPlanTurns(startup::Reporter* loading = nullptr);

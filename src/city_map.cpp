@@ -7,6 +7,7 @@
 #include "particles.h"
 #include "lighting.h"
 #include "rlgl.h"
+#include "startup_loading.h"
 #include <algorithm>
 
 using namespace cfg;
@@ -65,7 +66,14 @@ Vector2 RailLoop::PointAt(float s, float* angle) const {
 // -------------------------------------------------------------------------------------
 //  Generation
 // -------------------------------------------------------------------------------------
-void CityMap::Generate(uint32_t seed) {
+bool CityMap::Generate(uint32_t seed, startup::Reporter* loading) {
+    generated = false;
+    if (loading && (!loading->Begin("world.city", "Streets, buildings and metro", 1) ||
+        !loading->PlanChildren({ { "layout" }, { "tiles" }, { "signals" }, { "blocks" }, { "rail" },
+                                 { "bridges" }, { "furniture" }, { "index" }, { "train" } }))) return false;
+    auto phase = [&](const char* detail) {
+        return !loading || (loading->Count(0, 0, "") && loading->Pulse(detail, true));
+    };
     Rng rng(seed);
     buildings.clear(); objects.clear(); parking.clear();
     for (auto& v : tileBuildings) v.clear();
@@ -89,9 +97,10 @@ void CityMap::Generate(uint32_t seed) {
     place(BlockType::Plaza, 4, 1);
     place(BlockType::Parking, 6, 0);
     blocks[BLOCKS_Y / 2][BLOCKS_X / 2] = BlockType::Plaza;       // central square
+    if (loading && (!loading->ChildDone("layout") || !phase("Laying roads and pavements"))) return false;
 
     // ---- tiles ----
-    for (int ty = 0; ty < MAP_H; ty++)
+    for (int ty = 0; ty < MAP_H; ty++) {
         for (int tx = 0; tx < MAP_W; tx++) {
             int lx = tx % BLOCK_PITCH, ly = ty % BLOCK_PITCH;
             Tile t;
@@ -107,19 +116,50 @@ void CityMap::Generate(uint32_t seed) {
             }
             tiles[ty][tx] = t;
         }
-    for (int j = 0; j < INTER_Y; j++)
+        if (loading && (!loading->Count(ty + 1, MAP_H, "tile rows") ||
+            !loading->ChildProgress("tiles", (double)(ty + 1) / MAP_H))) return false;
+    }
+    if (loading && (!loading->ChildDone("tiles") || !phase("Preparing traffic signals"))) return false;
+    for (int j = 0; j < INTER_Y; j++) {
         for (int i = 0; i < INTER_X; i++) signalOffset[j][i] = rng.Range(0, 16);
+        if (loading && (!loading->Count(j + 1, INTER_Y, "junction rows") ||
+            !loading->ChildProgress("signals", (double)(j + 1) / INTER_Y))) return false;
+    }
+    if (loading && (!loading->ChildDone("signals") || !phase("Constructing city blocks"))) return false;
 
     for (int j = 0; j < BLOCKS_Y; j++)
-        for (int i = 0; i < BLOCKS_X; i++) GenBlock(i, j, rng);
+        for (int i = 0; i < BLOCKS_X; i++) {
+            GenBlock(i, j, rng);
+            int completed = j * BLOCKS_X + i + 1;
+            if (loading && (!loading->Count(completed, BLOCKS_X * BLOCKS_Y, "blocks") ||
+                !loading->ChildProgress("blocks", (double)completed / (BLOCKS_X * BLOCKS_Y)))) return false;
+        }
+    if (loading && (!loading->ChildDone("blocks") || !phase("Constructing metro routes"))) return false;
     GenRail();
+    if (loading && (!loading->Count(1, 1, "metro loops") || !loading->ChildDone("rail") ||
+        !phase("Constructing bridges and gates"))) return false;
     GenGatesAndBridges(rng);
-    GenStreetFurniture(rng);
-    IndexBuildings();
+    if (loading && (!loading->Count(1, 1, "bridge passes") || !loading->ChildDone("bridges") ||
+        !phase("Placing street furniture"))) return false;
+    if (!GenStreetFurniture(rng, loading)) return false;
+    if (loading && (!loading->ChildDone("furniture") || !phase("Preparing city spatial queries"))) return false;
+    if (!IndexBuildings(loading)) return false;
+    if (loading && !loading->ChildDone("index")) return false;
 
     // train: 3 carriages
     trainPos = { 0.0f, -300.0f, -600.0f };
     trainSpeed = 0;
+    generated = true;
+    if (!Ready()) { if (loading) loading->Fail("City generation is incomplete"); return false; }
+    if (loading && (!loading->ChildDone("train") || !loading->Finish())) return false;
+    return true;
+}
+
+bool CityMap::Ready() const {
+    return generated && !buildings.empty() && !objects.empty() && !parking.empty() &&
+           rail.pts.size() > 1 && rail.dist.size() == rail.pts.size() + 1 && std::isfinite(rail.length) && rail.length > 0 &&
+           trainPos.size() == 3 && stamp.size() > std::max(buildings.size(), objects.size()) &&
+           InCity(policeStation) && InCity(hospital);
 }
 
 // How street furniture reacts to a vehicle hitting it (see CityObject::strength).
@@ -472,7 +512,14 @@ void CityMap::GenGatesAndBridges(Rng& rng) {
     }
 }
 
-void CityMap::GenStreetFurniture(Rng& rng) {
+bool CityMap::GenStreetFurniture(Rng& rng, startup::Reporter* loading) {
+    const int batches = BLOCKS_X * BLOCKS_Y + 2 * INTER_Y;
+    int completed = 0;
+    auto checkpoint = [&]() {
+        completed++;
+        return !loading || (loading->Count(completed, batches, "generation batches") &&
+                           loading->ChildProgress("furniture", (double)completed / batches));
+    };
     auto prop = [&](Prop p, Vector2 pos, float rot) {
         PropDim pd = Dim(p);
         CityObject o; o.kind = CityObject::Prop; o.sprite = (int)p; o.pos = pos; o.rot = rot;
@@ -542,9 +589,10 @@ void CityMap::GenStreetFurniture(Rng& rng) {
             Vector2 cs[4] = { { ring.x - 22, ring.y - 22 }, { ring.x + ring.width + 22, ring.y - 22 },
                               { ring.x + ring.width + 22, ring.y + ring.height + 22 }, { ring.x - 22, ring.y + ring.height + 22 } };
             for (auto& p : cs) prop(Prop::Bollard, p, 0);
+            if (!checkpoint()) return false;
         }
     // manholes along the roads
-    for (int j = 0; j < INTER_Y; j++)
+    for (int j = 0; j < INTER_Y; j++) {
         for (int i = 0; i < INTER_X - 1; i++) {
             Vector2 a = InterCenter(i, j);
             CityObject m; m.kind = CityObject::Prop; m.sprite = (int)Prop::Manhole;
@@ -552,8 +600,10 @@ void CityMap::GenStreetFurniture(Rng& rng) {
             PropDim pd = Dim(Prop::Manhole); m.w = pd.w; m.l = pd.l; m.h = 0.1f;
             AddObject(m);
         }
+        if (!checkpoint()) return false;
+    }
     // traffic signals at every corner of every intersection
-    for (int j = 0; j < INTER_Y; j++)
+    for (int j = 0; j < INTER_Y; j++) {
         for (int i = 0; i < INTER_X; i++) {
             Vector2 c = InterCenter(i, j);
             const float o = TILE + 10.0f;
@@ -568,12 +618,21 @@ void CityMap::GenStreetFurniture(Rng& rng) {
                 AddObject(s);
             }
         }
+        if (!checkpoint()) return false;
+    }
+    return true;
 }
 
-void CityMap::IndexBuildings() {
+bool CityMap::IndexBuildings(startup::Reporter* loading) {
+    const size_t records = buildings.size() + objects.size();
+    auto checkpoint = [&](size_t completed) {
+        return !loading || (loading->Count((int64_t)completed, (int64_t)records, "records examined") &&
+                           loading->ChildProgress("index", records == 0 ? 0 : (double)completed / records));
+    };
     for (auto& v : tileBuildings) v.clear();
     for (auto& v : tileObjects) v.clear();
     for (size_t k = 0; k < buildings.size(); k++) {
+        if (k % 64 == 0 && !checkpoint(k)) return false;
         const Building& b = buildings[k];
         if (!b.Solid()) continue;
         int x0 = std::max(0, (int)(b.r.x / TILE)), x1 = std::min(MAP_W - 1, (int)((b.r.x + b.r.width) / TILE));
@@ -582,6 +641,7 @@ void CityMap::IndexBuildings() {
             for (int x = x0; x <= x1; x++) tileBuildings[y * MAP_W + x].push_back((int)k);
     }
     for (size_t k = 0; k < objects.size(); k++) {
+        if (k % 64 == 0 && !checkpoint(buildings.size() + k)) return false;
         const CityObject& o = objects[k];
         if (o.radius <= 0) continue;
         int x0 = std::max(0, (int)((o.pos.x - o.radius) / TILE)), x1 = std::min(MAP_W - 1, (int)((o.pos.x + o.radius) / TILE));
@@ -590,9 +650,11 @@ void CityMap::IndexBuildings() {
             for (int x = x0; x <= x1; x++) tileObjects[y * MAP_W + x].push_back((int)k);
     }
     stamp.assign(std::max(buildings.size(), objects.size()) + 1, 0);
+    return checkpoint(records);
 }
 
 void CityMap::ResetTestGround(Tile surface) {
+    generated = false;
     testGround = true;
     testSurface = surface;
     buildings.clear(); objects.clear(); parking.clear(); characters.clear();
@@ -1438,13 +1500,45 @@ void CityMap::DrawEmissive(Rectangle view, float night, float t) const {
 // -------------------------------------------------------------------------------------
 //  Minimap (pre-rendered, 2 px per tile)
 // -------------------------------------------------------------------------------------
-void CityMap::BuildMinimap() {
+bool CityMap::BuildMinimap(startup::Reporter* loading) {
+    if (loading && (!loading->Begin("world.minimap", "Map preview", 1) ||
+        !loading->PlanChildren({ { "target" }, { "tiles" }, { "buildings" }, { "rail" } }))) return false;
     const int S = 2;
-    minimap = LoadRenderTexture(MAP_W * S, MAP_H * S);
+    {
+        startup::AtomicSpan atomic(loading, "framebuffer", "minimap");
+        minimap = LoadRenderTexture(MAP_W * S, MAP_H * S);
+    }
+    bool bufferReady = IsRenderTextureValid(minimap);
+    if (bufferReady) {
+        rlEnableFramebuffer(minimap.id);
+        bufferReady = rlFramebufferComplete(minimap.id);
+        rlDisableFramebuffer();
+    }
+    if (!bufferReady) {
+        if (loading) loading->Fail("City map buffer could not be prepared");
+        return false;
+    }
     minimapScale = (float)S / TILE;
+    if (loading && (!loading->ChildDone("target") || !loading->Pulse("Painting map terrain", true))) return false;
+
+    // Close the off-screen pass before any presenter can draw to the window. Resuming
+    // the same target without clearing keeps all previous minimap pixels intact.
+    auto checkpoint = [&](const char* child, size_t completed, size_t total, const char* unit) {
+        EndTextureMode();
+        if (!loading->Count((int64_t)completed, (int64_t)total, unit) ||
+            !loading->ChildProgress(child, total == 0 ? 0 : (double)completed / total)) return false;
+        BeginTextureMode(minimap);
+        return true;
+    };
+    auto nextPhase = [&](const char* child, const char* detail) {
+        EndTextureMode();
+        if (!loading->ChildDone(child) || !loading->Count(0, 0, "") || !loading->Pulse(detail, true)) return false;
+        BeginTextureMode(minimap);
+        return true;
+    };
     BeginTextureMode(minimap);
     ClearBackground({ 20, 45, 60, 255 });
-    for (int y = 0; y < MAP_H; y++)
+    for (int y = 0; y < MAP_H; y++) {
         for (int x = 0; x < MAP_W; x++) {
             Color c;
             switch (tiles[y][x]) {
@@ -1457,18 +1551,31 @@ void CityMap::BuildMinimap() {
             }
             DrawRectangle(x * S, y * S, S, S, c);
         }
+        if (loading && ((y + 1) % 8 == 0 || y + 1 == MAP_H) &&
+            !checkpoint("tiles", (size_t)y + 1, MAP_H, "tile rows")) return false;
+    }
+    if (loading && !nextPhase("tiles", "Painting buildings on the map")) return false;
+    size_t buildingsPainted = 0;
     for (const Building& b : buildings) {
         Color c = b.special == 1 ? Color{ 70, 110, 200, 255 } : b.special == 2 ? Color{ 230, 230, 230, 255 } :
                   b.special == 3 ? Color{ 150, 190, 210, 255 } : Color{ 165, 160, 150, 255 };
         if (!b.Solid() && b.special != 3) c = { 140, 135, 128, 255 };
         DrawRectangleRec({ b.r.x * minimapScale, b.r.y * minimapScale, b.r.width * minimapScale, b.r.height * minimapScale }, c);
+        buildingsPainted++;
+        if (loading && (buildingsPainted % 32 == 0 || buildingsPainted == buildings.size()) &&
+            !checkpoint("buildings", buildingsPainted, buildings.size(), "buildings")) return false;
     }
+    if (loading && !nextPhase("buildings", "Painting metro routes on the map")) return false;
     for (size_t k = 0; k < rail.pts.size(); k++) {
         Vector2 a = rail.pts[k] * minimapScale, b = rail.pts[(k + 1) % rail.pts.size()] * minimapScale;
         DrawLineEx(a, b, 1.5f, { 70, 150, 230, 255 });
+        if (loading && ((k + 1) % 32 == 0 || k + 1 == rail.pts.size()) &&
+            !checkpoint("rail", k + 1, rail.pts.size(), "rail segments")) return false;
     }
     EndTextureMode();
     SetTextureFilter(minimap.texture, TEXTURE_FILTER_BILINEAR);
+    if (loading && (!loading->ChildDone("rail") || !loading->Finish())) return false;
+    return true;
 }
 
 void CityMap::UnloadMinimap() { if (minimap.id) UnloadRenderTexture(minimap); minimap = {}; }

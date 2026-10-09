@@ -11,6 +11,7 @@ Vehicles, characters, weapons, foliage and sounds are data-driven: you add them 
 - [Civilians](#civilians)
 - [Weapons](#weapons)
 - [Foliage](#foliage)
+- [Loading screen](#loading-screen)
 - [Sounds](#sounds)
 - [Street furniture](#street-furniture)
 - [Art and licence requirements](#art-and-licence-requirements)
@@ -255,6 +256,12 @@ BUSH <file>
 ```
 
 Trees are used in parks, streets and courtyards; bushes along paths, in planters and on sidewalks.
+
+## Loading screen
+
+File: `assets/data/loading.cfg`. `BACKGROUND`, `WORDMARK`, `FONT_BOLD` and `FONT_SEMI` select optional cosmetic resources. `HEADLINE`, `LABEL` and `DETAIL` take a registered task ID and joined words; dynamic details and qualified counts come from the loader. `TEXT` changes general presentation strings; `COLOR` takes a named color and four byte channels. The file header documents accepted keys. Missing resources retain the primitive presentation.
+
+Adding content to existing vehicle, character or foliage definitions automatically changes their local work plans. Overall estimates use current metadata and optional unit-cost measurements from previous successful starts. A new loading subsystem also needs a registered parent and actual completion reports in code, before the overall plan freezes; cosmetics cannot create tasks or readiness.
 
 ## Sounds
 

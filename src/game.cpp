@@ -5,7 +5,9 @@
 #include "traffic_incidents.h"
 #include "traffic.h"
 #include "rlgl.h"
+#include "startup_loading.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 using namespace cfg;
@@ -15,13 +17,39 @@ Rng& GRng() { static Rng r(0xC0FFEEu); return r; }
 // -------------------------------------------------------------------------------------
 //  Setup
 // -------------------------------------------------------------------------------------
-void Game::Init() {
-    map.Generate(20260926u);
-    map.BuildMinimap();
-    renderer.Init(GetScreenWidth(), GetScreenHeight());
-    audio.Init();
-    NewGame();
+bool Game::Init(startup::Reporter* loading) {
+    startupInitialized = false;
+    if (!map.Generate(20260926u, loading)) return false;
+    if (!map.BuildMinimap(loading)) return false;
+    if (!renderer.Init(GetScreenWidth(), GetScreenHeight(), loading)) return false;
+    if (!audio.Init(loading)) return false;
+    if (!NewGame(loading)) return false;
     state = GameState::Title;
+    startupInitialized = true;
+    return true;
+}
+
+bool Game::StartupReady(std::string* reason) const {
+    auto reject = [&](const char* text) { if (reason) *reason = text; return false; };
+    if (!startupInitialized) return reject("World initialization did not finish");
+    if (!map.Ready() || !IsRenderTextureValid(map.minimap)) return reject("City map is unavailable");
+    if (!renderer.Ready()) return reject("Required graphics buffers are unavailable");
+    if (vehicles.empty() || peds.size() != (size_t)PEDESTRIANS || pickups.empty() || jobPhones.size() < 4)
+        return reject("City population is incomplete");
+    if (!std::isfinite(player.pos.x) || !std::isfinite(player.pos.y) || !map.InCity(player.pos) || player.health <= 0)
+        return reject("Player initialization is incomplete");
+    size_t weapons = gAssets.weapons.size();
+    if (weapons == 0 || player.clip.size() != weapons || player.ammo.size() != weapons || player.owned.size() != weapons ||
+        player.weapon < 0 || (size_t)player.weapon >= weapons || !player.owned[player.weapon])
+        return reject("Player equipment is incomplete");
+    if (!std::isfinite(cam.pos.x) || !std::isfinite(cam.pos.y) || !std::isfinite(cam.viewH) || cam.viewH <= 0)
+        return reject("Title camera is unavailable");
+    if (reason) reason->clear();
+    return true;
+}
+
+void Game::SuppressStartupKeys(bool enterHeld, bool spaceHeld) {
+    startupInput.Suppress(enterHeld, spaceHeld);
 }
 
 // Test scenarios used by the --shot command line mode (automated screenshots).
@@ -578,9 +606,10 @@ void Game::LogPedStats() const {
 }
 
 void Game::Unload() {
+    audio.Unload();
     renderer.Unload();
     map.UnloadMinimap();
-    audio.Unload();
+    startupInitialized = false;
 }
 
 int Game::SpawnVehicle(int skin, Vector2 pos, float angle, DriverType d) {
@@ -603,7 +632,13 @@ int Game::SpawnPed(Vector2 pos, int skin, bool fleeing) {
     return slot;
 }
 
-void Game::NewGame() {
+bool Game::NewGame(startup::Reporter* loading) {
+    if (loading && (!loading->Begin("world.population", "Traffic, pedestrians and player", 1) ||
+        !loading->PlanChildren({ { "parked" }, { "traffic" }, { "player" }, { "pedestrians" },
+                                 { "equipment" }, { "pickups" }, { "phones" } }))) return false;
+    auto phase = [&](const char* detail) {
+        return !loading || (loading->Count(0, 0, "") && loading->Pulse(detail, true));
+    };
     RecoveryResetStats();
     IncidentsReset();
     Rng& r = GRng();
@@ -618,10 +653,18 @@ void Game::NewGame() {
 
     // ---- parked cars (police at the station, ambulances at the hospital) ----
     std::vector<ParkingSpot> spots = map.parking;
-    for (size_t i = spots.size(); i > 1; i--) std::swap(spots[i - 1], spots[r.Int(0, (int)i - 1)]);
+    for (size_t i = spots.size(); i > 1; i--) {
+        std::swap(spots[i - 1], spots[r.Int(0, (int)i - 1)]);
+        if (loading && (i % 32 == 0) && !loading->Pulse("Preparing parking spaces")) return false;
+    }
     int parked = 0;
+    size_t spotsVisited = 0;
     for (const ParkingSpot& s : spots) {
         if (parked >= PARKED_CARS) break;
+        if (loading && (!loading->Count((int64_t)spotsVisited, (int64_t)spots.size(), "spots examined") ||
+            !loading->ChildProgress("parked", spots.empty() ? 0 : (double)spotsVisited / spots.size()) ||
+            !loading->Pulse("Placing parked vehicles"))) return false;
+        spotsVisited++;
         int bi = (int)(s.pos.x / (BLOCK_PITCH * TILE)), bj = (int)(s.pos.y / (BLOCK_PITCH * TILE));
         BlockType bt = map.Block(std::clamp(bi, 0, BLOCKS_X - 1), std::clamp(bj, 0, BLOCKS_Y - 1));
         int skin;
@@ -639,23 +682,33 @@ void Game::NewGame() {
         SpawnVehicle(skin, s.pos, s.angle + r.Range(-0.04f, 0.04f), DriverType::Parked);
         parked++;
     }
+    if (loading && !loading->ChildDone("parked")) return false;
     // ---- moving traffic ----
+    if (!phase("Placing moving traffic")) return false;
     for (int i = 0; i < TRAFFIC_CARS; i++) {
         int skin = gAssets.RandomTrafficSkin();
         int idx = SpawnVehicle(skin, { 0, 0 }, 0, DriverType::Traffic);
         if (!AIPlaceOnRoad(*this, vehicles[idx], { WORLD_W * 0.5f, WORLD_H * 0.5f }, 0, 1e9f, false)) vehicles[idx].active = false;
+        if (loading && (!loading->Count(i + 1, TRAFFIC_CARS, "traffic attempts") ||
+            !loading->ChildProgress("traffic", (double)(i + 1) / std::max(1, TRAFFIC_CARS)))) return false;
     }
+    if (loading && !loading->ChildDone("traffic")) return false;
     // ---- player: on foot at the central square, a sports car waiting at the curb ----
     player = PlayerState{};
     int cb = BLOCKS_X / 2, cbj = BLOCKS_Y / 2;
     Rectangle ring = map.SidewalkRing(cb, cbj);
     player.pos = { ring.x + ring.width * 0.45f, ring.y + ring.height };
+    if (loading && (!loading->Count(1, 1, "player positions") || !loading->ChildDone("player") ||
+        !phase("Placing pedestrians"))) return false;
 
     // ---- pedestrians: around the player ----
     for (int i = 0; i < PEDESTRIANS; i++) {
         Vector2 at = map.RandomSidewalkPointNear(r, player.pos, 0, PED_SPAWN_MAX);
         SpawnPed(Dist(at, player.pos) > 1.5f * M ? at : map.RandomSidewalkPointNear(r, player.pos, 6 * M, PED_SPAWN_MAX), r.Int(0, (int)gAssets.peds.size() - 1));
+        if (loading && (!loading->Count(i + 1, PEDESTRIANS, "pedestrian attempts") ||
+            !loading->ChildProgress("pedestrians", (double)(i + 1) / std::max(1, PEDESTRIANS)))) return false;
     }
+    if (loading && (!loading->ChildDone("pedestrians") || !phase("Preparing player equipment"))) return false;
     player.aim = player.feetAngle = 0;
     size_t nw = gAssets.weapons.size();
     player.clip.assign(nw, 0); player.ammo.assign(nw, 0); player.owned.assign(nw, 0);
@@ -675,6 +728,8 @@ void Game::NewGame() {
         }
         SpawnVehicle(starter, spot, PI * 0.5f, DriverType::Parked);
     }
+    if (loading && (!loading->Count(1, 1, "equipment sets") || !loading->ChildDone("equipment") ||
+        !phase("Placing pickups"))) return false;
 
     // ---- pickups ----
     auto addPickup = [&](Vector2 p, int kind, int amount) { Pickup k; k.pos = p; k.kind = kind; k.amount = amount; pickups.push_back(k); };
@@ -686,15 +741,25 @@ void Game::NewGame() {
         if (kind >= 2 && gAssets.weapons[kind - 2].kind != WeaponKind::Melee && gAssets.weapons[kind - 2].startAmmo <= 0) kind = 0;
         int amount = kind < 2 ? 50 : std::max(1, gAssets.weapons[kind - 2].startAmmo / 2);
         addPickup(p, kind, amount);
+        if (loading && (!loading->Count(i + 3, 26, "pickups") || !loading->ChildProgress("pickups", (double)(i + 3) / 26))) return false;
     }
+    if (loading && (!loading->ChildDone("pickups") || !phase("Preparing mission phones"))) return false;
     // ---- mission phones: use real phone booths where possible ----
     jobPhones.clear();
-    for (const CityObject& o : map.objects)
+    size_t phoneObjectsVisited = 0;
+    for (const CityObject& o : map.objects) {
         if (o.kind == CityObject::Prop && o.sprite == (int)spritegen::Prop::PhoneBooth && r.Chance(0.3f) && jobPhones.size() < 6)
             jobPhones.push_back(o.pos + V2(0, 14));
+        phoneObjectsVisited++;
+        if (loading && phoneObjectsVisited % 64 == 0 &&
+            (!loading->Count((int64_t)phoneObjectsVisited, (int64_t)map.objects.size(), "objects examined") ||
+             !loading->ChildProgress("phones", map.objects.empty() ? 0 : (double)phoneObjectsVisited / map.objects.size()))) return false;
+    }
     while (jobPhones.size() < 4) jobPhones.push_back(map.RandomSidewalkPoint(r));
 
     cam.Snap(player.pos, CAM_VIEW_FOOT);
+    if (loading && (!loading->ChildDone("phones") || !loading->Finish())) return false;
+    return true;
 }
 
 // -------------------------------------------------------------------------------------
@@ -840,7 +905,7 @@ void Game::Update(float dt) {
         UpdatePeds(dt);
         fx.Update(dt);
         cam.Update(player.pos + V2(sinf(time * 0.05f) * 600, cosf(time * 0.04f) * 400), CAM_VIEW_FAST * 0.9f, dt);
-        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+        if (startupInput.AcceptStart(IsKeyDown(KEY_ENTER), IsKeyDown(KEY_SPACE), IsKeyPressed(KEY_ENTER), IsKeyPressed(KEY_SPACE))) {
             state = GameState::Playing;
             cam.Snap(player.pos, CAM_VIEW_FOOT);
             Toast_("Explore the city. Yellow marker = job phone.", { 255, 220, 120, 255 });

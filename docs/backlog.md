@@ -53,6 +53,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-027](#cj-027-multi-lane-roads) | Multi-lane roads | Medium | Open |
 | [CJ-028](#cj-028-rule-breaking-drivers) | Rule-breaking drivers | Medium | Open |
 | [CJ-029](#cj-029-civilian-gait-realism) | Civilian gait realism | High | Implemented, awaiting playtest |
+| [CJ-030](#cj-030-startup-loading-screen) | Startup loading screen | Medium | Implemented, awaiting startup review |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
@@ -389,6 +390,21 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 **Refinements during the work (agreed with the user, 2026-10-08).** Turning only the thighs shortened the forward reach but left the trailing leg 0.5 m behind: from above, a walking person's feet spread like the splits (0.87 m from the front toe to the back foot in the library walk, 1.4 m in the run). The user chose, from three variants shown in motion, a compact stride: every leg joint moves 0.65 (walk), 0.55 (jog) and 0.5 (run) of the library's range from standing straight, the walking hips a little further back. A shorter stride needs a quicker step to keep the feet planted, so the walk's cadence follows from each look's stride (about 2.9 steps/s for a man at 1.5 m/s, as the user accepted) instead of the agreed bands; the thigh limit became the measure of the actual complaint: toe at most 0.30 m ahead of the hips and at most 0.70 m from front toe to back foot. The jog and run play by cadence as agreed.
 
 **Result (2026-10-08).** All 28 looks pass: walk stride 0.92–1.10 m for men and 0.82–0.91 m for women, measured per look and written to `civilians.cfg`; a planted foot moves at most 1.7 cm; toe at most 0.29 m ahead, spread at most 0.67 m (was 0.87 m); jog and run feet touch the ground for one frame at most, so nothing slips. Atlases hold 38 frames (walk 16, jog 8, run 8) in the layout that `civilians.cfg` declares; at load every frame is cut to its visible part and packed, 25.9 MB of video memory instead of 84.2 MB before mipmaps, and the procedural fallback draws exactly as before. The `traffic-incident` fixture, which now asks for the drawn pose instead of a frame number, passes 80 of 80 cases. FPS medians of alternating runs against the previous build: `day` −1.6 %, `brawl` +2.1 %, `rampage` +1.8 %; the `PEDS` lines are identical. Remaining: the user's playtest.
+
+### CJ-030 Startup loading screen
+
+- **Priority:** Medium
+- **Status:** Implemented on 2026-10-09; final background approved; awaiting review of actual startup and title handoff
+
+**Problem.** Startup displays three static messages on a plain dark background, without overall progress or current-content detail.
+
+**Agreed visual direction.** Use the final night-city background, the upper-left ivory/amber wordmark and one overall amber progress bar. The fixed-size status block shows current task, useful detail with an optional qualified group count, overall percentage and one recent-completion line. See the complete [loading screen proposal](design/loading-screen-proposal.md) and [art brief](design/loading-screen-art-brief.md).
+
+**Implemented.** The user authorized CJ-030 after accepting the background. Subsystem reporters preserve the original initialization order and publish real work into a frozen weighted plan. Metadata and optional successful-startup cost history adapt its budgets; actual local plans supply counts. The fixed four-row layout handles additional groups without a growing checklist. Following startup review, the user requested a simple static bar: confirmed fill remains visible during unknown work, with no animation or pulse inside the track. Required failure and cancellation stop title handoff and unwind resources; held Enter/Space require individual release before starting.
+
+**Final background (2026-10-09).** The accepted [cj030-loading-background.png](images/cj030-loading-background.png) is copied unchanged to `assets/ui/loading-city.png`. The [asset record](design/loading-background.md) documents its native size, checksum and ImageGen origin.
+
+**Verification.** See [loading measurements](testing/cj030-loading.md): 49 model cases pass, 20 presentation captures pass, five alternating startup pairs preserve the exact initialized state and title pixels, and partial cancellation/failure checks clean up without a title. Automated verification is recorded separately from the remaining user review.
 
 ## Done
 

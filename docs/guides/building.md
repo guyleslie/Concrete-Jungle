@@ -53,6 +53,8 @@ cmake --build build_cmake
 
 Use the Ninja generator: MinGW Make fails on the non-ASCII characters in the project path. The CMake build copies `assets/` next to the executable.
 
+All build entry points include the startup reporter, metadata discovery, loading renderer and snapshot fixture. Package the whole `assets/` directory, including `assets/data/loading.cfg` and `assets/ui/`; the loading images and fonts have a primitive fallback if missing.
+
 ### Manual
 
 ```bash

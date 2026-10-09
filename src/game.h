@@ -15,8 +15,11 @@
 #include "render.h"
 #include "audio.h"
 #include "physics.h"
+#include "startup_input.h"
 #include <vector>
 #include <string>
+
+namespace startup { class Reporter; }
 
 enum class GameState { Title, Playing, Paused, Wasted, Busted };
 
@@ -103,7 +106,9 @@ public:
     bool      quit = false;
     int       headlightMode = 0;      // 0 auto, 1 on, 2 off
 
-    void Init();
+    bool Init(startup::Reporter* loading = nullptr);
+    bool StartupReady(std::string* reason = nullptr) const;
+    void SuppressStartupKeys(bool enterHeld, bool spaceHeld);
     void DebugScenario(const char* name);   // --scenario: foot | drive | night | chase
     bool autoDrive = false;
     int  aiContacts = 0;
@@ -181,7 +186,9 @@ public:
     void ExitVehicle();
 
 private:
-    void NewGame();
+    startup::TitleInputGuard startupInput;
+    bool startupInitialized = false;
+    bool NewGame(startup::Reporter* loading = nullptr);
     void UpdatePlaying(float dt);
     void UpdatePlayerOnFoot(float dt);
     void UpdatePlayerDriving(float dt);

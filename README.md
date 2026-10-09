@@ -12,6 +12,7 @@ A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C+
 |---|---|
 | City | A procedurally generated 584 × 584 m island: streets with traffic lights, buildings with rooftop detail, parks, plazas, parking lots, a police station and a hospital, gate buildings, skybridges and an elevated metro with a running train |
 | Rendering | Perspective top-down camera, day/night cycle with sun shadows, headlights and street lamps, lit windows and neon, bloom |
+| Startup | Night-city loading screen with current work, content-derived counters and overall progress; appears for as long as preparation actually takes |
 | Traffic | Lane-following traffic that obeys signals and junction rules, overtakes, honks and makes U-turns; drivers stopped nose to nose give way to each other; physical recovery or persistent holding after a knock; calm, normal and aggressive drivers, and after a collision an aggressive one may get out to argue or fight, then drives the same car on; police pursuits |
 | Physics | Sub-stepped rigid-body contact solver, crash damage based on delta-V, breakaway lamp posts, hydrants and other street furniture |
 | Pedestrians | 300 people around the player who walk their blocks, queue at the kerb and cross safely at the lights, jump out of the way of vehicles, flee gunfire and violence, sometimes fight back, and are hurt realistically by vehicles |

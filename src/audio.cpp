@@ -3,9 +3,18 @@
 // =====================================================================================
 #include "audio.h"
 #include "math_utils.h"
+#include "startup_loading.h"
 #include <cstring>
+#include <utility>
 
 static const int SR = 44100;
+
+// Synthesis scratch buffers are vectors, so cancellation between sample batches
+// unwinds them without changing the committed audio resources or local noise seeds.
+struct AudioCancelled {};
+static void AudioPulse(startup::Reporter* loading, size_t completed) {
+    if (loading && completed % 2048 == 0 && !loading->Pulse()) throw AudioCancelled{};
+}
 
 // ---- tiny synthesis helpers ----------------------------------------------------------
 static float Noise(uint32_t& s) { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s & 0xFFFF) / 32767.5f - 1.0f; }
@@ -14,46 +23,54 @@ struct Synth {
     std::vector<float> buf;
     explicit Synth(float seconds) : buf((size_t)(seconds * SR), 0.0f) {}
     size_t N() const { return buf.size(); }
-    std::vector<short> PCM(float gain = 1.0f) const {
+    std::vector<short> PCM(float gain = 1.0f, startup::Reporter* loading = nullptr) const {
         float peak = 1e-6f;
-        for (float v : buf) peak = std::max(peak, fabsf(v));
+        size_t completed = 0;
+        for (float v : buf) { peak = std::max(peak, fabsf(v)); AudioPulse(loading, ++completed); }
         std::vector<short> out(buf.size());
-        for (size_t i = 0; i < buf.size(); i++) out[i] = (short)(Clampf(buf[i] / peak * gain, -1, 1) * 32000);
+        for (size_t i = 0; i < buf.size(); i++) {
+            out[i] = (short)(Clampf(buf[i] / peak * gain, -1, 1) * 32000);
+            AudioPulse(loading, i + 1);
+        }
         return out;
     }
 };
 
 // one-pole low pass in place
-static void LowPass(std::vector<float>& b, float cutoff) {
+static void LowPass(std::vector<float>& b, float cutoff, startup::Reporter* loading = nullptr) {
     float a = 1.0f - expf(-2.0f * PI * cutoff / SR), y = 0;
-    for (float& v : b) { y += a * (v - y); v = y; }
+    size_t completed = 0;
+    for (float& v : b) { y += a * (v - y); v = y; AudioPulse(loading, ++completed); }
 }
-static void HighPass(std::vector<float>& b, float cutoff) {
+static void HighPass(std::vector<float>& b, float cutoff, startup::Reporter* loading = nullptr) {
     float a = 1.0f - expf(-2.0f * PI * cutoff / SR), y = 0;
-    for (float& v : b) { y += a * (v - y); v = v - y; }
+    size_t completed = 0;
+    for (float& v : b) { y += a * (v - y); v = v - y; AudioPulse(loading, ++completed); }
 }
 
 // Noise burst with exponential decay, filtered: gunshots, crashes, explosions.
-static std::vector<short> Burst(float seconds, float decay, float lp, float hp, float bodyHz, float bodyAmt, uint32_t seed) {
+static std::vector<short> Burst(float seconds, float decay, float lp, float hp, float bodyHz, float bodyAmt, uint32_t seed, startup::Reporter* loading = nullptr) {
     Synth s(seconds);
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR;
         float env = expf(-t * decay);
         float body = sinf(2 * PI * bodyHz * t * (1.0f - 0.4f * t / seconds)) * bodyAmt;
         s.buf[i] = (Noise(seed) + body) * env;
     }
-    LowPass(s.buf, lp);
-    if (hp > 0) HighPass(s.buf, hp);
+    LowPass(s.buf, lp, loading);
+    if (hp > 0) HighPass(s.buf, hp, loading);
     // fade the tail
     for (size_t i = 0; i < 200 && i < s.N(); i++) s.buf[s.N() - 1 - i] *= i / 200.0f;
-    return s.PCM(0.95f);
+    return s.PCM(0.95f, loading);
 }
 
-static Sound SoundFromPCM(const std::vector<short>& pcm) {
+static Sound SoundFromPCM(const std::vector<short>& pcm, startup::Reporter* loading = nullptr) {
     Wave w{};
     w.frameCount = (unsigned int)pcm.size();
     w.sampleRate = SR; w.sampleSize = 16; w.channels = 1;
     w.data = (void*)pcm.data();
+    startup::AtomicSpan atomic(loading, "audio", "synthesized sound upload");
     return LoadSoundFromWave(w);   // copies the data
 }
 
@@ -69,11 +86,12 @@ static std::vector<unsigned char> MakeWav(const std::vector<short>& pcm) {
 }
 
 // Seamless loops: whole number of cycles of the base frequency in the buffer.
-static std::vector<short> EngineLoop(float baseHz, float grit, uint32_t seed) {
+static std::vector<short> EngineLoop(float baseHz, float grit, uint32_t seed, startup::Reporter* loading = nullptr) {
     const float secs = 1.0f;
     Synth s(secs);
     float f = roundf(baseHz * secs) / secs;
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR;
         float ph = fmodf(t * f, 1.0f);
         float saw = 2 * ph - 1;
@@ -83,48 +101,52 @@ static std::vector<short> EngineLoop(float baseHz, float grit, uint32_t seed) {
         v += Noise(seed) * grit;
         s.buf[i] = v;
     }
-    LowPass(s.buf, 1400);
-    return s.PCM(0.8f);
+    LowPass(s.buf, 1400, loading);
+    return s.PCM(0.8f, loading);
 }
 
-static std::vector<short> SirenLoop() {
+static std::vector<short> SirenLoop(startup::Reporter* loading = nullptr) {
     const float secs = 2.0f;           // one full wail cycle
     Synth s(secs);
     float phase = 0;
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR;
         float f = 750 + 450 * (0.5f - 0.5f * cosf(2 * PI * t / secs));
         phase += f / SR;
         float sq = fmodf(phase, 1.0f) < 0.5f ? 1.0f : -1.0f;
         s.buf[i] = sq * 0.4f + sinf(2 * PI * phase) * 0.6f;
     }
-    LowPass(s.buf, 3500);
-    return s.PCM(0.7f);
+    LowPass(s.buf, 3500, loading);
+    return s.PCM(0.7f, loading);
 }
 
-static std::vector<short> NoiseLoop(float lp, float hp, float amMod, uint32_t seed) {
+static std::vector<short> NoiseLoop(float lp, float hp, float amMod, uint32_t seed, startup::Reporter* loading = nullptr) {
     Synth s(2.0f);
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR;
         s.buf[i] = Noise(seed) * (1.0f - amMod * 0.5f * (1 + sinf(2 * PI * 3.0f * t)));
     }
-    LowPass(s.buf, lp);
-    if (hp > 0) HighPass(s.buf, hp);
+    LowPass(s.buf, lp, loading);
+    if (hp > 0) HighPass(s.buf, hp, loading);
     // crossfade the ends for a seamless loop
     size_t n = s.N(), fade = SR / 10;
     for (size_t i = 0; i < fade; i++) {
+        AudioPulse(loading, i);
         float a = i / (float)fade;
         s.buf[i] = s.buf[i] * a + s.buf[n - fade + i] * (1 - a);
     }
     s.buf.resize(n - fade);
-    return s.PCM(0.6f);
+    return s.PCM(0.6f, loading);
 }
 
-static std::vector<short> Tone(std::initializer_list<float> notes, float noteLen, float square) {
+static std::vector<short> Tone(std::initializer_list<float> notes, float noteLen, float square, startup::Reporter* loading = nullptr) {
     Synth s(noteLen * notes.size() + 0.2f);
     size_t k = 0;
     for (float f : notes) {
         for (size_t i = 0; i < (size_t)(noteLen * SR); i++) {
+            AudioPulse(loading, i);
             float t = i / (float)SR;
             float env = Saturate(t * 60) * expf(-t * 4);
             float ph = fmodf(t * f, 1.0f);
@@ -133,39 +155,42 @@ static std::vector<short> Tone(std::initializer_list<float> notes, float noteLen
         }
         k++;
     }
-    LowPass(s.buf, 5000);
-    return s.PCM(0.6f);
+    LowPass(s.buf, 5000, loading);
+    return s.PCM(0.6f, loading);
 }
 
-static std::vector<short> Horn() {
+static std::vector<short> Horn(startup::Reporter* loading = nullptr) {
     Synth s(0.5f);
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR;
         float env = Saturate(t * 40) * Saturate((0.5f - t) * 20);
         float v = (fmodf(t * 415, 1.0f) < 0.5f ? 1.0f : -1.0f) + (fmodf(t * 523, 1.0f) < 0.5f ? 1.0f : -1.0f);
         s.buf[i] = v * env;
     }
-    LowPass(s.buf, 2200);
-    return s.PCM(0.6f);
+    LowPass(s.buf, 2200, loading);
+    return s.PCM(0.6f, loading);
 }
 
-static std::vector<short> Swish(float seconds, float lpFrom, uint32_t seed) {
+static std::vector<short> Swish(float seconds, float lpFrom, uint32_t seed, startup::Reporter* loading = nullptr) {
     Synth s(seconds);
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR;
         float env = sinf(PI * t / seconds);
         s.buf[i] = Noise(seed) * env * env;
     }
-    LowPass(s.buf, lpFrom);
-    HighPass(s.buf, 300);
-    return s.PCM(0.7f);
+    LowPass(s.buf, lpFrom, loading);
+    HighPass(s.buf, 300, loading);
+    return s.PCM(0.7f, loading);
 }
 
-static std::vector<short> Scream() {
+static std::vector<short> Scream(startup::Reporter* loading = nullptr) {
     Synth s(0.7f);
     float ph = 0;
     uint32_t seed = 77;
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR;
         float f = 620 + 180 * sinf(t * 9) - 200 * t;
         ph += f / SR;
@@ -173,20 +198,21 @@ static std::vector<short> Scream() {
         float v = sinf(2 * PI * ph) + 0.5f * sinf(4 * PI * ph) + 0.25f * sinf(6 * PI * ph) + Noise(seed) * 0.1f;
         s.buf[i] = v * env;
     }
-    LowPass(s.buf, 3000);
-    return s.PCM(0.5f);
+    LowPass(s.buf, 3000, loading);
+    return s.PCM(0.5f, loading);
 }
 
 // An angry shout: a glottal pulse train (raised pitch that rises and falls, with jitter
 // and shimmer) through three formant resonators in cascade that glide from one vowel to
 // the next, an aspirated onset and a little saturation for the strain of a raised voice.
 struct Vowel { float f1, f2, f3; };
-static std::vector<short> Shout(float seconds, float f0, Vowel from, Vowel to, float aspiration, uint32_t seed) {
+static std::vector<short> Shout(float seconds, float f0, Vowel from, Vowel to, float aspiration, uint32_t seed, startup::Reporter* loading = nullptr) {
     Synth s(seconds);
     const float bw[3] = { 90, 120, 170 };
     float y1[3] = {}, y2[3] = {};
     float phase = 0, jitter = 0, shimmer = 1, prevFlow = 0;
     for (size_t i = 0; i < s.N(); i++) {
+        AudioPulse(loading, i);
         float t = i / (float)SR, u = t / seconds;
         // Breath first, then the voice; it swells, holds and drops away.
         float voicing = Saturate((t - 0.04f) * 25) * Saturate((1 - u) * 3.5f);
@@ -212,21 +238,27 @@ static std::vector<short> Shout(float seconds, float f0, Vowel from, Vowel to, f
         }
         s.buf[i] = x * Saturate(t * 80) * Saturate((1 - u) * 4.0f);
     }
-    HighPass(s.buf, 120);
+    HighPass(s.buf, 120, loading);
     float peak = 1e-6f;
-    for (float v : s.buf) peak = std::max(peak, fabsf(v));
-    for (float& v : s.buf) v = tanhf(1.4f * v / peak);
-    LowPass(s.buf, 6000);
-    return s.PCM(0.9f);
+    size_t completed = 0;
+    for (float v : s.buf) { peak = std::max(peak, fabsf(v)); AudioPulse(loading, ++completed); }
+    completed = 0;
+    for (float& v : s.buf) { v = tanhf(1.4f * v / peak); AudioPulse(loading, ++completed); }
+    LowPass(s.buf, 6000, loading);
+    return s.PCM(0.9f, loading);
 }
 
 // -------------------------------------------------------------------------------------
-void AudioSystem::MakeLoop(Loop& l, const std::vector<short>& pcm, const char* overrideName) {
+void AudioSystem::MakeLoop(Loop& l, const std::vector<short>& pcm, const char* overrideName, startup::Reporter* loading) {
     char path[256];
     snprintf(path, sizeof(path), "assets/sounds/%s.wav", overrideName);
-    if (FileExists(path)) { l.music = LoadMusicStream(path); }
+    if (FileExists(path)) {
+        startup::AtomicSpan atomic(loading, "audio", overrideName);
+        l.music = LoadMusicStream(path);
+    }
     else {
         l.wav = MakeWav(pcm);
+        startup::AtomicSpan atomic(loading, "audio", overrideName);
         l.music = LoadMusicStreamFromMemory(".wav", l.wav.data(), (int)l.wav.size());
     }
     l.music.looping = true;
@@ -236,63 +268,135 @@ void AudioSystem::StartLoop(Loop& l) {
     if (!l.playing && IsMusicValid(l.music)) { SetMusicVolume(l.music, 0); PlayMusicStream(l.music); l.playing = true; }
 }
 
-void AudioSystem::Init() {
-    InitAudioDevice();
-    ok = IsAudioDeviceReady();
-    if (!ok) { TraceLog(LOG_WARNING, "AUDIO: no audio device - running silent"); return; }
-
-    std::vector<short> pcm[(int)Sfx::COUNT];
-    pcm[(int)Sfx::Pistol]    = Burst(0.35f, 22, 5000, 120, 90, 1.2f, 1);
-    pcm[(int)Sfx::Shotgun]   = Burst(0.7f, 9, 3500, 60, 60, 1.8f, 2);
-    pcm[(int)Sfx::Rifle]     = Burst(0.22f, 30, 6000, 200, 110, 0.9f, 3);
-    pcm[(int)Sfx::Punch]     = Burst(0.15f, 40, 900, 0, 70, 2.0f, 4);
-    pcm[(int)Sfx::Knife]     = Swish(0.22f, 6000, 5);
-    pcm[(int)Sfx::Crash]     = Burst(0.9f, 6, 2500, 40, 45, 1.6f, 6);
-    pcm[(int)Sfx::CrashSmall]= Burst(0.35f, 14, 1800, 60, 80, 1.0f, 7);
-    pcm[(int)Sfx::Explosion] = Burst(2.6f, 2.2f, 900, 20, 35, 2.5f, 8);
-    pcm[(int)Sfx::Horn]      = Horn();
-    pcm[(int)Sfx::Door]      = Burst(0.18f, 30, 1500, 100, 140, 1.5f, 9);
-    pcm[(int)Sfx::Pickup]    = Tone({ 880, 1318 }, 0.09f, 0.3f);
-    pcm[(int)Sfx::MissionPass] = Tone({ 523, 659, 784, 1046 }, 0.16f, 0.4f);
-    pcm[(int)Sfx::MissionFail] = Tone({ 392, 330, 262 }, 0.22f, 0.5f);
-    pcm[(int)Sfx::Wasted]    = Tone({ 196, 185, 175, 131 }, 0.3f, 0.2f);
-    pcm[(int)Sfx::Splash]    = Swish(0.6f, 2500, 10);
-    pcm[(int)Sfx::Glass]     = Burst(0.4f, 12, 9000, 2500, 0, 0, 11);
-    pcm[(int)Sfx::Footstep]  = Burst(0.08f, 60, 700, 0, 60, 0.6f, 12);
-    pcm[(int)Sfx::Reload]    = Tone({ 1800, 1200 }, 0.05f, 0.9f);
-    pcm[(int)Sfx::Scream]    = Scream();
-    pcm[(int)Sfx::ShoutHey]  = Shout(0.42f, 205, { 520, 1850, 2500 }, { 300, 2250, 2950 }, 0.9f, 31);   // "hey!"
-    pcm[(int)Sfx::ShoutOi]   = Shout(0.46f, 190, { 560, 860, 2400 }, { 320, 2150, 2850 }, 0.25f, 32);  // "oi!"
-    pcm[(int)Sfx::ShoutHah]  = Shout(0.36f, 225, { 820, 1250, 2650 }, { 650, 1200, 2450 }, 0.8f, 33);  // "hah!"
-
-    const char* names[(int)Sfx::COUNT] = { "pistol", "shotgun", "rifle", "punch", "knife", "crash", "crash_small", "explosion",
-                                           "horn", "door", "pickup", "mission_pass", "mission_fail", "wasted", "splash", "glass",
-                                           "footstep", "reload", "scream", "shout1", "shout2", "shout3" };
-    for (int i = 0; i < (int)Sfx::COUNT; i++) {
-        char path[256];
-        snprintf(path, sizeof(path), "assets/sounds/%s.wav", names[i]);
-        Sound base = FileExists(path) ? LoadSound(path) : SoundFromPCM(pcm[i]);
-        sounds[i].push_back(base);
-        for (int k = 0; k < 5; k++) sounds[i].push_back(LoadSoundAlias(base));
+bool AudioSystem::Init(startup::Reporter* loading) {
+    if (loading && !loading->Begin("world.audio", "Effects, engines and sirens", 1)) return false;
+    {
+        startup::AtomicSpan atomic(loading, "audio", "audio device");
+        InitAudioDevice();
     }
-    MakeLoop(engine, EngineLoop(55, 0.08f, 21), "engine");
-    MakeLoop(engineBig, EngineLoop(32, 0.12f, 22), "engine_diesel");
-    MakeLoop(siren, SirenLoop(), "siren");
-    MakeLoop(skid, NoiseLoop(2500, 700, 0.3f, 23), "skid");
-    MakeLoop(ambience, NoiseLoop(350, 0, 0.1f, 24), "ambience");
-    StartLoop(ambience);
-    SetMasterVolume(0.85f);
+    ok = IsAudioDeviceReady();
+    if (!ok) {
+        TraceLog(LOG_WARNING, "AUDIO: no audio device - running silent");
+        return !loading || loading->Finish(startup::Outcome::Skipped, "Audio unavailable; continuing silently");
+    }
+
+    std::vector<startup::ChildSpec> children;
+    for (int i = 0; i < (int)Sfx::COUNT; i++) children.push_back({ "pcm." + std::to_string(i) });
+    for (int i = 0; i < (int)Sfx::COUNT; i++) children.push_back({ "sound." + std::to_string(i), 1, false });
+    for (const char* id : { "engine", "engineBig", "siren", "skid", "ambience" }) children.push_back({ id, 1, false });
+    children.push_back({ "commit" });
+    if (loading && (!loading->PlanChildren(children) || !loading->Pulse("Synthesizing sound effects", true))) return false;
+
+    try {
+        std::vector<short> pcm[(int)Sfx::COUNT];
+        int synthesized = 0;
+        auto prepare = [&](Sfx kind, std::vector<short> samples) {
+            pcm[(int)kind] = std::move(samples);
+            synthesized++;
+            std::string id = "pcm." + std::to_string((int)kind);
+            return !loading || (loading->Count(synthesized, (int)Sfx::COUNT, "effects synthesized") && loading->ChildDone(id.c_str()));
+        };
+        if (!prepare(Sfx::Pistol, Burst(0.35f, 22, 5000, 120, 90, 1.2f, 1, loading))) return false;
+        if (!prepare(Sfx::Shotgun, Burst(0.7f, 9, 3500, 60, 60, 1.8f, 2, loading))) return false;
+        if (!prepare(Sfx::Rifle, Burst(0.22f, 30, 6000, 200, 110, 0.9f, 3, loading))) return false;
+        if (!prepare(Sfx::Punch, Burst(0.15f, 40, 900, 0, 70, 2.0f, 4, loading))) return false;
+        if (!prepare(Sfx::Knife, Swish(0.22f, 6000, 5, loading))) return false;
+        if (!prepare(Sfx::Crash, Burst(0.9f, 6, 2500, 40, 45, 1.6f, 6, loading))) return false;
+        if (!prepare(Sfx::CrashSmall, Burst(0.35f, 14, 1800, 60, 80, 1.0f, 7, loading))) return false;
+        if (!prepare(Sfx::Explosion, Burst(2.6f, 2.2f, 900, 20, 35, 2.5f, 8, loading))) return false;
+        if (!prepare(Sfx::Horn, Horn(loading))) return false;
+        if (!prepare(Sfx::Door, Burst(0.18f, 30, 1500, 100, 140, 1.5f, 9, loading))) return false;
+        if (!prepare(Sfx::Pickup, Tone({ 880, 1318 }, 0.09f, 0.3f, loading))) return false;
+        if (!prepare(Sfx::MissionPass, Tone({ 523, 659, 784, 1046 }, 0.16f, 0.4f, loading))) return false;
+        if (!prepare(Sfx::MissionFail, Tone({ 392, 330, 262 }, 0.22f, 0.5f, loading))) return false;
+        if (!prepare(Sfx::Wasted, Tone({ 196, 185, 175, 131 }, 0.3f, 0.2f, loading))) return false;
+        if (!prepare(Sfx::Splash, Swish(0.6f, 2500, 10, loading))) return false;
+        if (!prepare(Sfx::Glass, Burst(0.4f, 12, 9000, 2500, 0, 0, 11, loading))) return false;
+        if (!prepare(Sfx::Footstep, Burst(0.08f, 60, 700, 0, 60, 0.6f, 12, loading))) return false;
+        if (!prepare(Sfx::Reload, Tone({ 1800, 1200 }, 0.05f, 0.9f, loading))) return false;
+        if (!prepare(Sfx::Scream, Scream(loading))) return false;
+        if (!prepare(Sfx::ShoutHey, Shout(0.42f, 205, { 520, 1850, 2500 }, { 300, 2250, 2950 }, 0.9f, 31, loading))) return false;
+        if (!prepare(Sfx::ShoutOi, Shout(0.46f, 190, { 560, 860, 2400 }, { 320, 2150, 2850 }, 0.25f, 32, loading))) return false;
+        if (!prepare(Sfx::ShoutHah, Shout(0.36f, 225, { 820, 1250, 2650 }, { 650, 1200, 2450 }, 0.8f, 33, loading))) return false;
+
+        const char* names[(int)Sfx::COUNT] = { "pistol", "shotgun", "rifle", "punch", "knife", "crash", "crash_small", "explosion",
+                                               "horn", "door", "pickup", "mission_pass", "mission_fail", "wasted", "splash", "glass",
+                                               "footstep", "reload", "scream", "shout1", "shout2", "shout3" };
+        bool incomplete = false;
+        if (loading && (!loading->Count(0, 0, "") || !loading->Pulse("Preparing sound playback", true))) return false;
+        for (int i = 0; i < (int)Sfx::COUNT; i++) {
+            char path[256];
+            snprintf(path, sizeof(path), "assets/sounds/%s.wav", names[i]);
+            Sound base{};
+            if (FileExists(path)) {
+                startup::AtomicSpan atomic(loading, "audio", names[i]);
+                base = LoadSound(path);
+            } else base = SoundFromPCM(pcm[i], loading);
+            bool valid = IsSoundValid(base);
+            if (valid) {
+                sounds[i].push_back(base);
+                for (int k = 0; k < 5; k++) {
+                    startup::AtomicSpan atomic(loading, "audio", "sound alias");
+                    Sound alias = LoadSoundAlias(base);
+                    if (IsSoundValid(alias)) sounds[i].push_back(alias);
+                else {
+                    if (alias.stream.buffer) UnloadSoundAlias(alias);
+                    incomplete = true;
+                }
+                }
+            } else {
+                incomplete = true;
+                if (base.stream.buffer) UnloadSound(base);
+                TraceLog(LOG_WARNING, "AUDIO: sound %s unavailable - skipping playback", names[i]);
+            }
+            std::string id = "sound." + std::to_string(i);
+            if (loading && (!loading->Count(i + 1, (int)Sfx::COUNT, "sound records processed") ||
+                !loading->ChildDone(id.c_str(), valid ? startup::Outcome::Ready : startup::Outcome::Skipped))) return false;
+        }
+        int loopsProcessed = 0;
+        auto loopDone = [&](Loop& loop, const char* id) {
+            bool valid = IsMusicValid(loop.music);
+            incomplete = incomplete || !valid;
+            loopsProcessed++;
+            if (!valid) TraceLog(LOG_WARNING, "AUDIO: loop %s unavailable - continuing silently", id);
+            return !loading || (loading->Count(loopsProcessed, 5, "loop records processed") &&
+                loading->ChildDone(id, valid ? startup::Outcome::Ready : startup::Outcome::Skipped));
+        };
+        if (loading && (!loading->Count(0, 0, "") || !loading->Pulse("Preparing engines and ambience", true))) return false;
+        MakeLoop(engine, EngineLoop(55, 0.08f, 21, loading), "engine", loading);
+        if (!loopDone(engine, "engine")) return false;
+        MakeLoop(engineBig, EngineLoop(32, 0.12f, 22, loading), "engine_diesel", loading);
+        if (!loopDone(engineBig, "engineBig")) return false;
+        MakeLoop(siren, SirenLoop(loading), "siren", loading);
+        if (!loopDone(siren, "siren")) return false;
+        MakeLoop(skid, NoiseLoop(2500, 700, 0.3f, 23, loading), "skid", loading);
+        if (!loopDone(skid, "skid")) return false;
+        MakeLoop(ambience, NoiseLoop(350, 0, 0.1f, 24, loading), "ambience", loading);
+        if (!loopDone(ambience, "ambience")) return false;
+        StartLoop(ambience);
+        SetMasterVolume(0.85f);
+        if (loading && (!loading->ChildDone("commit") ||
+            !loading->Finish(incomplete ? startup::Outcome::ReadyWithFallback : startup::Outcome::Ready,
+                             incomplete ? "Some sounds unavailable; continuing" : nullptr))) return false;
+        return true;
+    } catch (const AudioCancelled&) {
+        return false;
+    }
 }
 
 void AudioSystem::Unload() {
     if (!ok) return;
     for (auto& v : sounds) {
-        for (size_t k = 1; k < v.size(); k++) UnloadSoundAlias(v[k]);
-        if (!v.empty()) UnloadSound(v[0]);
+        for (size_t k = 1; k < v.size(); k++) if (v[k].stream.buffer) UnloadSoundAlias(v[k]);
+        if (!v.empty() && v[0].stream.buffer) UnloadSound(v[0]);
         v.clear();
     }
-    for (Loop* l : { &engine, &engineBig, &siren, &skid, &ambience }) if (IsMusicValid(l->music)) UnloadMusicStream(l->music);
+    for (Loop* l : { &engine, &engineBig, &siren, &skid, &ambience }) {
+        if (l->music.ctxData || l->music.stream.buffer) UnloadMusicStream(l->music);
+        l->music = {}; l->wav.clear(); l->playing = false;
+    }
     CloseAudioDevice();
+    ok = false;
 }
 
 void AudioSystem::Play(Sfx s, Vector2 pos, float volume, float pitch) {
@@ -302,6 +406,7 @@ void AudioSystem::Play(Sfx s, Vector2 pos, float volume, float pitch) {
     att *= att;
     if (att < 0.01f) return;
     auto& pool = sounds[(int)s];
+    if (pool.empty()) return;
     Sound& snd = pool[next[(int)s]];
     next[(int)s] = (next[(int)s] + 1) % (int)pool.size();
     SetSoundVolume(snd, Saturate(volume * att));
@@ -313,6 +418,7 @@ void AudioSystem::Play(Sfx s, Vector2 pos, float volume, float pitch) {
 void AudioSystem::PlayUI(Sfx s, float volume, float pitch) {
     if (!ok) return;
     auto& pool = sounds[(int)s];
+    if (pool.empty()) return;
     Sound& snd = pool[next[(int)s]];
     next[(int)s] = (next[(int)s] + 1) % (int)pool.size();
     SetSoundVolume(snd, volume); SetSoundPitch(snd, pitch); SetSoundPan(snd, 0.5f);
@@ -341,6 +447,8 @@ void AudioSystem::Update(Vector2 l) {
             if (lp == &engine || lp == &engineBig) SetMusicPitch(lp->music, Clampf(enginePitch, 0.4f, 2.4f));
         }
     }
-    UpdateMusicStream(ambience.music);
-    SetMusicVolume(ambience.music, 0.18f);
+    if (IsMusicValid(ambience.music)) {
+        UpdateMusicStream(ambience.music);
+        SetMusicVolume(ambience.music, 0.18f);
+    }
 }

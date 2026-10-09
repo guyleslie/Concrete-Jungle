@@ -6,12 +6,23 @@
 #include "traffic_recovery.h"
 #include "config.h"
 #include "assets.h"
+#include "startup_loading.h"
 #include <algorithm>
 #include <array>
 
 using namespace cfg;
 
 namespace {
+startup::Reporter* turnReporter = nullptr;
+struct TurnCancelled {};
+void TurnPulse() {
+    if (turnReporter && !turnReporter->Pulse()) throw TurnCancelled{};
+}
+struct TurnReporterScope {
+    startup::Reporter* previous;
+    explicit TurnReporterScope(startup::Reporter* reporter) : previous(turnReporter) { turnReporter = reporter; }
+    ~TurnReporterScope() { turnReporter = previous; }
+};
 struct TurnSettings {
     float lateralAccel = 3.5f;    // m/s^2 at the rear axle
     float easement = 0.5f;        // clothoid length at each end of the arc, in radii
@@ -71,6 +82,7 @@ std::vector<Vector2> Curve(float R, float lc, int side, float* tangent) {
             u += h;
         }
         out.push_back(p);
+        if (k % 32 == 0) TurnPulse();
     }
     *tangent = (fabsf(p.x) + fabsf(p.y)) * 0.5f;   // symmetric: equal along both roads
     return out;
@@ -191,6 +203,7 @@ void Check(TurnPath& t, int turnType, float length, float width, float step) {
     t.kerb = t.wheelKerb = t.encroach = 0;
     float axle = length * 0.32f;
     const float quadrants[4][2] = { { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } };
+    int samples = 0;
     // Rear axle from the path's first point until the whole body has left the turn.
     for (float r = path.cum[1] - length; r <= path.cum[path.cum.size() - 2] + length; r += step) {
         Vector2 heading;
@@ -205,6 +218,7 @@ void Check(TurnPath& t, int turnType, float length, float width, float step) {
             t.wheelKerb = std::max(t.wheelKerb, BlockDepth(wheels, wc, q[0], q[1]));
         }
         for (Vector2 c : bc) t.encroach = std::max(t.encroach, Encroachment(c, turnType));
+        if (++samples % 64 == 0) TurnPulse();
     }
 }
 
@@ -227,6 +241,7 @@ void SetSpeeds(TurnPath& t, int turnType) {
             previous = h;
         }
         t.points[i].vmax = curvature > 1e-4f ? sqrtf(accel / curvature) : 0.0f;
+        if (i % 16 == 0) TurnPulse();
     }
 }
 
@@ -275,6 +290,7 @@ TurnPath Plan(int turnType, const Vehicle& v) {
             t.points.clear();
             clean = clean || excess(t, false) <= 0;
             candidates.push_back(t);
+            TurnPulse();
         }
         if (clean) break;
     }
@@ -346,12 +362,25 @@ const TurnPath& RailTurnPath(const Vehicle& v, int turnType) {
     return c->paths[turnType == 1 ? 0 : 1];
 }
 
-void RailPlanTurns() {
-    for (size_t i = 0; i < gAssets.vehicles.size(); i++) {
-        const VehicleSprite& sprite = gAssets.vehicles[i];
+bool RailPlanTurns(startup::Reporter* loading) {
+    TurnReporterScope scope(loading);
+    int total = 0;
+    for (const VehicleSprite& sprite : gAssets.vehicles) {
         const VehicleSpec& spec = Spec(sprite.cls);
-        if (!sprite.spawnable || spec.trafficWeight <= 0 || spec.police()) continue;
-        Vehicle v; InitVehicle(v, (int)i, V2(0, 0), 0);
-        RailTurnPath(v, 1);
+        if (sprite.spawnable && spec.trafficWeight > 0 && !spec.police()) total++;
     }
+    if (loading && !loading->Begin("traffic.turns", "Checking turn paths for traffic vehicles", total, "vehicle variants")) return false;
+    try {
+        int done = 0;
+        for (size_t i = 0; i < gAssets.vehicles.size(); i++) {
+            const VehicleSprite& sprite = gAssets.vehicles[i];
+            const VehicleSpec& spec = Spec(sprite.cls);
+            if (!sprite.spawnable || spec.trafficWeight <= 0 || spec.police()) continue;
+            // Each eligible sprite still initializes a vehicle before the cache lookup.
+            Vehicle v; InitVehicle(v, (int)i, V2(0, 0), 0);
+            RailTurnPath(v, 1);
+            if (loading && !loading->Progress(++done)) return false;
+        }
+        return !loading || loading->Finish();
+    } catch (const TurnCancelled&) { return false; }
 }

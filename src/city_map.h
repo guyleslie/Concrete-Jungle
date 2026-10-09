@@ -22,6 +22,7 @@
 
 class Particles;
 struct DayNight;
+namespace startup { class Reporter; }
 
 enum class Tile : uint8_t { Road, Sidewalk, Lot, Grass, Parking, Plaza };
 enum class BlockType : uint8_t { Buildings, Park, Parking, Plaza, Police, Hospital };
@@ -87,7 +88,8 @@ struct RailLoop {
 
 class CityMap {
 public:
-    void Generate(uint32_t seed);
+    bool Generate(uint32_t seed, startup::Reporter* loading = nullptr);
+    bool Ready() const;
     void Update(float dt, Particles& fx);
     // Unbounded uniform surface for measurements; rebuild after adding fixture obstacles.
     void ResetTestGround(Tile surface);
@@ -143,7 +145,7 @@ public:
     // ---- minimap ----
     RenderTexture2D minimap{};
     float           minimapScale = 1;   // minimap px per world px
-    void BuildMinimap();
+    bool BuildMinimap(startup::Reporter* loading = nullptr);
     void UnloadMinimap();
 
     // ---- data ----
@@ -159,6 +161,7 @@ public:
 
 private:
     bool testGround = false;
+    bool generated = false;
     Tile testSurface = Tile::Road;
     Tile      tiles[cfg::MAP_H][cfg::MAP_W]{};
     BlockType blocks[cfg::BLOCKS_Y][cfg::BLOCKS_X]{};
@@ -171,11 +174,11 @@ private:
     void GenBlock(int bi, int bj, Rng& rng);
     void GenBuildingsIn(Rectangle lot, int depth, float heightMul, Rng& rng);
     void AddBuilding(Rectangle r, float floors, Rng& rng, int special = 0);
-    void GenStreetFurniture(Rng& rng);
+    bool GenStreetFurniture(Rng& rng, startup::Reporter* loading = nullptr);
     void GenRail();
     void GenGatesAndBridges(Rng& rng);
     void AddObject(const CityObject& o);
-    void IndexBuildings();
+    bool IndexBuildings(startup::Reporter* loading = nullptr);
     bool RailOverRoad(int tx, int ty) const;
     void DrawBuilding(const Building& b, Vector2 camPos, float night, Vector2 sunDir) const;
 };

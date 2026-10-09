@@ -23,7 +23,9 @@ The `Game` class owns the world and the rules. Subsystems are plain modules with
 
 | Module | Files | Responsibility |
 |---|---|---|
-| Entry point | `main.cpp` | Window, main loop, `--shot` test mode |
+| Entry point | `main.cpp` | Window, main loop, main-thread startup coordination, `--shot` test mode |
+| Startup work | `startup_loading.*`, `startup_plan.*`, `startup_input.h` | Frozen weighted task/child accounting, metadata and optional duration-history estimates, title-input handoff |
+| Loading presentation | `loading_screen.*`, `assets/data/loading.cfg` | Independent cosmetic resources and responsive four-row startup status; drawing consumes work snapshots |
 | Game | `game.h`, `game.cpp` | World ownership, rules, player, weapons, wanted level, police spawning, missions, pickups, crash consequences, test autopilots |
 | HUD | `hud.cpp` | Screen-space HUD, title screen, pause menu |
 | Configuration | `config.h` | Global constants: scale, city size, population, camera, time of day |
@@ -43,10 +45,15 @@ Dependencies point downwards: `game` uses every other module; `traffic`, `physic
 
 ## Start-up
 
-1. `main` opens the window and loads all assets through `gAssets.Load()`. Each loader reads its `.cfg` file, falls back to a built-in default when the file is missing, and substitutes a procedural image for every missing picture.
-2. `Game::Init` generates the city from a fixed seed, builds the minimap, initialises the renderer and audio, and calls `NewGame`.
-3. `NewGame` places parked cars on parking spots, spawns moving traffic and pedestrians, places the player and a starter car on the central square, and sets up pickups and mission phones.
-4. The game starts on the title screen, where the world already simulates in the background.
+1. `main` opens the window and presents primitive startup status, then loads the loading screen's independent optional art/fonts. `startup_plan` discovers estimates from current metadata and optional local duration history before `startup_loading::Reporter` freezes the registry. Cosmetics come from `assets/data/loading.cfg`; counts, dependencies and completion come from the execution owners.
+2. `gAssets.Load(&reporter)` prepares materials, vehicles, civilian atlases, character animations, foliage, props/effects, interface fonts and shaders in the existing order. Missing data files use built-in defaults. Missing image records follow each loader's established skip/substitute policy; an empty group may generate its existing procedural fallback. Required committed resources are validated.
+3. `RailPlanTurns(&reporter)` warms the traffic-turn cache before `Game::Init(&reporter)` generates the fixed-seed city, builds the minimap, initializes renderer targets and audio, and calls `NewGame`. Each group reports safe completion checkpoints using its current content/configuration totals. Audio may legitimately resolve as skipped when the device is unavailable.
+4. `NewGame` places parked cars on parking spots, spawns moving traffic and pedestrians, places the player and starter car on the central square, and sets up pickups and mission phones. A final readiness gate validates the usable world and required resources. Only success enables 100% and automatic title handoff; failure/cancellation unwind acquired resources while graphics/audio contexts remain alive.
+5. The normal title update/draw begins after readiness, with the city simulating in the background. The loading overlay may fade for 250 ms without delaying fresh title input. Keys held during loading rearm individually on release. Screenshot scenarios bypass the wall-clock fade and start their frame counter after initialization.
+
+Overall progress is confirmed weighted completion, never elapsed time. Top-level budgets stay frozen for the run; local child plans freeze at zero parent progress and share its budget. `Pulse` grants no progress. Optional `build/cache/startup-work-profile.cfg` history scales later budget estimates from measured unit costs; it never skips loading or proves readiness. The presenter services events and draws on the main thread outside unfinished texture/3D/shader passes. Indivisible driver/library calls are timed separately from cooperative checkpoints.
+
+The [CJ-030 specification](design/loading-screen-proposal.md) defines the accounting, visual and handoff contract; the [loading measurement record](testing/cj030-loading.md) records the frozen baseline, passing implementation checks, measured costs and remaining user-review/hardware cases.
 
 ## Frame lifecycle
 
@@ -118,3 +125,4 @@ Oriented boxes (`OBB`) have axis 0 = right and axis 1 = forward, matching how sp
 - Recovery decisions read frame-start actor observations rather than another driver's already-updated pose. Recovery stays on one thread; its work is bounded per frame by a deterministic step budget, not by wall-clock time, so runs remain reproducible.
 - `VehicleForces` and the recovery forecast reuse a sine/cosine pair and the per-sub-step exponential factors through small caches keyed on the exact input value, so the cached results are bit-identical to recomputing them.
 - Vehicles and pedestrians carry a `serial` that changes whenever a slot is reused. Cross-references between a car and its driver on foot, a yielder and its priority car, and a fighter and their opponent store the index together with the serial and are checked before use.
+- Startup reporting never consumes gameplay RNG or advances simulation. Traffic-turn warmup preserves every eligible sprite visit and `InitVehicle` call, including cache hits, because those calls consume RNG and advance vehicle serials. No extra `Game::Update` or `CameraRig::Update` is used to prepare a loading transition.

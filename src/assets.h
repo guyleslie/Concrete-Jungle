@@ -20,6 +20,8 @@
 #include <vector>
 #include <string>
 
+namespace startup { class Reporter; }
+
 // One civilian look. Its frames are cut to their visible part at load and packed side by side,
 // so the GPU stores and draws little of the transparent frame margins.
 struct CivilianAtlas {
@@ -112,7 +114,7 @@ struct Assets {
     Shader blur{};
     int    locBlurDir = -1;
 
-    bool Load();
+    bool Load(startup::Reporter* reporter = nullptr);
     void Unload();
 
     int  RandomSkin(VClass c) const;                  // random skin of a class (-1 if none)

@@ -5,6 +5,7 @@
 #include "assets.h"
 #include "config.h"
 #include "rlgl.h"
+#include "startup_loading.h"
 
 // -------------------------------------------------------------------------------------
 //  Immediate-mode helpers
@@ -193,15 +194,19 @@ Rectangle CameraRig::VisibleGround(float margin) const {
 RenderTexture2D Renderer::MakeSharedDepthTarget(int width, int height) {
     RenderTexture2D t{};
     t.id = rlLoadFramebuffer();
+    if (!t.id) { sharedTargetsValid = false; return t; }
     rlEnableFramebuffer(t.id);
     t.texture.id = rlLoadTexture(nullptr, width, height, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1);
     t.texture.width = width; t.texture.height = height;
     t.texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8; t.texture.mipmaps = 1;
     rlFramebufferAttach(t.id, t.texture.id, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
     rlFramebufferAttach(t.id, sharedDepth, RL_ATTACHMENT_DEPTH, RL_ATTACHMENT_RENDERBUFFER, 0);
-    if (!rlFramebufferComplete(t.id)) TraceLog(LOG_WARNING, "RENDER: shared-depth framebuffer incomplete");
+    if (!rlFramebufferComplete(t.id)) {
+        sharedTargetsValid = false;
+        TraceLog(LOG_WARNING, "RENDER: shared-depth framebuffer incomplete");
+    }
     rlDisableFramebuffer();
-    t.depth.id = sharedDepth; t.depth.width = width; t.depth.height = height;
+    t.depth = scene.depth;         // shared attachment metadata must remain valid too
     SetTextureFilter(t.texture, TEXTURE_FILTER_BILINEAR);
     return t;
 }
@@ -217,19 +222,75 @@ void Renderer::UnloadSharedTarget(RenderTexture2D& t) {
     t = {};
 }
 
-void Renderer::Init(int width, int height) {
+static bool RenderTargetReady(const RenderTexture2D& target) {
+    if (!IsRenderTextureValid(target)) return false;
+    rlEnableFramebuffer(target.id);
+    bool complete = rlFramebufferComplete(target.id);
+    rlDisableFramebuffer();
+    return complete;
+}
+
+bool Renderer::Init(int width, int height, startup::Reporter* loading) {
+    targetsValid = false;
+    sharedTargetsValid = true;
+    if (loading && (!loading->Begin("world.renderer", "Lighting and graphics buffers", 1) ||
+        !loading->PlanChildren({ { "scene" }, { "light" }, { "emissive" }, { "shadow" }, { "bloomA" }, { "bloomB" } }))) return false;
     w = width; h = height;
-    scene = LoadRenderTexture(w, h);
+    if (w <= 0 || h <= 0) { if (loading) loading->Fail("Window size is unavailable"); return false; }
+    int prepared = 0;
+    auto checkpoint = [&](const char* child, const RenderTexture2D& target, const char* detail) {
+        if (!RenderTargetReady(target) || !sharedTargetsValid) {
+            TraceLog(LOG_ERROR, "RENDER: required startup target %s is unavailable", child);
+            if (loading) loading->Fail("Required graphics buffer could not be prepared");
+            return false;
+        }
+        prepared++;
+        return !loading || (loading->Count(prepared, 6, "graphics buffers") &&
+                           loading->ChildDone(child) && loading->Pulse(detail));
+    };
+    {
+        startup::AtomicSpan atomic(loading, "framebuffer", "scene");
+        scene = LoadRenderTexture(w, h);
+    }
     SetTextureFilter(scene.texture, TEXTURE_FILTER_BILINEAR);
     sharedDepth = scene.depth.id;
-    light = MakeSharedDepthTarget(w, h);
-    emissive = MakeSharedDepthTarget(w, h);
-    shadow = LoadRenderTexture(w, h);
-    bloomA = LoadRenderTexture(std::max(1, w / 4), std::max(1, h / 4));
-    bloomB = LoadRenderTexture(std::max(1, w / 4), std::max(1, h / 4));
+    if (!checkpoint("scene", scene, "Preparing lighting buffers")) return false;
+    {
+        startup::AtomicSpan atomic(loading, "framebuffer", "light");
+        light = MakeSharedDepthTarget(w, h);
+    }
+    if (!checkpoint("light", light, "Preparing emissive buffers")) return false;
+    {
+        startup::AtomicSpan atomic(loading, "framebuffer", "emissive");
+        emissive = MakeSharedDepthTarget(w, h);
+    }
+    if (!checkpoint("emissive", emissive, "Preparing shadow buffers")) return false;
+    {
+        startup::AtomicSpan atomic(loading, "framebuffer", "shadow");
+        shadow = LoadRenderTexture(w, h);
+    }
+    if (!checkpoint("shadow", shadow, "Preparing bloom buffers")) return false;
+    {
+        startup::AtomicSpan atomic(loading, "framebuffer", "bloomA");
+        bloomA = LoadRenderTexture(std::max(1, w / 4), std::max(1, h / 4));
+    }
+    if (!checkpoint("bloomA", bloomA, "Preparing bloom buffers")) return false;
+    {
+        startup::AtomicSpan atomic(loading, "framebuffer", "bloomB");
+        bloomB = LoadRenderTexture(std::max(1, w / 4), std::max(1, h / 4));
+    }
     SetTextureFilter(bloomA.texture, TEXTURE_FILTER_BILINEAR);
     SetTextureFilter(bloomB.texture, TEXTURE_FILTER_BILINEAR);
+    if (!checkpoint("bloomB", bloomB, "Finalizing graphics buffers")) return false;
     rlSetClipPlanes(8.0, 12000.0);   // good depth precision for a camera 800..3000 px up
+    targetsValid = true;
+    return !loading || loading->Finish();
+}
+
+bool Renderer::Ready() const {
+    return targetsValid && sharedTargetsValid && sharedDepth != 0 && w > 0 && h > 0 &&
+           IsRenderTextureValid(scene) && IsRenderTextureValid(light) && IsRenderTextureValid(emissive) &&
+           IsRenderTextureValid(shadow) && IsRenderTextureValid(bloomA) && IsRenderTextureValid(bloomB);
 }
 
 void Renderer::Unload() {
@@ -240,6 +301,8 @@ void Renderer::Unload() {
     if (bloomA.id) UnloadRenderTexture(bloomA);
     if (bloomB.id) UnloadRenderTexture(bloomB);
     scene = shadow = bloomA = bloomB = {};
+    sharedDepth = 0;
+    targetsValid = false;
 }
 
 void Renderer::EnsureSize(int width, int height) {

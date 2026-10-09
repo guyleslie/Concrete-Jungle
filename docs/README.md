@@ -8,6 +8,7 @@ Project documentation for Concrete Jungle. Start with the [architecture overview
 |---|---|
 | [Architecture](architecture.md) | understand how the modules fit together, the frame lifecycle, units and conventions |
 | [Testing](testing.md) | run the automated scenarios and interpret their metrics |
+| [CJ-030 loading checks](testing/cj030-loading.md) | reproduce loading snapshots, model checks, timing comparisons and startup-state verification |
 | [Backlog](backlog.md) | see what is planned, its priority and acceptance criteria |
 
 ## Design documents
@@ -18,6 +19,7 @@ How each subsystem works, why it works that way, and which constants tune it.
 |---|---|
 | [City](design/city.md) | Procedural layout, buildings, special structures, street furniture, traffic signals |
 | [Rendering](design/rendering.md) | Camera, render passes, day/night lighting, particles, HUD |
+| [CJ-030 startup loading screen](design/loading-screen-proposal.md) | Approved presentation, scalable status block, work accounting and readiness contract |
 | [Vehicles](design/vehicles.md) | Vehicle classes, handling model, damage, fire and explosions |
 | [CJ-002 handling proposal](design/vehicle-handling-proposal.md) | Approved class targets, source research, collision criteria and before/after measurements |
 | [CJ-002 arcade baseline](design/vehicle-handling-baseline.md) | Recorded handling results for all 17 classes, collision failures and evidence provenance |

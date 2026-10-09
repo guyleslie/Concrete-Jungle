@@ -11,6 +11,7 @@
 #include "raylib.h"
 #include <vector>
 #include <string>
+namespace startup { class Reporter; }
 
 enum class Sfx : int { Pistol = 0, Shotgun, Rifle, Punch, Knife, Crash, CrashSmall, Explosion, Horn, Door,
                        Pickup, MissionPass, MissionFail, Wasted, Splash, Glass, Footstep, Reload, Scream,
@@ -20,7 +21,7 @@ constexpr int SHOUT_VARIANTS = 3;          // ShoutHey, ShoutOi, ShoutHah: an an
 class AudioSystem {
 public:
     bool ok = false;
-    void Init();
+    bool Init(startup::Reporter* loading = nullptr);
     void Unload();
     void Update(Vector2 listener);                         // call once per frame
 
@@ -41,6 +42,6 @@ private:
     float engineTarget = 0, engineVol = 0, enginePitch = 1, bigMix = 0;
     float sirenVol = 0, skidVol = 0;
 
-    void MakeLoop(Loop& l, const std::vector<short>& pcm, const char* overrideName);
+    void MakeLoop(Loop& l, const std::vector<short>& pcm, const char* overrideName, startup::Reporter* loading = nullptr);
     void StartLoop(Loop& l);
 };

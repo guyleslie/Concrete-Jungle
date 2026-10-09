@@ -20,6 +20,7 @@
 #pragma once
 #include "raylib.h"
 #include "math_utils.h"
+namespace startup { class Reporter; }
 
 inline Vector3 W3(Vector2 p, float h) { return { p.x, h, p.y }; }
 
@@ -73,7 +74,8 @@ public:
     int w = 0, h = 0;
     RenderTexture2D scene{}, light{}, emissive{}, shadow{}, bloomA{}, bloomB{};
 
-    void Init(int width, int height);
+    bool Init(int width, int height, startup::Reporter* loading = nullptr);
+    bool Ready() const;
     void Unload();
     void EnsureSize(int width, int height);
 
@@ -95,6 +97,7 @@ public:
 
 private:
     unsigned int sharedDepth = 0;
+    bool targetsValid = false, sharedTargetsValid = true;
     RenderTexture2D MakeSharedDepthTarget(int width, int height);
     void UnloadSharedTarget(RenderTexture2D& t);
     void ClearColorOnly(Color c);

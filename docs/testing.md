@@ -13,6 +13,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Cooperative yielding fixture](#cooperative-yielding-fixture)
 - [Driver incident fixture](#driver-incident-fixture)
 - [Turning fixture](#turning-fixture)
+- [Startup loading checks](#startup-loading-checks)
 - [Workflow](#workflow)
 
 ## Running a scenario
@@ -53,6 +54,20 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `traffic-recovery` | Isolated enclosed hold, free lane recovery and front-blocked garage escape for Taxi, Bus or BoxTruck, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
 | `traffic-clearance` | Taxi rejoin with separated nearby building/parked-car boxes, plus actual-overlap, clearance-only-contact and forward-blockage API guards at 60 Hz and 20 Hz; 420 frames |
 | `traffic-turns` | Isolated CJ-020 turning fixture: every traffic class turns right, turns left and goes straight through an empty junction at 60 Hz and 20 Hz; see [Turning fixture](#turning-fixture) |
+
+## Startup loading checks
+
+[CJ-030 loading checks](testing/cj030-loading.md) cover the frozen progress model, eight presentation resolutions, startup timing and unchanged world state. Loading frames never count toward `--frames`; `--shot` bypasses the optional title overlay fade.
+
+| Option | Meaning |
+|---|---|
+| `--loading-test <directory>` | Runs visible snapshot fixtures and saves captures/evidence, then exits without initializing the world |
+| `--loading-capture <prefix>` | Captures each real startup group, final readiness or failure, with a `.tsv` snapshot log |
+| `--loading-config <file.cfg>` | Loads alternative cosmetic settings, useful for missing-art/font checks |
+| `--loading-stop <task-id>` | Test-only cancellation after the first confirmed work in that group; cleans up and exits |
+| `--loading-fail <task-id>` | Test-only fatal failure after confirmed work; never reaches the title or 100%; exits with code 2 |
+
+All capture paths are relative to the working directory. Keep them under `build/`.
 
 ## Metrics
 
