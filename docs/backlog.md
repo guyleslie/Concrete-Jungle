@@ -24,7 +24,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — the player's unarmed and armed walk without the combat stance; the civilian 3D pipeline of [CJ-004](#cj-004-replace-placeholder-art) may help.
+6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — approach agreed on 2026-10-09: a 3D player from the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), with CC0 gun models; next, agree the specification and a proof of concept with the pistol and the rifle.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
 
@@ -166,7 +166,7 @@ Remaining: the playtest.
 ### CJ-011 Relaxed player posture
 
 - **Priority:** High
-- **Status:** Open
+- **Status:** Open; approach agreed on 2026-10-09
 
 **Problem.** The player always looks as if in action. Unarmed, the character holds its fists up as if about to fight; armed, it constantly aims. In GTA the character walked normally and only raised the weapon to aim or fire.
 
@@ -175,6 +175,8 @@ Remaining: the playtest.
 **Scope.** A character sheet with the arms down (idle, walk, run), a weapon carried lowered or holstered while not aiming, and a short raise transition when the player aims or fires. Needs new art (see CJ-004 for sources).
 
 **Acceptance criteria.** Walking without aiming shows a relaxed pose for every weapon; aiming or firing raises the weapon within 0.2 s; playtested.
+
+**Approach (agreed with the user, 2026-10-09).** The player becomes a 3D character built and rendered with the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), replacing the Survivor sprites. The weapons come from Quaternius's Ultimate Gun Pack ([OpenGameArt](https://opengameart.org/content/low-poly-guns-pack), CC0): 40 guns (pistols, revolvers, shotguns, assault rifles, submachine guns, sniper rifles) and accessories such as a weapon light, a bipod and a tripod, but no knife or rocket launcher; it is downloaded to `build/art-sources/downloads/`. A weapon is fixed to the right hand bone with a grip offset per weapon, and Blender's inverse kinematics put the other hand on a two-handed weapon's fore grip. The legs take the accepted walk, jog and run of [CJ-029](#cj-029-civilian-gait-realism); the upper body takes a carry pose with the weapon lowered, or the aim pose, plus a recoil frame or two for firing. The animation library already has pistol clips (`Pistol_Idle_Loop`, `Pistol_Aim_Neutral`, `Pistol_Shoot`, `Pistol_Reload`); no free CC0 library found has rifle clips, so Mixamo is the fallback if the static holds look stiff. The specification (the player's look, the poses per weapon, frame counts and measurable criteria) is agreed at the start of the CJ-011 session.
 
 ### CJ-018 Police driving and reactions
 
