@@ -53,7 +53,7 @@ Dependencies point downwards: `game` uses every other module; `traffic`, `physic
 
 Overall progress is confirmed weighted completion, never elapsed time. Top-level budgets stay frozen for the run; local child plans freeze at zero parent progress and share its budget. `Pulse` grants no progress. Optional `build/cache/startup-work-profile.cfg` history scales later budget estimates from measured unit costs; it never skips loading or proves readiness. The presenter services events and draws on the main thread outside unfinished texture/3D/shader passes. Indivisible driver/library calls are timed separately from cooperative checkpoints.
 
-The [CJ-030 specification](design/loading-screen-proposal.md) defines the accounting, visual and handoff contract; the [loading measurement record](testing/cj030-loading.md) records the frozen baseline, passing implementation checks, measured costs and remaining user-review/hardware cases.
+The [CJ-030 specification](design/loading-screen-proposal.md) defines the accounting, visual and handoff contract; the [loading measurement record](testing/cj030-loading.md) records the frozen baseline, passing implementation checks, measured costs, user acceptance and hardware measurement limits.
 
 ## Frame lifecycle
 

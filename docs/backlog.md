@@ -53,7 +53,6 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-027](#cj-027-multi-lane-roads) | Multi-lane roads | Medium | Open |
 | [CJ-028](#cj-028-rule-breaking-drivers) | Rule-breaking drivers | Medium | Open |
 | [CJ-029](#cj-029-civilian-gait-realism) | Civilian gait realism | High | Implemented, awaiting playtest |
-| [CJ-030](#cj-030-startup-loading-screen) | Startup loading screen | Medium | Implemented, awaiting startup review |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
@@ -391,21 +390,6 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 
 **Result (2026-10-08).** All 28 looks pass: walk stride 0.92–1.10 m for men and 0.82–0.91 m for women, measured per look and written to `civilians.cfg`; a planted foot moves at most 1.7 cm; toe at most 0.29 m ahead, spread at most 0.67 m (was 0.87 m); jog and run feet touch the ground for one frame at most, so nothing slips. Atlases hold 38 frames (walk 16, jog 8, run 8) in the layout that `civilians.cfg` declares; at load every frame is cut to its visible part and packed, 25.9 MB of video memory instead of 84.2 MB before mipmaps, and the procedural fallback draws exactly as before. The `traffic-incident` fixture, which now asks for the drawn pose instead of a frame number, passes 80 of 80 cases. FPS medians of alternating runs against the previous build: `day` −1.6 %, `brawl` +2.1 %, `rampage` +1.8 %; the `PEDS` lines are identical. Remaining: the user's playtest.
 
-### CJ-030 Startup loading screen
-
-- **Priority:** Medium
-- **Status:** Implemented on 2026-10-09; final background approved; awaiting review of actual startup and title handoff
-
-**Problem.** Startup displays three static messages on a plain dark background, without overall progress or current-content detail.
-
-**Agreed visual direction.** Use the final night-city background, the upper-left ivory/amber wordmark and one overall amber progress bar. The fixed-size status block shows current task, useful detail with an optional qualified group count, overall percentage and one recent-completion line. See the complete [loading screen proposal](design/loading-screen-proposal.md) and [art brief](design/loading-screen-art-brief.md).
-
-**Implemented.** The user authorized CJ-030 after accepting the background. Subsystem reporters preserve the original initialization order and publish real work into a frozen weighted plan. Metadata and optional successful-startup cost history adapt its budgets; actual local plans supply counts. The fixed four-row layout handles additional groups without a growing checklist. Following startup review, the user requested a simple static bar: confirmed fill remains visible during unknown work, with no animation or pulse inside the track. Required failure and cancellation stop title handoff and unwind resources; held Enter/Space require individual release before starting.
-
-**Final background (2026-10-09).** The accepted [cj030-loading-background.png](images/cj030-loading-background.png) is copied unchanged to `assets/ui/loading-city.png`. The [asset record](design/loading-background.md) documents its native size, checksum and ImageGen origin.
-
-**Verification.** See [loading measurements](testing/cj030-loading.md): 49 model cases pass, 20 presentation captures pass, five alternating startup pairs preserve the exact initialized state and title pixels, and partial cancellation/failure checks clean up without a title. Automated verification is recorded separately from the remaining user review.
-
 ## Done
 
 | ID | Title | Completed |
@@ -416,6 +400,20 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 | CJ-016 | Human-like traffic and incidents: physical recovery without timeouts, cooperative yielding, wait-for cycles, persistent drivers and road-rage incidents ([details](#cj-016-road-rage-and-traffic-incidents)) | 2026-10-07 |
 | CJ-020 | Turning kinematics of traffic: the rear axle traces the path, a turn path per class from its turning circle, turning speed from lateral acceleration ([details](#cj-020-turning-kinematics-of-traffic)) | 2026-10-07 |
 | CJ-004 | Replace placeholder art: motorbikes from generated top-down art, 28 civilians rendered from 3D models ([details](#cj-004-replace-placeholder-art)) | 2026-10-08 |
+| CJ-030 | Startup loading screen: approved city art, fixed status rows and confirmed progress that adapts to actual work ([details](#cj-030-startup-loading-screen)) | 2026-10-09 |
+
+### CJ-030 Startup loading screen
+
+- **Priority:** Medium
+- **Status:** Done on 2026-10-09; implemented, reviewed and accepted by the user
+
+**Problem.** Startup displayed three static messages on a plain dark background, without overall progress or current-content detail.
+
+**Accepted result.** The final night-city background, upper-left ivory/amber wordmark and one overall amber bar accompany a fixed-size four-row status block: current task, useful detail with a qualified count, overall percentage and one recent completion. The static bar retains confirmed fill through stage changes. Subsystems publish real work into a frozen weighted plan; metadata and optional successful-startup timing history adapt budgets, while actual local plans supply counts and actual completion controls screen duration. See the [loading screen specification](design/loading-screen-proposal.md) and [art brief](design/loading-screen-art-brief.md).
+
+**Safety and compatibility.** Original initialization order and RNG are preserved. Failure or cancellation prevents title handoff and unwinds partial resources. Held Enter/Space rearm independently on release. The approved [background source](images/cj030-loading-background.png) and runtime copy have identical bytes; the [asset record](design/loading-background.md) preserves its dimensions, checksum and provenance.
+
+**Verification and acceptance.** [Loading measurements](testing/cj030-loading.md) record 49 passing model cases, 20 presentation captures, six partial stop checks, fallback runs and five alternating startup pairs with exact initialized state and title pixels. Day/drive captures also match. On 2026-10-09 the user accepted the implemented result and requested closure, cleanup and integration into `main`. Device-specific unmeasured cases remain documented limitations, rather than pending user acceptance.
 
 ### CJ-016 Road rage and traffic incidents
 

@@ -1,6 +1,6 @@
 # CJ-030 loading measurements
 
-This record separates the frozen startup baseline from verification of the [loading-screen implementation](../design/loading-screen-proposal.md). Baseline and implemented-build measurements were collected on 2026-10-09. Automated checks pass; actual startup and title handoff await final user review. The limitations below distinguish measured behavior from untested hardware and input cases.
+This record separates the frozen startup baseline from verification of the [loading-screen implementation](../design/loading-screen-proposal.md). Baseline and implemented-build measurements were collected on 2026-10-09. Automated checks pass, and the user accepted the implemented result and requested closure on the same date. The limitations below distinguish measured behavior from untested hardware and individually unlogged physical input cases.
 
 ## Contents
 
@@ -11,6 +11,7 @@ This record separates the frozen startup baseline from verification of the [load
 - [Implemented-build evidence](#implemented-build-evidence)
 - [Matched startup times](#matched-startup-times)
 - [Responsiveness and resource cost](#responsiveness-and-resource-cost)
+- [Closure and retained evidence](#closure-and-retained-evidence)
 
 ## Frozen baseline
 
@@ -87,10 +88,10 @@ The evidence below comes from executed model tests, visible game runs and export
 | Actual startup | State/count snapshot log, progress captures and required resource readiness | Passed: real task captures and Ready handoff |
 | Fallbacks | Missing cosmetic files, ordinary content fallback, absent audio device when reproducible | Cosmetic and missing-content-config fallback passed; physical no-device case not reproduced |
 | Partial cleanup | Cancel and fail at several assets/world boundaries; clean exit; no title screenshot, crash or duplicate resource unload | Passed: six injected runs, cleanup called twice |
-| Input handoff | Independently held Enter/Space release/repress cases and fresh first title press | Seven production-used guard cases passed; physical keyboard/close review pending |
+| Input handoff | Independently held Enter/Space release/repress cases and fresh first title press | Seven production-used guard cases passed; individual physical keyboard/close cases not logged |
 | Determinism | Exact initialized digest/RNG and fixed-frame title/day/drive outputs on matched content | Passed: five title pairs and six day/drive capture pairs |
 | Responsiveness and cost | Bootstrap/full/matched time, draw CPU, boundary gaps, atomic maxima and GPU estimate | Measured below; indivisible-call exceptions reported |
-| User review | Actual startup watched and title handoff playtested | Pending final acceptance |
+| User review | Implemented startup and title handoff reviewed | Accepted by the user on 2026-10-09; closure requested |
 
 Aim for a 30 Hz cooperative redraw/event cadence and safe CPU checkpoints within 50 ms on the measured machine. Record indivisible decode, font, shader, upload, audio and framebuffer calls separately: a cooperative presenter cannot preempt them. The draw CPU target is 0.5 ms at 1,920 × 1,080 px and the extra loading GPU budget is 16 MiB. The measurements below meet these presentation targets; they do not promise uninterrupted redraws inside blocking library calls.
 
@@ -124,7 +125,7 @@ The presentation fixture covers 1,280 × 720, 1,600 × 900, 1,920 × 1,080, 1,92
 
 The 5/25/100-group plans retain identical four-row geometry. Long UTF-8 text uses supported glyphs or deterministic replacement and measured ellipsis; `9999 / 10000` remains visible. Unknown local work after completed work retains the confirmed static fill and hides only the percentage. No clock, moving marker, pulse or blinking changes the bar. Only accepted work reports can extend it. Separate 99% and Ready/100% captures exercise the final gate. The source-used `TitleInputGuard` tests independently held Enter/Space, release/repress, immediate use of an unheld key and replacement of stale suppression at readiness.
 
-No audio device could not be physically reproduced on this machine. The reporter model covers optional skip accounting, but that is not a device-unavailable integration result. Physical Enter/Space during loading, Esc and Alt+F4, and final visual acceptance remain user-review checks.
+An unavailable audio device could not be physically reproduced on this machine. The reporter model covers optional skip accounting, but that is not a device-unavailable integration result. Individual physical Enter/Space during loading, Esc and Alt+F4 cases were not separately logged. The user accepted the implemented startup and requested closure on 2026-10-09; these measurement limits remain explicit.
 
 ## Matched startup times
 
@@ -167,3 +168,9 @@ Uncaptured longest presenter boundary gaps are 375.654–400.488 ms, dominated b
 | Audio device/resource | 394.664 |
 
 The bar remains still during these calls and then reflects newly confirmed work. Added content changes discovered budgets and local counts; longer or shorter actual work changes how long the screen stays visible. No elapsed-time percentage or minimum loading duration can finish it early or hold it after readiness.
+
+## Closure and retained evidence
+
+On 2026-10-09 the user accepted the result and requested cleanup and integration into `main`. The backlog item is Done. Disposable object files, the headless test executable, copied fallback content, the superseded layout output and scratch files were removed from `build/cj030/`. Keep the headless test source for regression checks. The ordinary fallback fixture can be recreated by copying runtime assets to an isolated working directory and omitting `assets/data/civilians.cfg`; never remove the production file to perform that check.
+
+The ignored local evidence retains the before/after executables and manifests, measurement logs, final layout captures, actual startup snapshots, stop/fallback logs and matched title/day/drive captures. The committed report preserves the measured results even when local build output is unavailable. The approved runtime images, configuration and documentation source remain part of the normal project.

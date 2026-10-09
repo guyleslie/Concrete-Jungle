@@ -1,6 +1,6 @@
 # CJ-030: Startup loading screen proposal
 
-Design and implementation contract for a scalable startup screen, prepared on 2026-10-08 and implemented after the background approval on 2026-10-09. The approved composition uses a fixed four-row status block and a static bar that retains confirmed work. The frozen baseline and automated results are recorded in [CJ-030 loading measurements](../testing/cj030-loading.md); final startup/title review remains with the user. Startup ownership is documented in [Architecture](../architecture.md#start-up), rendering in [Rendering](rendering.md), and workflow in [Contributing](../../CONTRIBUTING.md).
+Design and implementation contract for a scalable startup screen, prepared on 2026-10-08, implemented after background approval and accepted by the user on 2026-10-09. The approved composition uses a fixed four-row status block and a static bar that retains confirmed work. The frozen baseline, automated results and acceptance are recorded in [CJ-030 loading measurements](../testing/cj030-loading.md). Startup ownership is documented in [Architecture](../architecture.md#start-up), rendering in [Rendering](rendering.md), and workflow in [Contributing](../../CONTRIBUTING.md).
 
 ## Contents
 
@@ -32,7 +32,7 @@ Design and implementation contract for a scalable startup screen, prepared on 20
 | Completed work | Exactly one recent-completion line, replaced as each meaningful group finishes |
 | Expansion | New startup work uses the same fixed-size status block |
 | Interaction | Automatic handoff to the existing title screen; no extra dismissal key |
-| Implementation status | Implemented and measured; awaiting final user startup/title review |
+| Implementation status | Implemented, measured and accepted by the user on 2026-10-09; CJ-030 closed |
 
 The approved status block has a fixed size as the number of startup groups grows. The complete category list belongs to internal startup reporting; the visible composition shows current work and one recent completion.
 
@@ -306,7 +306,7 @@ Release loading-only textures/font after the transition; keep them available in 
 
 ## Acceptance criteria
 
-The [measurement record](../testing/cj030-loading.md#verification-checklist) records passing model, layout, real-startup, fallback, cleanup and deterministic-output checks. Draw CPU and GPU targets are met on the measured machine. Physical no-audio-device behavior and keyboard/close review remain unverified; final user acceptance is pending.
+The [measurement record](../testing/cj030-loading.md#verification-checklist) records passing model, layout, real-startup, fallback, cleanup and deterministic-output checks. Draw CPU and GPU targets are met on the measured machine. The user accepted the result on 2026-10-09. Physical no-audio-device behavior and individually unlogged keyboard/close cases remain measurement limits.
 
 | ID | Test | Required result |
 |---|---|---|
@@ -337,7 +337,7 @@ The [measurement record](../testing/cj030-loading.md#verification-checklist) rec
 7. Run fixed-frame title/day/drive smoke captures and relevant existing checks under [Testing](../testing.md). Expand to traffic/recovery suites if state differences or changes to warmup/generation expose risk. Do not rerun unrelated long suites without such evidence.
 8. Review resolution/state contact sheets, then let the user watch and playtest actual startup and title handoff. Mark the backlog item complete only after measured verification and visual acceptance.
 
-Five alternating warm before/after pairs preserve the initialized digest/RNG and exact title pixels. Median full startup changes from 9,623.369 ms to 10,352.527 ms (7.58%); the matched initialization chain increases by 2.33%. Loading-owned GPU storage is 10.02 MiB. Atomic audio/decode/resize stalls are reported separately from short cooperative gaps. These machine-specific observations and their limits are in the [measurement record](../testing/cj030-loading.md); final user acceptance remains open.
+Five alternating warm before/after pairs preserve the initialized digest/RNG and exact title pixels. Median full startup changes from 9,623.369 ms to 10,352.527 ms (7.58%); the matched initialization chain increases by 2.33%. Loading-owned GPU storage is 10.02 MiB. Atomic audio/decode/resize stalls are reported separately from short cooperative gaps. These machine-specific observations, their limits and the user's acceptance are in the [measurement record](../testing/cj030-loading.md).
 
 ## Delivery sequence
 
@@ -346,9 +346,9 @@ Five alternating warm before/after pairs preserve the initialized digest/RNG and
 3. **Production art:** approved background bytes and independent wordmark packaged; eight-resolution crop/readability checks and loading-resource measurements recorded.
 4. **Source integration:** discovery, frozen accounting, completion reports, checkpoints, presentation, readiness/cleanup and title-input handoff implemented for verification.
 5. **Verification:** build/run accounting and layout fixtures, matched startup comparisons, fallback/cancel/fail injection and deterministic title/day/drive captures. Record results before claiming targets passed.
-6. **User review and documentation:** watch actual startup and playtest title handoff; update runtime documents, credits and changelog. Complete CJ-030 only when acceptance passes.
+6. **User review and documentation:** implemented startup accepted by the user on 2026-10-09; runtime documents, credits and changelog updated; CJ-030 closed.
 
-The final background and visual/UX direction are approved, implementation is authorized, and automated verification is recorded. The implemented startup and title handoff await final user review.
+The final background and visual/UX direction are approved, automated verification is recorded, and the user accepted the implemented startup on 2026-10-09. CJ-030 is complete.
 
 ## References and open measurements
 
