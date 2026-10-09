@@ -180,8 +180,8 @@ Remaining: the playtest.
 
 **Requirements from the user (2026-10-09).**
 
-- The player walks and runs. Today `Left Shift` runs at 6.5 m/s and the normal pace is 4.0 m/s, a jog's speed (civilians jog from 2.0 m/s), so the specification settles the player's speeds and which gait shows at each.
-- A weapon is raised and aimed only while the player aims, as the game decides it today (kept as it is, the user's choice): while either mouse button is held and for 0.8 s after a shot. Otherwise it is held lowered in the hand.
+- The player walks and runs. Today `Left Shift` runs at 6.5 m/s and the normal pace is 4.0 m/s, a jog's speed (civilians jog from 2.0 m/s). The user's choice: the player walks by default at a real walking pace of about 1.5 m/s with the walk, and `Left Shift` runs at 6.5 m/s with the run; the specification fixes the exact speeds.
+- A weapon is raised and aimed only while the player aims, as the game decides it today (kept as it is, the user's choice): while either mouse button is held and for 0.8 s after a shot. Otherwise it is held lowered in the hand. GTA 1 worked the same way: its people stand, walk and run without a weapon pose, and have firing animations per weapon type for standing, walking and running ([Carnage3D](https://github.com/codenamecpp/carnage3d), a reimplementation that uses the original graphics); no source was found for GTA 2.
 - The torso keeps facing the aim while the legs walk, strafe or backpedal along the motion, as now: the renders need the legs and the upper body as separate layers.
 
 ### CJ-018 Police driving and reactions
