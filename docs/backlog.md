@@ -25,6 +25,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
 6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — approach agreed on 2026-10-09: a 3D player from the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), with CC0 gun models; next, agree the specification and a proof of concept with the pistol and the rifle.
+7. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; approach proposed, criteria to agree.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
 
@@ -40,6 +41,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
+| [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) | Pedestrian blocking and contact realism | High | Open |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
@@ -86,6 +88,8 @@ Before each item, search for open-source code, assets and references that would 
 Remaining: the playtest.
 
 **Feedback request (2026-09-27, repeated 2026-09-28).** Follow-up feedback requested on walking, crossings, dodging and getting up. No new acceptance or defect report received yet; keep this item awaiting playtest.
+
+**Playtest feedback (2026-10-09).** The user finds the walking good. Blocked people stepping on the spot, people who slow down without slowing their steps while sliding past each other, and sideways sliding are not realistic; recorded as [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism). This item stays awaiting playtest for crossings, dodging and getting up.
 
 ### CJ-013 Full screen only
 
@@ -372,6 +376,30 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 **Idea.** Traffic that obeys the rules never collides while turning ([CJ-023](#cj-023-vehicle-widths-and-street-geometry)). A few drivers should break the rules, as in a real city: run a red light, mount the sidewalk, misjudge a gap and hit another car; never exaggerated. Today traffic never runs a red light, and mounts the sidewalk only to get round an obstacle when impatient.
 
 **Acceptance criteria.** To be agreed: which offences occur and how often (per driver mood, in `traffic.cfg`), measured in the city scenarios (offences per minute, crashes they cause, people hit); law-abiding drivers keep zero contacts in junctions; the police notice offences in view ([CJ-018](#cj-018-police-driving-and-reactions)); playtested.
+
+### CJ-031 Pedestrian blocking and contact realism
+
+- **Priority:** High
+- **Status:** Open; approach proposed on 2026-10-09
+
+**Problem (playtest, 2026-10-09).** People walk well, but when an obstacle stops them they keep stepping, jogging or running on the spot; when they bump into each other and slide past, they slow down while stepping as fast as before; and they slide sideways. The user wants this much more realistic: sliding cut to a minimum, and people turning away when they must.
+
+**Causes in the code (`src/pedestrian.cpp`).**
+
+- The drawn gait and its pace come from the steering velocity (`p.vel`), not from the actual displacement. The contact pass, the player's push and the walls (`Collide`) move the position afterwards without changing the velocity, so a blocked person animates at full pace.
+- A person counts as stuck only after 1.2 s of progress below 0.25 m/s, and then turns round; slow progress along a wall never counts.
+- Touching bodies are pushed apart half each, sideways to their heading, and the player pushes people aside; the body neither turns nor slows.
+- The `PEDS` sliding metric compares the heading with the steering velocity, so it does not see these pushes (0.1 % in [CJ-010](#cj-010-pedestrian-behaviour)).
+
+**Proposed approach (to be agreed).** Within [ADR-0006](adr/0006-pedestrian-steering.md):
+
+1. The steps follow the actual displacement along the body's heading, smoothed over about 0.15 s: a blocked person stands and a slowed one steps slower. The gait (walk, jog, run) is chosen from the same speed.
+2. Wall and contact corrections also take the blocked part out of the velocity, so the steering sees the obstacle.
+3. A person who makes too little progress for 0.3–0.5 s stops pressing on: waits briefly for a person in the way, then turns and goes round; turns away from a wall or street furniture.
+4. Fewer contacts: earlier anticipation for calm walkers, passing on the same side, and yielding (whoever stands or is slower waits, the other goes round). Bodies that still touch slow down and turn; a sideways push stays within a few centimetres.
+5. Measurements from the actual displacement: stepping on the spot (step speed against ground speed), sideways slip, contacts, and the time from being blocked to reacting; the sliding metric moves to the actual displacement. A scenario with people walking into a wall and a bollard, pairs meeting head-on in a narrow passage, a crowd at a crossing, and the player pushing through a crowd.
+
+**Acceptance criteria.** Agreed with numbers before coding; the `foot`, `day` and `rampage` metrics of CJ-010 stay met; playtested.
 
 ## Done
 
