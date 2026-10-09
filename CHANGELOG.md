@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-09
+
+The city's people and motorbikes get new art (CJ-004): 28 civilians rendered from 3D models, men and women of real heights, and a sportbike, a chopper and a scooter. Civilians walk with a real person's stride and calm arms, and jog and run with their limbs reaching further the faster they go (CJ-029). The game starts with a loading screen whose progress follows the work actually done (CJ-030). All three are accepted after their playtests; pedestrian behaviour (CJ-010) and full screen (CJ-013) still await playtest acceptance.
+
 ### Added
 
 - [CJ-030 startup loading screen](docs/design/loading-screen-proposal.md): approved night-city background, independent ivory/amber wordmark and four fixed status rows. The static bar retains confirmed work through stage changes, adapts its budgets and counts to current content and observed startup costs, and reaches 100% only after required preparation succeeds. Includes responsive checkpoints, partial cleanup, title-key release guards and [loading checks](docs/testing/cj030-loading.md). Reviewed and accepted by the user on 2026-10-09; CJ-030 is complete.
