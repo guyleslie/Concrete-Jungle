@@ -24,8 +24,8 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — approach agreed on 2026-10-09: a 3D player from the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), with CC0 gun models; next, agree the specification and a proof of concept with the pistol and the rifle.
-7. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; approach proposed, criteria to agree.
+6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — specification agreed on 2026-10-09: a 3D player from the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), with CC0 gun models; next, a proof of concept with the pistol and the rifle.
+7. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
 
@@ -40,8 +40,8 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | In progress |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
-| [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Open |
-| [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) | Pedestrian blocking and contact realism | High | Open |
+| [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Specification agreed |
+| [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) | Pedestrian blocking and contact realism | High | Specification agreed |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
@@ -170,15 +170,13 @@ Remaining: the playtest.
 ### CJ-011 Relaxed player posture
 
 - **Priority:** High
-- **Status:** Open; approach agreed on 2026-10-09
+- **Status:** Specification agreed on 2026-10-09
 
 **Problem.** The player always looks as if in action. Unarmed, the character holds its fists up as if about to fight; armed, it constantly aims. In GTA the character walked normally and only raised the weapon to aim or fire.
 
 **Current state.** The player uses the "Animated Top Down Survivor Player" sprites ([CREDITS](../CREDITS.md)), which only contain combat poses; the `unarmed` set was derived from the knife frames.
 
 **Scope.** A character sheet with the arms down (idle, walk, run), a weapon carried lowered or holstered while not aiming, and a short raise transition when the player aims or fires. Needs new art (see CJ-004 for sources).
-
-**Acceptance criteria.** Standing, walking or running without aiming shows the weapon held lowered in the hand, for every weapon; aiming or firing raises it within 0.2 s; playtested.
 
 **Approach (agreed with the user, 2026-10-09).** The player becomes a 3D character built and rendered with the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), replacing the Survivor sprites. The weapons come from Quaternius's Ultimate Gun Pack ([OpenGameArt](https://opengameart.org/content/low-poly-guns-pack), CC0): 40 guns (pistols, revolvers, shotguns, assault rifles, submachine guns, sniper rifles) and accessories such as a weapon light, a bipod and a tripod, but no knife or rocket launcher; it is downloaded to `build/art-sources/downloads/`. A weapon is fixed to the right hand bone with a grip offset per weapon, and Blender's inverse kinematics put the other hand on a two-handed weapon's fore grip. The legs take the accepted walk, jog and run of [CJ-029](#cj-029-civilian-gait-realism); the upper body takes a carry pose with the weapon lowered, or the aim pose, plus a recoil frame or two for firing. The animation library already has pistol clips (`Pistol_Idle_Loop`, `Pistol_Aim_Neutral`, `Pistol_Shoot`, `Pistol_Reload`); no free CC0 library found has rifle clips, so Mixamo is the fallback if the static holds look stiff. The specification (the player's look, the poses per weapon, frame counts and measurable criteria) is agreed at the start of the CJ-011 session.
 
@@ -189,6 +187,30 @@ Remaining: the playtest.
 - The torso keeps facing the aim while the legs walk, strafe or backpedal along the motion, as now: the renders need the legs and the upper body as separate layers.
 - The player looks like today's Survivor: a dark baseball cap, an olive green jacket, a light camouflage backpack, dark trousers and boots, so the player stays recognisable and stands out from the civilians. No CC0 baseball cap or backpack exists in the MakeHuman packs, so both are modelled in Blender by script (crown with seams and a peak; a fabric pack with a flap and straps) and fixed to the head and upper spine bones.
 - Weapons are held as real people carry them: a pistol lowered beside the thigh, pointing at the ground, and aimed with both hands (the library's `Pistol_Aim_Neutral`); a long gun in the low ready, the stock at the shoulder and the barrel angled down and forward, the other hand on the fore grip, and shouldered to aim. The knife comes from the MakeHuman Equipment 01 pack's dagger ([CC0](https://static.makehumancommunity.org/assets/assetpacks/equipment01.html)).
+
+**Specification (agreed with the user, 2026-10-09).** The legs and the upper body are separate layers; the frames are 144 px for 2.1 m, as the civilians'.
+
+| Layer | Animation | Frames |
+|---|---|---|
+| Legs, shared by every weapon | Stand, walk, run | 1, 16, 16 |
+| Upper body, per weapon | Stand, walk and run with the weapon lowered | 1, 16, 16, in step with the legs |
+| | Aim, fire (recoil) | 1, 2 |
+| | Reload (firearms) | 4 |
+| | Punch or stab (fists, knife, flashlight) | 2–4 |
+
+The player has no jog: the walk shows below 4 m/s and the run from 4 m/s. The walk advances with the distance walked at the player's measured stride and the run by cadence, as for the civilians. The run has 16 frames instead of the civilians' 8, because the player, always on screen, runs a lot: at 6.5 m/s and 3.3 steps/s, 8 frames would show only about 13 a second.
+
+**Acceptance criteria.**
+
+1. Weapon lowered: the barrel points down, a pistol at least 45° and a long gun 30–60° below the horizontal, and from above the weapon reaches at most 0.25 m ahead of the body.
+2. Aiming: the barrel is level within ±5°; a long gun's stock is within 5 cm of the shoulder.
+3. Hands on the weapon in every frame: the grip within 1 cm of the right hand, a two-handed weapon's fore grip within 3 cm of the other hand.
+4. Legs by the [CJ-029](#cj-029-civilian-gait-realism) measures: the planted foot moves at most 2 cm in the walk; as much leg shows ahead of the body as behind it (0.75–1.33).
+5. Layers: with the legs and the upper body facing the same way, the two layers match a single render; at ±90° between them, the waist shows no gap. The backpack and the cap do not cut into the body in any frame.
+6. Size: the player's width within 10 % of today's player.
+7. In the game: aiming or firing raises the weapon within 0.2 s, and it is lowered 0.8 s after the last shot or aim; the walk is 1.5 m/s and the run 6.5 m/s.
+8. A new `player` scenario: with every weapon, the player stands, walks, runs, strafes, backpedals, aims, fires and reloads, and the log records the raise and lower times. In the existing scenarios the pedestrian metrics are unchanged, FPS medians of alternating runs stay within ±3 %, and video memory grows by at most 15 MB.
+9. Playtested by the user.
 
 ### CJ-018 Police driving and reactions
 
@@ -380,7 +402,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 ### CJ-031 Pedestrian blocking and contact realism
 
 - **Priority:** High
-- **Status:** Open; approach proposed on 2026-10-09
+- **Status:** Specification agreed on 2026-10-09
 
 **Problem (playtest, 2026-10-09).** People walk well, but when an obstacle stops them they keep stepping, jogging or running on the spot; when they bump into each other and slide past, they slow down while stepping as fast as before; and they slide sideways. The user wants this much more realistic: sliding cut to a minimum, and people turning away when they must.
 
@@ -391,7 +413,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 - Touching bodies are pushed apart half each, sideways to their heading, and the player pushes people aside; the body neither turns nor slows.
 - The `PEDS` sliding metric compares the heading with the steering velocity, so it does not see these pushes (0.1 % in [CJ-010](#cj-010-pedestrian-behaviour)).
 
-**Proposed approach (to be agreed).** Within [ADR-0006](adr/0006-pedestrian-steering.md):
+**Approach (agreed with the user, 2026-10-09).** Within [ADR-0006](adr/0006-pedestrian-steering.md):
 
 1. The steps follow the actual displacement along the body's heading, smoothed over about 0.15 s: a blocked person stands and a slowed one steps slower. The gait (walk, jog, run) is chosen from the same speed.
 2. Wall and contact corrections also take the blocked part out of the velocity, so the steering sees the obstacle.
@@ -399,7 +421,18 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 4. Fewer contacts: earlier anticipation for calm walkers, passing on the same side, and yielding (whoever stands or is slower waits, the other goes round). Bodies that still touch slow down and turn; a sideways push stays within a few centimetres.
 5. Measurements from the actual displacement: stepping on the spot (step speed against ground speed), sideways slip, contacts, and the time from being blocked to reacting; the sliding metric moves to the actual displacement. A scenario with people walking into a wall and a bollard, pairs meeting head-on in a narrow passage, a crowd at a crossing, and the player pushing through a crowd.
 
-**Acceptance criteria.** Agreed with numbers before coding; the `foot`, `day` and `rampage` metrics of CJ-010 stay met; playtested.
+**Acceptance criteria.** Measured in `foot` and `day` (1,500 frames) and the new scenario; the before values come from a before run at the start of the work.
+
+| Criterion | Target |
+|---|---|
+| Stepping on the spot: walking, jogging or running drawn while the actual speed is under 40 % of the drawn pace | Below 1 % of the moving time |
+| Sideways slip: displacement across the body's heading | At most a fifth of the before value |
+| Bodies touching, per second | At most half of the before value |
+| From being blocked to reacting (waiting, turning or going round) | At most 0.5 s |
+| [CJ-010](#cj-010-pedestrian-behaviour) metrics in `foot`, `day` and `rampage` | Still met |
+| Pedestrian CPU time | At most 0.5 ms |
+
+Then the user's playtest.
 
 ## Done
 
