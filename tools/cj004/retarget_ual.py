@@ -103,7 +103,6 @@ class Retargeter:
         for b in tb:
             self.rest_rel[b.name] = (b.parent.matrix_local.inverted() @ b.matrix_local) if b.parent else b.matrix_local.copy()
         self.legs = {n for n in self.names if n.startswith(("thigh_", "calf_", "foot_", "ball_"))}
-        self.upper = {"spine_01"} | {b.name for b in tb["spine_01"].children_recursive}
         self.calm = {n for n in self.names if n in TORSO - {"pelvis"} or
                      n.startswith(("clavicle_", "upperarm_", "lowerarm_", "hand_"))}
         self._matched_rest()

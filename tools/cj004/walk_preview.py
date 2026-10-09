@@ -1,58 +1,71 @@
-"""CJ-004: atlas strip and animated walk preview of a rendered civilian.
+"""CJ-004 / CJ-029: animated preview of civilians walking, jogging and running as the game plays them.
 
-    python tools/cj004/walk_preview.py <idle render> <walk render dir> <walk pose> <out prefix>
+    python tools/cj004/walk_preview.py <out.gif> [<id> ...] [--walk 1.3] [--jog 2.8] [--run 5.2] [--seconds 4]
 
-Writes <prefix>-strip.png, the nine 96 px frames the game would store (idle, then walk 0-7,
-stylized), and <prefix>-walk.gif: the current procedural civilian (left) and the new one
-(right) walking up a sidewalk at 1.5 m/s, drawn as the game draws them on foot at 1080p
-(doubled): frames times CHAR_SCALE, the walk cycle advancing 8 frames per 1.3 m. Renders are
-CJ_FRAME_M metres square (2.1 by default); the procedural atlas has 1.4 m frames.
+For each look (civilian-01 and civilian-15 by default), one column per gait moves up the
+sidewalk at the given speed (m/s), drawn as the game draws it on foot at 1080p (19 m of world
+on 1080 px, CHAR_SCALE times the civilians.cfg SCALE). The walk advances with the distance at
+the look's walk cycle, the jog and run by the cadence of their GAIT records, all read from
+civilians.cfg, like the game.
 """
-import glob, os, sys
-from PIL import Image
+import argparse, os, sys
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(__file__))
-from stylize import stylize
+from civilians_cfg import ROOT, cadence, read
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-CHAR_SCALE, PX_PER_M = 1.35, 1080 / 19.0 * 2
-FRAME_M = float(os.environ.get("CJ_FRAME_M", "2.1"))
-ATLAS = round(96 * FRAME_M / 1.4)
-SPEED, CYCLE_M, GIF_FPS = 1.5, 1.3, 12
+CHAR_SCALE, FPS = 1.35, 30
+PX_PER_M = 1080 / 19.0
 
-idle_path, walk_dir, walk_pose, prefix = sys.argv[1:5]
-new = [stylize(Image.open(idle_path), ATLAS)]
-new += [stylize(Image.open(p), ATLAS) for p in sorted(glob.glob(os.path.join(walk_dir, walk_pose + "_[0-9][0-9].png")))]
-assert len(new) == 9, "expected an idle and eight walk frames"
-strip = Image.new("RGBA", (ATLAS * 9, ATLAS))
-for i, f in enumerate(new):
-    strip.paste(f, (i * ATLAS, 0))
-strip.save(prefix + "-strip.png")
+ap = argparse.ArgumentParser()
+ap.add_argument("out")
+ap.add_argument("ids", nargs="*")
+ap.add_argument("--walk", type=float, default=1.3)
+ap.add_argument("--jog", type=float, default=2.8)
+ap.add_argument("--run", type=float, default=5.2)
+ap.add_argument("--seconds", type=float, default=4.0)
+a = ap.parse_args()
+cfg = read()
+ids = a.ids or ["civilian-01", "civilian-15"]
+fpx = cfg["frame_px"]
+size = round(cfg["frame_m"] * CHAR_SCALE * cfg["scale"] * PX_PER_M)
 
-atlas = Image.open(os.path.join(ROOT, "build/art-sources/reference/ped-atlas-0.png")).convert("RGBA")
-old = [atlas.crop((i * 96, 0, (i + 1) * 96, 96)) for i in (8, 0, 1, 2, 3, 4, 5, 6, 7)]
+# columns: (label, frames, speed m/s, walk cycle m or None, gait record or None)
+cols = []
+for lid in ids:
+    atlas = Image.open(os.path.join(ROOT, "assets", "characters", "civilians", lid + ".png")).convert("RGBA")
+    for gait, speed in (("walk", a.walk), ("jog", a.jog), ("run", a.run)):
+        if gait not in cfg["anim"] or (gait != "walk" and gait not in cfg["gait"]):
+            continue
+        first, n = cfg["anim"][gait]
+        frames = [atlas.crop((i * fpx, 0, (i + 1) * fpx, fpx)).resize((size, size), Image.BILINEAR)
+                  for i in range(first, first + n)]
+        cols.append(("%s %s %.1f m/s" % (lid, gait, speed), frames, speed,
+                     cfg["looks"][lid] if gait == "walk" else None, cfg["gait"].get(gait)))
 
-size = round(FRAME_M * CHAR_SCALE * PX_PER_M)            # drawn frame size in the preview
-old_size = round(1.4 * CHAR_SCALE * PX_PER_M)
-W, H = 2 * size + 120, 760
-tex = Image.open(os.path.join(ROOT, "assets/textures/sidewalk.png")).convert("RGBA")
-tex = tex.resize((round(2 * PX_PER_M), round(2 * PX_PER_M)))
+colw = size + 8
+W, H = 10 + colw * len(cols), round(11 * PX_PER_M) + 40
+tex = Image.open(os.path.join(ROOT, "assets", "textures", "sidewalk.png")).convert("RGBA")
+tex = tex.resize((round(4 * PX_PER_M), round(4 * PX_PER_M)))        # a 256 px tile is about 4 m
 ground = Image.new("RGBA", (W, H))
 for y in range(0, H, tex.height):
     for x in range(0, W, tex.width):
         ground.paste(tex, (x, y))
+d = ImageDraw.Draw(ground)
+for c, (label, *_rest) in enumerate(cols):
+    x = 10 + c * colw
+    d.rectangle((x - 2, 2, x + 6 * len(label) + 2, 16), fill=(0, 0, 0, 190))
+    d.text((x, 4), label, fill=(255, 255, 255, 255))
 
-frames = []
-step = SPEED * PX_PER_M / GIF_FPS                        # px per GIF frame
-n = int((H + size) / step)
-for k in range(n):
-    canvas = ground.copy()
-    walked = k * SPEED / GIF_FPS                          # metres
-    cycle = int(walked / CYCLE_M * 8) % 8
-    y = round(H - k * step - size / 2)
-    for col, (set_, s) in enumerate(((old, old_size), (new, size))):
-        sprite = set_[1 + cycle].resize((s, s), Image.BILINEAR)
-        canvas.alpha_composite(sprite, (40 + col * (size + 40) + (size - s) // 2, y - s // 2))
-    frames.append(canvas.convert("RGB"))
-frames[0].save(prefix + "-walk.gif", save_all=True, append_images=frames[1:], duration=round(1000 / GIF_FPS), loop=0)
-print("wrote", prefix + "-strip.png", prefix + "-walk.gif", len(frames), "frames")
+out = []
+for k in range(round(a.seconds * FPS)):
+    t = k / FPS
+    img = ground.copy()
+    for c, (_l, frames, speed, cycle_m, gait) in enumerate(cols):
+        dist = speed * t
+        phase = dist / cycle_m if cycle_m else t * cadence(gait, speed) / 2
+        y = H - size - 6 - int((dist * PX_PER_M) % (H - size - 26))
+        img.alpha_composite(frames[int(phase * len(frames)) % len(frames)], (10 + c * colw, y))
+    out.append(img.convert("P", palette=Image.ADAPTIVE, colors=160))
+out[0].save(a.out, save_all=True, append_images=out[1:], duration=round(1000 / FPS), loop=0)
+print("wrote", a.out, "%d columns, %d KB" % (len(cols), os.path.getsize(a.out) // 1024))

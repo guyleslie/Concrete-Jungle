@@ -102,10 +102,6 @@ for job in jobs:
     name, frame_list, cycle = job.split(":")
     a = set_action(name)
     f0, f1 = (int(x) for x in a.frame_range)
-    try:
-        keyed = sorted({int(round(k.co.x)) for fc in a.fcurves for k in fc.keyframe_points})
-    except (AttributeError, TypeError):
-        keyed = []
     # ---- stride and thigh swing over the whole action ----
     samples = []
     t = float(f0)
@@ -198,7 +194,7 @@ for job in jobs:
                        for pt in POINTS)
     result[name] = {"stride_m": stride, "thigh_forward_max_deg": thigh_max, "slip_m": slip, "contact_slip_m": contact_slip,
                     "cycle_m": cycle_m, "frames": n, "cadence_steps_per_m": 2.0 / cycle_m if cycle_m else 0,
-                    "keyed_frames": len(keyed), "toe_ahead_max_m": toe_ahead, "foot_behind_max_m": behind,
+                    "toe_ahead_max_m": toe_ahead, "foot_behind_max_m": behind,
                     "spread_max_m": spread, "locked_frames": locked, "no_support_share": gaps / n_s,
                     "hand_swing_m": hand_swing, "hand_out_m": out_side, "lean_deg": lean, "twist_deg": twist}
     print("GAIT %-17s stride %.3f m, cycle %.3f m, thigh forward %.1f deg, slip %.3f m (any contact %.3f m), toe ahead %.2f m, "
