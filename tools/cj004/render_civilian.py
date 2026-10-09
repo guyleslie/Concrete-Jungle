@@ -128,6 +128,7 @@ def reset():
     if rig.animation_data:
         rig.animation_data.action = None
     for pb in rig.pose.bones:
+        pb.rotation_mode = "QUATERNION"           # curl_fingers() turns fingers Euler; actions key quaternions
         pb.matrix_basis = Matrix()
     rig.rotation_euler = (0.0, 0.0, math.pi)      # MakeHuman's front (-Y) to the image top (+Y)
     cam.location = (0.0, 0.0, 6.0)

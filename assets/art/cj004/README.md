@@ -70,10 +70,12 @@ Civilians are built from 3D human models, animated, and rendered straight from a
 | Script | What it does |
 |---|---|
 | [build_civilian.py](../../../tools/cj004/build_civilian.py) | Builds a civilian from a look file ([example](../../../tools/cj004/look-civilian-01.json)): MakeHuman macro details, skin, clothes, hair and the `game_engine` rig |
-| [retarget_ual.py](../../../tools/cj004/retarget_ual.py) | Copies library actions onto the civilian. The library rests in a T-pose and MPFB in an A-pose: the civilian is first posed along the library's rest bones, then every frame takes the library bone's world rotation times the constant roll offset, so hip and shoulder twist carries over |
+| [retarget_ual.py](../../../tools/cj004/retarget_ual.py) | Copies library actions onto the civilian. The library rests in a T-pose and MPFB in an A-pose: the civilian is first posed along the library's rest bones, then every frame takes the library bone's world rotation times the constant roll offset, so hip and shoulder twist carries over. Modifiers adjust the gaits (see [Gaits](#gaits-cj-029)) |
+| [gaits.py](../../../tools/cj004/gaits.py) | The gait settings that the scripts below share |
+| [tune_gait.py](../../../tools/cj004/tune_gait.py) | For one look, tries each gait's hip-swing shifts and upper-body corrections and keeps the one that shows as much leg ahead of the body as behind it from above |
 | [render_civilian.py](../../../tools/cj004/render_civilian.py) | Renders frames straight from above: orthographic, 1.4 m × 1.4 m per frame (the atlas frame before `CHAR_SCALE`), 384 px, facing the top of the image, sun from the upper left. Also writes a mask of the legs and shoes. The `idle` pose is built in the script: upright, arms hanging, feet under the hips |
-| [measure_gait.py](../../../tools/cj004/measure_gait.py) | Stride (the planted foot's travel per cycle), foot slip with the frames advanced as the game plays them, thigh swing, toe reach and the spread from the front toe to the back foot |
-| [measure_frames.py](../../../tools/cj004/measure_frames.py) | Visible legs and shoes, width and length of the silhouette, body centre drift and the silhouette change between frames, including the wrap-around of a cycle |
+| [measure_gait.py](../../../tools/cj004/measure_gait.py) | Stride (how far the foot that carries the weight travels per cycle), the walk frames that split it evenly, foot slip with the frames advanced as the game plays them, thigh swing, toe reach, the spread from the front toe to the back foot, and the upper body's hand travel, arm width, lean and shoulder turn |
+| [measure_frames.py](../../../tools/cj004/measure_frames.py) | Visible legs and shoes, how far the legs show beyond the body ahead and behind, width and length of the silhouette, body centre drift and the silhouette change between frames, including the wrap-around of a cycle |
 | [stylize.py](../../../tools/cj004/stylize.py) | Reduces a render to the 96 px atlas frame with more contrast and saturation and a dark contour, like the player and the procedural civilians |
 | [make_civilians.py](../../../tools/cj004/make_civilians.py) | Runs the steps for every look in [looks.json](../../../tools/cj004/looks.json), writes the atlases and checks them (see [Full set](#full-set-2026-10-08)) |
 | [compare_scale.py](../../../tools/cj004/compare_scale.py), [walk_preview.py](../../../tools/cj004/walk_preview.py), [atlas_preview.py](../../../tools/cj004/atlas_preview.py), [preview_frames.py](../../../tools/cj004/preview_frames.py), [debug_side.py](../../../tools/cj004/debug_side.py) | Comparison at game scale on the sidewalk, the atlas strip and an animated walk, the finished atlases frame by frame, a contact sheet with the visible legs marked, and side views of a retarget next to the library mannequin |
@@ -121,17 +123,48 @@ Results: every look meets the per-look criteria: idle legs and shoes at most 4 %
 
 ![The player, the procedural civilian and the 28 looks standing, walking, jogging and running, at game scale](civilian-3d-set.png)
 
-### Gaits (CJ-029, 2026-10-08)
+### Gaits (CJ-029)
 
-The library's walks lift the thigh 50° forward, and seen from above a walker's feet spread 0.87 m from the front toe to the back foot (1.4 m in the run), which the user found unnatural. The user chose a compact stride from three variants shown in motion; the retarget scales every leg joint's motion towards standing straight (`*k`) and turns the walking hips a little back (`~a,c`):
+The library's walk lifts the knee 50° and leaves the trailing leg far behind; seen from above, the user found that unnatural. On 2026-10-08 the user chose a compact stride, every leg joint at 0.65 of the library's motion (0.55 jogging, 0.5 running). The playtest of 2026-10-09 then found the legs showing far behind and hardly ahead, the short steps looking nervous, the walking arms swinging too much and the run looking calmer than the walk. The user chose these gaits from variants shown in motion:
 
-| Gait | Retarget | Frames | Plays |
+| Gait | Legs | Upper body | Frames | Plays |
+|---|---|---|---|---|
+| Walk | The library's, a real walker's stride; the knee lifted at most about 29° | Arms and shoulders move half as much as the library's; the arms hang 5° closer to the body, about as close as standing | 16, moved so that they split the stride evenly | By distance, at the look's measured stride |
+| Jog | 0.85 of the library's, the knees 0.7 | Leaned back 18° | 8: frames 0–19.25 in steps of 2.75 | By cadence, 2.5–2.8 steps/s from 2.0 m/s |
+| Run | The library's | Leaned back 25°, so that about 22° remains and the pumping arms show from above | 8: every second frame | By cadence, 2.8–3.3 steps/s from 4.0 m/s |
+
+[gaits.py](../../../tools/cj004/gaits.py) holds these settings. For every look, [tune_gait.py](../../../tools/cj004/tune_gait.py) tries hip-swing shifts and upper-body corrections and keeps the one that shows as much leg ahead of the body as behind it from above; the looks' builds differ, and so do their settings (hip swing 0–4° walking, 10–18° jogging, 18–24° running). `make_civilians.py --retarget` animates again from the existing build and tuning, for a change to `gaits.py` that leaves the tuning alone.
+
+The retarget modifiers of [retarget_ual.py](../../../tools/cj004/retarget_ual.py), in the order a request lists them:
+
+| Modifier | Effect |
+|---|---|
+| `=+<frames>` | Keys every whole frame and these frames exactly. The library keys its actions every 0.8 frames, so a fast leg between two whole frames was off by up to 6 cm |
+| `~a,c` | Turns each leg about the hip so that the thigh's forward swing becomes a × angle + c |
+| `^t,s` | Caps the knee lift: beyond t degrees, the thigh goes only s of the rest of the way |
+| `&k,deg` | The spine, neck, head and arms move k of their motion about their mean over the cycle; the arms hang deg degrees closer to the body |
+| `@deg` | Leans the upper body back about the hips |
+| `*k,knee,hips` | The leg joints move k of the way from standing straight (the knee, ankle and toes `knee`); the hips sway, bob and turn `hips` of their motion about their mean, so that a planted foot does not slide sideways under them |
+
+[measure_gait.py](../../../tools/cj004/measure_gait.py) treats the heel and the ball as contact points of their own, because a planted foot rolls from one to the other. A point is on the ground while it moves backwards relative to the body within 3 cm of its lowest, and the weight is on the lowest such point of the front foot. The stride is that point's travel over the cycle. The measure of 2026-10-08 followed only the flat foot and overstated the stride (civilian-01: 1.03 m against 0.92 m), so the feet slid a few centimetres a step. [measure_frames.py](../../../tools/cj004/measure_frames.py) measures how far the legs show beyond the body from the leg mask alone, because the colour render's softer edge makes the rim of a leg count as body. Since CJ-004 the right hand's fingers had stayed spread in every animated frame: the raised-fist pose turns them to Euler rotations, which an action's quaternion keys do not move. The render script now resets them.
+
+The atlas is 38 frames: walk 0–15, idle 16, lying 17, punches 18–19, fist 20–21, jog 22–29, run 30–37, declared by the `ANIM` records of [civilians.cfg](../../data/civilians.cfg).
+
+Results for the 28 looks (2026-10-09):
+
+| Measure | Walk | Jog | Run |
 |---|---|---|---|
-| Walk | `Walk_Formal_Loop~1,-6*0.65`, every second frame | 16 | By distance, at the look's measured stride |
-| Jog | `Jog_Fwd_Loop@12*0.55`, frames 0–19.25 in steps of 2.75 | 8 | By cadence, 2.5–2.8 steps/s from 2.0 m/s |
-| Run | `Sprint_Loop@25*0.5`, every second frame | 8 | By cadence, 2.8–3.3 steps/s from 4.0 m/s |
+| Stride per cycle (two steps) | Men 1.19–1.38 m, women 1.11–1.26 m | By cadence | By cadence |
+| Steps per second at 1.3 m/s | Men 1.89–2.18, women 2.07–2.35 | — | — |
+| Legs beyond the body, ahead / behind | 0.25–0.35 / 0.26–0.35 m | 0.27–0.34 / 0.28–0.35 m | 0.28–0.35 / 0.28–0.35 m |
+| Front toe to back foot | 0.72–0.89 m | 1.12–1.40 m | 1.11–1.38 m |
+| Planted-foot slip | At most 1.0 cm | None: a foot touches the ground for a frame at most | None |
+| Knee lift | 28.4–28.8° | — | — |
+| Hands' fore-aft travel | 0.05–0.07 m | 0.55–0.73 m | 0.47–0.62 m |
+| Lean from the pelvis to the head | 3–9° | 14–18° | 20–24° |
+| Shoulder turn | 9° (the library 15°) | 86° | 64° |
 
-The atlas is 38 frames: walk 0–15, idle 16, lying 17, punches 18–19, fist 20–21, jog 22–29, run 30–37, declared by the `ANIM` records of [civilians.cfg](../../data/civilians.cfg). [measure_gait.py](../../../tools/cj004/measure_gait.py) measures each look's stride from the planted foot, taking per foot the longest stretch on the ground (a foot still landing near its lowest point moves the other way), and `make_civilians.py` writes it on the look's `CIVILIAN` line; `--gait` re-measures without rendering. Results: stride 0.92–1.10 m for men and 0.82–0.91 m for women, planted-foot slip at most 1.7 cm, toe at most 0.29 m ahead of the hips, spread at most 0.67 m. The shorter stride means a quicker step: about 2.9 steps/s for a man and 3.4 for a woman at 1.5 m/s.
+Before the revision (the set of 2026-10-08), the legs showed 0.00–0.05 m ahead of the body and 0.26–0.37 m behind it walking, none ahead and 0.31–0.42 m behind jogging, and none ahead and 0.38–0.51 m behind running. A walker is now as wide as standing (±1 cm); drawn with `SCALE 1.12`, the average man is 0.61 m wide walking (−6 % of the player).
 
 ## Provenance
 

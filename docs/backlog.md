@@ -24,7 +24,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-029](#cj-029-civilian-gait-realism) Civilian gait realism** — implemented on 2026-10-08 (compact walk, jog and run); awaits the user's playtest.
+6. **[CJ-029](#cj-029-civilian-gait-realism) Civilian gait realism** — implemented on 2026-10-08, revised after the playtest on 2026-10-09 (a real walker's stride and calm arms, legs showing as much ahead as behind, a jog and run that reach further); awaits the user's playtest.
 7. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — the player's unarmed and armed walk without the combat stance; the civilian 3D pipeline of [CJ-004](#cj-004-replace-placeholder-art) may help.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
@@ -368,7 +368,7 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 ### CJ-029 Civilian gait realism
 
 - **Priority:** High
-- **Status:** Implemented on 2026-10-08, awaiting playtest
+- **Status:** Implemented on 2026-10-08, revised on 2026-10-09 after the playtest, awaiting playtest
 
 **Problem (playtest, 2026-10-08).** Walking civilians reach too far forward with their legs, which does not look natural. The user also wants the movement and the animation frames to match. The library walk lifts the thigh 50° forward (a casual walk about 30°), so the toes land 0.46 m ahead of the hips on average. One eight-frame walk loop at 1.3 m per cycle serves every look and every walking speed, so the feet of short and tall people slip, and a hurried walk at 2–3 m/s needs four to five steps a second. The game also turns the sprite by up to 0.05 rad with the steps, on top of the sway the rendered walk already has.
 
@@ -389,6 +389,17 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 **Refinements during the work (agreed with the user, 2026-10-08).** Turning only the thighs shortened the forward reach but left the trailing leg 0.5 m behind: from above, a walking person's feet spread like the splits (0.87 m from the front toe to the back foot in the library walk, 1.4 m in the run). The user chose, from three variants shown in motion, a compact stride: every leg joint moves 0.65 (walk), 0.55 (jog) and 0.5 (run) of the library's range from standing straight, the walking hips a little further back. A shorter stride needs a quicker step to keep the feet planted, so the walk's cadence follows from each look's stride (about 2.9 steps/s for a man at 1.5 m/s, as the user accepted) instead of the agreed bands; the thigh limit became the measure of the actual complaint: toe at most 0.30 m ahead of the hips and at most 0.70 m from front toe to back foot. The jog and run play by cadence as agreed.
 
 **Result (2026-10-08).** All 28 looks pass: walk stride 0.92–1.10 m for men and 0.82–0.91 m for women, measured per look and written to `civilians.cfg`; a planted foot moves at most 1.7 cm; toe at most 0.29 m ahead, spread at most 0.67 m (was 0.87 m); jog and run feet touch the ground for one frame at most, so nothing slips. Atlases hold 38 frames (walk 16, jog 8, run 8) in the layout that `civilians.cfg` declares; at load every frame is cut to its visible part and packed, 25.9 MB of video memory instead of 84.2 MB before mipmaps, and the procedural fallback draws exactly as before. The `traffic-incident` fixture, which now asks for the drawn pose instead of a frame number, passes 80 of 80 cases. FPS medians of alternating runs against the previous build: `day` −1.6 %, `brawl` +2.1 %, `rampage` +1.8 %; the `PEDS` lines are identical. Remaining: the user's playtest.
+
+**Playtest and revision (2026-10-09).** The user's playtest found the walking legs reaching far behind and hardly ahead (measured on the frames: 0.00–0.05 m ahead of the body and 0.26–0.37 m behind; running, none ahead and 0.38–0.51 m behind), the walk's rhythm nervous, many short steps for little progress, the walking arms swinging too much, and the run looking more like a walk than the walk itself. Agreed with the user from variants shown in motion:
+
+- A real walker's stride: 1.8–2.2 steps/s at 1.3 m/s for a 1.78 m person (shorter people step shorter and so more often); the knee lifted at most 30°; a planted foot still moves at most 2 cm.
+- Walking arms swing half as much as the library's and hang about as close as standing.
+- In every gait as much leg shows ahead of the body as behind it (0.75–1.33); walking, at most 0.35 m for a 1.78 m person, in proportion to height.
+- The jog keeps 0.85 and the run all of the library's leg motion, so the limbs reach further the faster the gait; the runner leans about 23° and its hands travel at least twice as far as the walker's.
+
+The compact stride of 2026-10-08 is dropped. The stride is now measured on the foot that carries the weight over the whole cycle; the earlier measure followed only the flat foot and overstated the stride (civilian-01: 1.03 m against 0.92 m), so the feet slid a few centimetres a step. The settings and tools are described under [civilian gaits](../assets/art/cj004/README.md#gaits-cj-029).
+
+**Result (2026-10-09).** All 28 looks pass. Walk stride 1.19–1.38 m for men and 1.11–1.26 m for women (1.89–2.18 and 2.07–2.35 steps/s at 1.3 m/s), the planted foot moving at most 1.0 cm; the knee lifted at most 28.8°; the legs showing 0.25–0.35 m ahead and 0.26–0.35 m behind walking, 0.27–0.35 m both ways jogging and 0.28–0.35 m running (ahead to behind 0.92–1.09); the runner leaning 20–24° with hands travelling 8.8–9.6 times as far as the walker's; the walker as wide as standing (±1 cm), the average man drawn 0.61 m wide walking (−6 % of the player). Since CJ-004 the right hand's fingers had stayed spread in every animated frame; they now relax. In the game nothing else changes: the `PEDS` lines of `day`, `brawl` and `rampage` are identical, the FPS medians of alternating runs move by −0.3 to +2.7 %, and the atlases take 24.8 MB of video memory (25.9 MB before). Remaining: the user's playtest.
 
 ## Done
 
