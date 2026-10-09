@@ -164,7 +164,7 @@ Results for the 28 looks (2026-10-09):
 | Lean from the pelvis to the head | 3–9° | 14–18° | 20–24° |
 | Shoulder turn | 9° (the library 15°) | 86° | 64° |
 
-Before the revision (the set of 2026-10-08), the legs showed 0.00–0.05 m ahead of the body and 0.26–0.37 m behind it walking, none ahead and 0.31–0.42 m behind jogging, and none ahead and 0.38–0.51 m behind running. A walker is now as wide as standing (±1 cm); drawn with `SCALE 1.12`, the average man is 0.61 m wide walking (−6 % of the player).
+Before the revision (the set of 2026-10-08), the legs showed 0.00–0.05 m ahead of the body and 0.26–0.37 m behind it walking, none ahead and 0.31–0.42 m behind jogging, and none ahead and 0.38–0.51 m behind running. A walker is now as wide as standing (±1 cm); drawn with `SCALE 1.12`, the average man is 0.61 m wide walking (−6 % of the player). The user playtested and accepted the gaits on 2026-10-09.
 
 ## Provenance
 
