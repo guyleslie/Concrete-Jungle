@@ -174,14 +174,14 @@ Remaining: the playtest.
 
 **Scope.** A character sheet with the arms down (idle, walk, run), a weapon carried lowered or holstered while not aiming, and a short raise transition when the player aims or fires. Needs new art (see CJ-004 for sources).
 
-**Acceptance criteria.** Walking or running without firing shows the weapon held lowered in the hand, for every weapon; firing raises and aims it within 0.2 s; playtested.
+**Acceptance criteria.** Standing, walking or running without aiming shows the weapon held lowered in the hand, for every weapon; aiming or firing raises it within 0.2 s; playtested.
 
 **Approach (agreed with the user, 2026-10-09).** The player becomes a 3D character built and rendered with the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), replacing the Survivor sprites. The weapons come from Quaternius's Ultimate Gun Pack ([OpenGameArt](https://opengameart.org/content/low-poly-guns-pack), CC0): 40 guns (pistols, revolvers, shotguns, assault rifles, submachine guns, sniper rifles) and accessories such as a weapon light, a bipod and a tripod, but no knife or rocket launcher; it is downloaded to `build/art-sources/downloads/`. A weapon is fixed to the right hand bone with a grip offset per weapon, and Blender's inverse kinematics put the other hand on a two-handed weapon's fore grip. The legs take the accepted walk, jog and run of [CJ-029](#cj-029-civilian-gait-realism); the upper body takes a carry pose with the weapon lowered, or the aim pose, plus a recoil frame or two for firing. The animation library already has pistol clips (`Pistol_Idle_Loop`, `Pistol_Aim_Neutral`, `Pistol_Shoot`, `Pistol_Reload`); no free CC0 library found has rifle clips, so Mixamo is the fallback if the static holds look stiff. The specification (the player's look, the poses per weapon, frame counts and measurable criteria) is agreed at the start of the CJ-011 session.
 
 **Requirements from the user (2026-10-09).**
 
 - The player walks and runs. Today `Left Shift` runs at 6.5 m/s and the normal pace is 4.0 m/s, a jog's speed (civilians jog from 2.0 m/s), so the specification settles the player's speeds and which gait shows at each.
-- A weapon is raised and aimed only while the player fires; otherwise it is held lowered in the hand. Today the torso turns to the cursor while either mouse button is held and for 0.8 s after a shot; whether holding the right button without firing still raises the weapon is decided in the specification.
+- A weapon is raised and aimed only while the player aims, as the game decides it today (kept as it is, the user's choice): while either mouse button is held and for 0.8 s after a shot. Otherwise it is held lowered in the hand.
 - The torso keeps facing the aim while the legs walk, strafe or backpedal along the motion, as now: the renders need the legs and the upper body as separate layers.
 
 ### CJ-018 Police driving and reactions
