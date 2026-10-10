@@ -1,0 +1,4 @@
+{"id": "player", "macro": {"gender": 1.0, "age": 0.5, "muscle": 0.65, "weight": 0.55, "height": 0.65}, "race": {"caucasian": 1.0},
+ "skin": "young_caucasian_male", "clothes": ["male_casualsuit05", "toigo_ankle_boots_male"], "hair": "short02",
+ "diffuse": {"male_casualsuit05": "build/art-sources/player/player_suit_diffuse.png"},
+ "tint": {"toigo_ankle_boots_male": {"sat": 0.4, "val": 0.45}}, "height_m": 1.80}

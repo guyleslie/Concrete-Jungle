@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- CJ-011 player art pipeline (`tools/cj011/`): the player built from MakeHuman CC0 assets with a modelled cap and backpack and Quaternius's CC0 pistol and carbine, the hands put on the weapon by inverse kinematics, and top-down renders in separate legs and upper-body layers for the stand, walk, run, strafe and backpedal, with the weapons lowered, plus the pistol's isosceles aim and the rifle's shouldered aim. Strafe and backpedal come from Mixamo. Scripts measure the holds, the layers, the travel per cycle and the poses at game scale; the [CJ-011 player art](assets/art/cj011/README.md) records the results. `build_civilian.py` can swap an asset's texture, and `retarget_ual.py` reads Mixamo FBX files. The game is unchanged.
+
 ## [0.5.0] - 2026-10-09
 
 The city's people and motorbikes get new art (CJ-004): 28 civilians rendered from 3D models, men and women of real heights, and a sportbike, a chopper and a scooter. Civilians walk with a real person's stride and calm arms, and jog and run with their limbs reaching further the faster they go (CJ-029). The game starts with a loading screen whose progress follows the work actually done (CJ-030). All three are accepted after their playtests; pedestrian behaviour (CJ-010) and full screen (CJ-013) still await playtest acceptance.

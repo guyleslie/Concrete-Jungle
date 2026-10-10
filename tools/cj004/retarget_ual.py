@@ -2,6 +2,9 @@
 
     blender -b <civilian.blend> --python tools/cj004/retarget_ual.py -- <UAL .glb> <out.blend> <request> ...
 
+The source may also be a Mixamo .fbx (CJ-011): its one action is named after the file, spaces
+as underscores, and its bones are mapped by MIXAMO.
+
 A request is <action>[=<frames>][~<a>,<c>][^<t>,<s>][&<k>[,<deg>]][@<degrees>][*<k>[,<knee>[,<hips>]]],
 its parts in this order:
   =<frames>  comma-separated frames to copy (default: every whole frame of the action);
@@ -37,7 +40,7 @@ Retargeter computes the pose bones' local rotations along the hierarchy itself (
 per bone), and can be imported (tune_gait.py). Run as a script, it keys the requested actions,
 removes the imported library and saves the file.
 """
-import bpy, math, sys
+import bpy, math, os, sys
 from mathutils import Matrix, Quaternion, Vector
 
 TORSO = {"pelvis", "spine_01", "spine_02", "spine_03", "neck_01", "head"}
@@ -79,24 +82,54 @@ def toward(mean, q, k):
     return mean.slerp(q if q.dot(mean) >= 0 else -q, k)
 
 
+# Mixamo's bone names (after the "mixamorig:" prefix) for the target's Unreal-style names.
+MIXAMO = {"pelvis": "Hips", "spine_01": "Spine", "spine_02": "Spine1", "spine_03": "Spine2",
+          "neck_01": "Neck", "head": "Head"}
+for _s, _side in (("l", "Left"), ("r", "Right")):
+    MIXAMO.update({"clavicle_" + _s: _side + "Shoulder", "upperarm_" + _s: _side + "Arm",
+                   "lowerarm_" + _s: _side + "ForeArm", "hand_" + _s: _side + "Hand",
+                   "thigh_" + _s: _side + "UpLeg", "calf_" + _s: _side + "Leg",
+                   "foot_" + _s: _side + "Foot", "ball_" + _s: _side + "ToeBase"})
+    for _f, _m in (("thumb", "Thumb"), ("index", "Index"), ("middle", "Middle"), ("ring", "Ring"), ("pinky", "Pinky")):
+        for _j in (1, 2, 3):
+            MIXAMO["%s_%02d_%s" % (_f, _j, _s)] = "%sHand%s%d" % (_side, _m, _j)
+
+
 class Retargeter:
-    def __init__(self, target, glb):
+    def __init__(self, target, path):
+        """path: the Universal Animation Library .glb, or a Mixamo .fbx (one action, named
+        after the file; its bones are mapped by MIXAMO)."""
         self.target = target
         before, actions_before = set(bpy.data.objects), set(bpy.data.actions)
-        bpy.ops.import_scene.gltf(filepath=glb)
+        mixamo = path.lower().endswith(".fbx")
+        if mixamo:
+            bpy.ops.import_scene.fbx(filepath=path)
+        else:
+            bpy.ops.import_scene.gltf(filepath=path)
         self.imported = [o for o in bpy.data.objects if o not in before]
         self.source = next(o for o in self.imported if o.type == "ARMATURE")
         self.library = {a.name: a for a in bpy.data.actions if a not in actions_before}
+        if mixamo:
+            stem = os.path.splitext(os.path.basename(path))[0].replace(" ", "_")
+            self.library = {stem: a for a in self.library.values()}
+            for name, a in self.library.items():
+                a.name = name + "_source"
         self.action, self.means = None, {}
         for o in self.imported:          # the library's mannequin stands where the civilian does
             o.hide_render = True
         tb, sb = target.data.bones, self.source.data.bones
-        # Bones present in both rigs (the library capitalises 'Head' and has extra leaf bones).
         self.names = {}
-        for b in sb:
-            t = tb.get(b.name) or tb.get(b.name.lower())
-            if t is not None and b.name != "root":
-                self.names[t.name] = b.name
+        if mixamo:
+            prefix = sb[0].name.split(":")[0] + ":" if ":" in sb[0].name else ""
+            for t, m in MIXAMO.items():
+                if t in tb and prefix + m in sb:
+                    self.names[t] = prefix + m
+        else:
+            # Bones present in both rigs (the library capitalises 'Head' and has extra leaf bones).
+            for b in sb:
+                t = tb.get(b.name) or tb.get(b.name.lower())
+                if t is not None and b.name != "root":
+                    self.names[t.name] = b.name
         # every target bone, parents first; its rest transform relative to its parent
         self.bones = sorted((b.name for b in tb), key=lambda n: len(tb[n].parent_recursive))
         self.rest_rel = {}

@@ -24,7 +24,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — specification agreed on 2026-10-09: a 3D player from the civilian pipeline of [CJ-004](#cj-004-replace-placeholder-art), with CC0 gun models; next, a proof of concept with the pistol and the rifle.
+6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — in progress: the player's look, the pistol and rifle holds and the layered walk, run, strafe and backpedal are rendered and accepted by the user ([CJ-011 player art](../assets/art/cj011/README.md)); next, aim, fire and reload in layers, the other weapons, and the game's two-layer player.
 7. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
@@ -40,7 +40,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | In progress |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
-| [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Specification agreed |
+| [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | In progress |
 | [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) | Pedestrian blocking and contact realism | High | Specification agreed |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
@@ -170,7 +170,7 @@ Remaining: the playtest.
 ### CJ-011 Relaxed player posture
 
 - **Priority:** High
-- **Status:** Specification agreed on 2026-10-09
+- **Status:** In progress
 
 **Problem.** The player always looks as if in action. Unarmed, the character holds its fists up as if about to fight; armed, it constantly aims. In GTA the character walked normally and only raised the weapon to aim or fire.
 
@@ -202,7 +202,7 @@ The player has no jog: the walk shows below 4 m/s and the run from 4 m/s. The wa
 
 **Acceptance criteria.**
 
-1. Weapon lowered: the barrel points down, a pistol at least 45° and a long gun 30–60° below the horizontal, and from above the weapon reaches at most 0.25 m ahead of the body.
+1. Weapon lowered: the barrel points down, a pistol at least 45° and a long gun 30–60° below the horizontal, and from above a pistol reaches at most 0.25 m and a long gun at most 0.45 m ahead of the body. With the butt at the shoulder, a carbine angled 45° down reaches about 0.4 m ahead, as a real low ready does; the user raised the long guns' limit from 0.25 m on 2026-10-10.
 2. Aiming: the barrel is level within ±5°; a long gun's stock is within 5 cm of the shoulder.
 3. Hands on the weapon in every frame: the grip within 1 cm of the right hand, a two-handed weapon's fore grip within 3 cm of the other hand.
 4. Legs by the [CJ-029](#cj-029-civilian-gait-realism) measures: the planted foot moves at most 2 cm in the walk; as much leg shows ahead of the body as behind it (0.75–1.33).
@@ -211,6 +211,8 @@ The player has no jog: the walk shows below 4 m/s and the run from 4 m/s. The wa
 7. In the game: aiming or firing raises the weapon within 0.2 s, and it is lowered 0.8 s after the last shot or aim; the walk is 1.5 m/s and the run 6.5 m/s.
 8. A new `player` scenario: with every weapon, the player stands, walks, runs, strafes, backpedals, aims, fires and reloads, and the log records the raise and lower times. In the existing scenarios the pedestrian metrics are unchanged, FPS medians of alternating runs stay within ±3 %, and video memory grows by at most 15 MB.
 9. Playtested by the user.
+
+**Progress (2026-10-10).** The [CJ-011 player art](../assets/art/cj011/README.md) records the work. The user chose the Ultimate Gun Pack's `Pistol_1` and `AssaultRifle2_1` and accepted, after corrections, the look (plain dark shirt, a fabric daypack with flat shoulder and lower straps in a darker camouflage, a darker cap), the support hand under the middle of the handguard, the pistol aimed in the isosceles stance before the right eye, and the layered walk, run, strafe and backpedal. Neither animation library has a strafe or a backpedal; at the user's choice they come from Mixamo, whose files the user downloaded. Measured on every frame, criteria 1–5 are met; criterion 6 is not decided: standing, the player is 0.58 m wide (−11 %), and aiming the pistol 0.50 m. Next: aim, fire and reload in layers, the other weapons, the atlases and the game's two-layer player.
 
 ### CJ-018 Police driving and reactions
 

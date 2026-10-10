@@ -9,7 +9,8 @@ The look file names the macro details (MakeHuman 0..1 scales) and the assets, fo
      "tint": {"male_casualsuit05": {"hue": 0.0, "sat": 1.0, "val": 1.0, "mul": [0.55, 0.68, 1.0]}}}
 "hair" may be null. "height_m" sets the body height: the MakeHuman height slider is searched
 until the measured body matches (race and age shift MakeHuman's heights a lot). A tint recolours an asset: a hue shift in turns, saturation and value
-multipliers, and an RGB multiplier that also colours grey garments.
+multipliers, and an RGB multiplier that also colours grey garments. "diffuse" maps an asset to
+a replacement diffuse texture (a path), applied before the tints.
 The character stands at the origin facing -Y (MakeHuman's front), 1 Blender unit = 1 m.
 """
 import bpy, json, os, sys
@@ -109,6 +110,27 @@ def tint(obj, t):
             out = mix.outputs["Result"]
         nt.links.new(out, base)
 
+
+def replace_diffuse(obj, path):
+    """Swap the image of the texture node that feeds the material's base colour."""
+    img = bpy.data.images.load(os.path.abspath(path))
+    swapped = 0
+    for slot in obj.material_slots:
+        if slot.material is None or not slot.material.use_nodes:
+            continue
+        for node in slot.material.node_tree.nodes:
+            if node.type == "TEX_IMAGE" and node.image is not None and "diffuse" in node.image.name.lower():
+                node.image = img
+                swapped += 1
+    if not swapped:
+        raise KeyError("no diffuse texture node on " + obj.name)
+
+
+for name, path in look.get("diffuse", {}).items():
+    obj = bpy.data.objects.get("civilian." + name)
+    if obj is None:
+        raise KeyError("diffuse for an asset the look does not wear: " + name)
+    replace_diffuse(obj, path)
 
 for name, t in look.get("tint", {}).items():
     obj = bpy.data.objects.get("civilian." + name)
