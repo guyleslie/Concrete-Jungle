@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- After WASTED or BUSTED the police could come straight back with sirens: a car the player had set on fire exploded after the respawn and counted as a new crime (+0.8 wanted level, +$150). Vehicles the player damaged no longer count once the player respawns (CJ-033).
+- Carjacked drivers, drivers who got out of a burning car and riders thrown off motorbikes stayed in the city for good, above its 300 people; they now leave when they would be moved back near the player (CJ-033).
+- Changing weapons during a reload stopped the reload but played its animation on with the new weapon, and the number key of the weapon in hand cancelled the reload. Changing weapons or getting into a vehicle now stops the animation too; the key of the weapon in hand does nothing (CJ-033).
+- The `TIMING` test line divided the world-drawing time by the frames of play, so the `title` scenario reported the total (1,088 ms) instead of the time per frame (3.3 ms) (CJ-033).
+
+### Added
+
+- Backlog items from the code review and the playtest of 2026-10-11: [CJ-035](docs/backlog.md#cj-035-vehicles-hitting-people) vehicles hitting people, [CJ-036](docs/backlog.md#cj-036-dead-code-and-simplification) dead code and simplification, and [CJ-037](docs/backlog.md#cj-037-audio-randomness-apart-from-gameplay) audio randomness apart from gameplay.
+
 ## [0.6.0] - 2026-10-11
 
 The player is a new 3D character (CJ-011): it walks at a real pace and runs with Shift, strafes and backpedals while aiming, and carries its weapon lowered until it aims. Every weapon has its own holds, firing, reload and blows; the shotgun loads shell by shell, and the flashlight's beam moves with the lamp. Accepted after the user's playtest.

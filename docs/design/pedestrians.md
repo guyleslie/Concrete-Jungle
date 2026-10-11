@@ -127,7 +127,7 @@ Slower vehicles push people aside. People who are knocked down but alive get up 
 
 ## Population
 
-300 people live around the player, like in GTA: they are spawned on sidewalks within 100 m of the start, and anyone further than 110 m from the player and off-screen is moved to an off-screen sidewalk point 30–100 m away. Removed bodies are replaced, one newcomer per frame. Nobody new appears within 20 m of a death for 90 s. The constants are `PEDESTRIANS`, `PED_KEEP_RADIUS`, `PED_SPAWN_MIN` and `PED_SPAWN_MAX` in `src/config.h`.
+300 people live around the player, like in GTA: they are spawned on sidewalks within 100 m of the start, and anyone further than 110 m from the player and off-screen is moved to an off-screen sidewalk point 30–100 m away. Removed bodies are replaced, one newcomer per frame. A carjacked driver, a driver who got out of a burning car and a rider thrown off a motorbike come on top of the 300; once such an extra person would be moved back near the player, they are removed instead, so the population returns to 300. Drivers on foot in an incident leave it by getting back into their car. Nobody new appears within 20 m of a death for 90 s. The constants are `PEDESTRIANS`, `PED_KEEP_RADIUS`, `PED_SPAWN_MIN` and `PED_SPAWN_MAX` in `src/config.h`.
 
 A uniform grid with one cell per tile (`PedGrid`) answers "who is near this point" for the pedestrians themselves, for traffic looking for people in the road, and for vehicle–pedestrian collisions. It is rebuilt before vehicles and before pedestrians update. The whole pedestrian update costs about 0.4 ms per frame for 300 people (see [Testing › Metrics](../testing.md#metrics)).
 

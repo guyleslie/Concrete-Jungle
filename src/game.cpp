@@ -696,9 +696,10 @@ void Game::LogPedStats() const {
              byState[0], byState[1], byState[2], byState[3], byState[4], byState[5], byState[6], byState[7], byState[8], byState[9], byState[10],
              byState[11], byState[12], near30, near60, near110);
     TraceLog(LOG_INFO, "PEDS: fought back %d times, landed %d punches on the player (player health %.0f)", pedFights, pedPunches, player.health);
-    float cf = (float)std::max(1, cpuFrames);
+    // The title and pause screens draw frames that simulate no play.
+    float cf = (float)std::max(1, cpuFrames), df = (float)std::max(1, cpuDrawFrames);
     TraceLog(LOG_INFO, "TIMING: CPU per frame - vehicles %.3f ms, pedestrians %.3f ms, world drawing %.3f ms",
-             cpuVehicles * 1000.0 / cf, cpuPeds * 1000.0 / cf, cpuDraw * 1000.0 / cf);
+             cpuVehicles * 1000.0 / cf, cpuPeds * 1000.0 / cf, cpuDraw * 1000.0 / df);
 }
 
 void Game::Unload() {
@@ -1099,6 +1100,20 @@ void Game::UpdatePlaying(float dt) {
 // -------------------------------------------------------------------------------------
 static const float PLAYER_RADIUS = 0.35f * M * CHAR_SCALE;
 
+// A reload stops when the weapon is put away (another weapon, a vehicle), and so does its
+// animation; shells already pushed in stay loaded.
+static void CancelReload(PlayerState& P) {
+    if (P.bodyState == BodyAnim::Reload) P.actionTimer = 0;
+    P.reloadTimer = 0;
+    P.reloadShells = 0;
+}
+
+void Game::SelectWeapon(int weapon) {
+    if (weapon == player.weapon || weapon < 0 || weapon >= (int)player.owned.size() || !player.owned[weapon]) return;
+    CancelReload(player);
+    player.weapon = weapon;
+}
+
 void Game::UpdatePlayerOnFoot(float dt) {
     PlayerState& P = player;
     Vector2 mv = { 0, 0 };
@@ -1201,13 +1216,13 @@ void Game::UpdatePlayerOnFoot(float dt) {
     // ---- weapons ----
     int nw = (int)gAssets.weapons.size();
     for (int k = 0; k < std::min(9, nw); k++)
-        if (IsKeyPressed(KEY_ONE + k) && P.owned[k]) { P.weapon = k; P.reloadTimer = 0; }
+        if (IsKeyPressed(KEY_ONE + k)) SelectWeapon(k);
     float wheel = GetMouseWheelMove();
     if (IsKeyPressed(KEY_Q) || wheel != 0) {
         int dir = wheel < 0 ? -1 : 1;
         for (int k = 1; k <= nw; k++) {
             int c = ((P.weapon + dir * k) % nw + nw) % nw;
-            if (P.owned[c]) { P.weapon = c; P.reloadTimer = 0; break; }
+            if (P.owned[c]) { SelectWeapon(c); break; }
         }
     }
     const WeaponDef& W = gAssets.weapons[P.weapon];
@@ -1359,7 +1374,7 @@ void Game::EnterVehicle(int idx) {
     v.in = VehicleInput{};
     player.inVehicle = true;
     player.vehicle = idx;
-    player.reloadTimer = 0;
+    CancelReload(player);
     audio.Play(Sfx::Door, v.pos, 0.8f);
     char buf[64]; snprintf(buf, sizeof(buf), "%s", v.S().name.c_str());
     Toast_(buf, { 200, 220, 255, 255 });
@@ -1701,13 +1716,20 @@ void Game::UpdateSpawning(float dt) {
         int idx = SpawnVehicle(gAssets.RandomTrafficSkin(), { 0, 0 }, 0, DriverType::Traffic);
         if (!AIPlaceOnRoad(*this, vehicles[idx], pp, 900, 2600, true)) vehicles[idx].active = false;
     }
+    // A carjacked driver, a driver out of a burning car or a thrown rider joins the
+    // population on top of its PEDESTRIANS; such extras leave when they would be moved
+    // back near the player. Drivers on foot in an incident leave by getting back in.
+    auto onFootDriver = [](const Pedestrian& p) { return p.ownVehicle >= 0 && p.state != PedState::Dead; };
+    int excess = -PEDESTRIANS;
+    for (const Pedestrian& p : peds) excess += p.active && !onFootDriver(p);
     for (Pedestrian& p : peds) {
         if (!p.active) continue;
-        if (p.ownVehicle >= 0 && p.state != PedState::Dead) continue;      // a driver on foot keeps their identity
+        if (onFootDriver(p)) continue;                                   // a driver on foot keeps their identity
         bool dead = p.state == PedState::Dead;
         bool far = Dist(p.pos, pp) > PED_KEEP_RADIUS;
         bool gone = dead && p.deadTime > PED_BODY_GONE;                  // the body has faded out
         if (gone || (far && !OnScreen(p.pos, 150))) {
+            if (excess > 0) { p.active = false; excess--; continue; }
             for (int tries = 0; tries < 10; tries++) {
                 Vector2 np = map.RandomSidewalkPointNear(r, pp, PED_SPAWN_MIN, PED_SPAWN_MAX);
                 float d = Dist(np, pp);
@@ -1911,6 +1933,9 @@ void Game::Respawn(bool busted) {
         Toast_(buf, { 255, 150, 150, 255 });
     }
     heat = 0; bustTimer = 0;
+    // A car the player set on fire before this may explode now: no longer the player's
+    // crime (no wanted level, no reward), or the police would come straight back.
+    for (Vehicle& v : vehicles) v.hitByPlayer = false;
     state = GameState::Playing;
     cam.Snap(player.pos, CAM_VIEW_FOOT);
 }
@@ -2093,7 +2118,7 @@ void Game::DrawWorld() {
 void Game::Draw() {
     double t0 = GetTime();
     DrawWorld();
-    if (debugContacts) cpuDraw += GetTime() - t0;
+    if (debugContacts) { cpuDraw += GetTime() - t0; cpuDrawFrames++; }
     switch (state) {
         case GameState::Title: DrawTitle(); break;
         case GameState::Paused: DrawHUD(); DrawPause(); break;

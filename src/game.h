@@ -166,7 +166,7 @@ public:
     PedDiag pdiag;
     int     pedFights = 0, pedPunches = 0;       // people who hit back / punches they landed on the player
     std::vector<float> pedThreat;                  // per person: > 0 while in the player's path (rampage)
-    double  cpuVehicles = 0, cpuPeds = 0, cpuDraw = 0; int cpuFrames = 0;
+    double  cpuVehicles = 0, cpuPeds = 0, cpuDraw = 0; int cpuFrames = 0, cpuDrawFrames = 0;   // simulated / drawn frames
     void  PedDiagnostics(float dt);
     void  LogPedStats() const;
     void Update(float dt);
@@ -196,6 +196,7 @@ public:
     void HandleImpacts(float dt);                  // physics events -> damage, sparks, sounds, reactions
     void EnterVehicle(int idx);
     void ExitVehicle();
+    void SelectWeapon(int weapon);                 // an owned weapon other than the one in hand; cancels a reload
 
 private:
     startup::TitleInputGuard startupInput;

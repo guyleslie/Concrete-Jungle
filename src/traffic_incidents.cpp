@@ -219,7 +219,7 @@ void UpdateOnFoot(Game& g, Incident& in, int s, float dt) {
     bool carOk = ValidVehicle(g, side.vehicle, side.serial);
     const Vehicle* car = carOk ? &g.vehicles[side.vehicle] : nullptr;
     if (!car || car->driver != DriverType::None || car->wrecked || car->burning) {
-        EndSide(g, in, s, car && (car->wrecked || car->burning) ? "car_lost" : "car_lost");
+        EndSide(g, in, s, "car_lost");
         return;
     }
     switch (p.state) {

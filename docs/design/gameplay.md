@@ -33,7 +33,7 @@ Weapons are defined in `assets/data/weapons.cfg` (format: [Adding content › We
 | Melee | Hits people in front of the player; can knock them down (knife 20 %, others 45 % per hit). About 15 % of people hit back (see [Pedestrians › Fighting back](pedestrians.md#fighting-back)). Vehicles take 15 % of the damage. |
 | Semi-automatic / automatic | Each shot (or pellet) is a ray against buildings, street furniture, vehicles and people. Vehicles take 55 % of the damage and sometimes lose glass; breakable props such as hydrants and bins break. |
 
-Firing scares pedestrians within 34 m (they run after their reaction time) and, below one star, raises the wanted level slightly. An empty clip reloads automatically when the player fires again; R reloads manually. The shotgun reloads shell by shell: only the missing shells, 0.45 s each, then 0.4 s to rack the pump; each shell counts as soon as it is in. Every shotgun shot is followed by racking the pump in the drawing. The flashlight's beam starts at the lens of the drawn lamp and points where it points, frame by frame (`LAMP` records): lowered it lights the ground a few metres ahead and swings with the steps, aimed it reaches 18 m, raised to strike it points at the sky and goes out, and the blow sweeps it down in front of the player.
+Firing scares pedestrians within 34 m (they run after their reaction time) and, below one star, raises the wanted level slightly. An empty clip reloads automatically when the player fires again; R reloads manually. Changing weapons or getting into a vehicle stops a reload, and its animation, without loading the clip; the number key of the weapon in hand does nothing. The shotgun reloads shell by shell: only the missing shells, 0.45 s each, then 0.4 s to rack the pump; each shell counts as soon as it is in, and stays in when the reload is stopped. Every shotgun shot is followed by racking the pump in the drawing. The flashlight's beam starts at the lens of the drawn lamp and points where it points, frame by frame (`LAMP` records): lowered it lights the ground a few metres ahead and swings with the steps, aimed it reaches 18 m, raised to strike it points at the sky and goes out, and the blow sweeps it down in front of the player.
 
 ## Vehicles
 
@@ -72,7 +72,7 @@ The police notice the player when they have line of sight within about 40 m. Aft
 
 ## Busted and wasted
 
-The world keeps running in slow motion for four seconds, then the player respawns with full health, no armour and no wanted level. A running mission fails.
+The world keeps running in slow motion for four seconds, then the player respawns with full health, no armour and no wanted level. A running mission fails. Vehicles the player damaged before no longer count as the player's: a car the player set on fire that explodes after the respawn raises no heat and pays no reward, so the police do not come straight back.
 
 | Outcome | Respawn | Penalty |
 |---|---|---|

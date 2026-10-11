@@ -17,18 +17,19 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07 and CJ-032 was added on 2026-10-11:
+Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07 and CJ-032 to CJ-037 were added on 2026-10-11:
 
 1. **[CJ-032](#cj-032-isolated-test-arena) Isolated test arena** — approach agreed on 2026-10-11; the measurable criteria are confirmed and the before values measured at the start of the session. Later items that change people, animation or lighting are tested in it.
-2. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
-3. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
-4. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
-5. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
-6. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-7. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
-8. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
+2. **[CJ-035](#cj-035-vehicles-hitting-people) Vehicles hitting people** — playtest of 2026-10-11: the player is pushed along instead of being run over, and bodies slide in front of cars. Needs its own specification, fall and lying art for the player, and arena tests.
+3. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
+4. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
+5. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
+6. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
+7. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
+8. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
+9. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
 
-CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
+CJ-010 (pedestrians), CJ-013 (full screen) and CJ-033 (code review fixes) await user playtest acceptance.
 
 Before each item, search for open-source code, assets and references that would help (the licence must allow redistribution; see [Adding content](guides/adding-content.md#art-and-licence-requirements)). Examples worth evaluating: Box2D or Jolt Physics as a reference for CJ-002, recorded CC0 sound libraries for CJ-012, OpenGameArt and Kenney-style texture packs of the right quality for CJ-014.
 
@@ -46,6 +47,8 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-032](#cj-032-isolated-test-arena) | Isolated test arena | High | Approach agreed |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
+| [CJ-033](#cj-033-code-review-fixes) | Code review fixes | High | Implemented, awaiting playtest |
+| [CJ-035](#cj-035-vehicles-hitting-people) | Vehicles hitting people | High | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
@@ -56,11 +59,13 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-027](#cj-027-multi-lane-roads) | Multi-lane roads | Medium | Open |
 | [CJ-028](#cj-028-rule-breaking-drivers) | Rule-breaking drivers | Medium | Open |
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
+| [CJ-037](#cj-037-audio-randomness-apart-from-gameplay) | Audio randomness apart from gameplay | Medium | Open |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
 | [CJ-008](#cj-008-test-autopilot-improvements) | Test autopilot improvements | Low | Open |
 | [CJ-021](#cj-021-visible-towing) | Visible towing | Low | Open |
 | [CJ-022](#cj-022-three-point-turns) | Three-point turns | Low | Open |
+| [CJ-036](#cj-036-dead-code-and-simplification) | Dead code and simplification | Low | Open |
 
 ## Open items
 
@@ -479,6 +484,72 @@ Then the user's playtest.
 | Release | `tests/` is not in the release zip |
 
 The testing guide gets an arena section with the test file format and the rule: features are tested in the arena; the real city is for integration and FPS runs and the user's playtest.
+
+### CJ-033 Code review fixes
+
+- **Priority:** High
+- **Status:** Implemented on 2026-10-11, awaiting playtest
+
+**Background.** On 2026-10-11 the user asked for a review of the whole code for bugs, optimisation opportunities and dead code, and chose to fix the bugs first. The dead code and simplifications are [CJ-036](#cj-036-dead-code-and-simplification); the audio's use of the gameplay random numbers is [CJ-037](#cj-037-audio-randomness-apart-from-gameplay). CPU time is no bottleneck (about 1.7 ms a frame on foot, 2.8 ms in `derby`), so no optimisation was made. Two bugs the user reported during the session are included: the police after a respawn, and the old startup frame (moved to CJ-034, which removes every fallback).
+
+**Fixes.**
+
+| Bug | Cause | Fix |
+|---|---|---|
+| After WASTED or BUSTED the police came back with sirens (user, 2026-10-11) | A car the player set on fire burns for 3–5 s of game time, but the four-second slow motion lasts only 1.4 s of it: the car exploded after the respawn and counted as the player's crime (+0.8 heat, +$150) | The respawn clears every vehicle's `hitByPlayer` |
+| The population grew beyond 300 for good | A carjacked driver, a driver out of a burning car or a thrown rider is a new person; the population manager moved far-away people back near the player instead of removing the extras | Extras are removed when they would be moved back |
+| Changing weapons during a reload | The reload stopped but its animation played on with the new weapon; the number key of the weapon in hand cancelled the reload | `Game::SelectWeapon`: another weapon stops the reload and its animation, the weapon in hand does nothing; getting into a vehicle stops it the same way |
+| `TIMING` in `title` showed 1,088 ms | The world drawing was summed over the drawn frames but divided by the frames of play (none on the title screen) | Divided by the drawn frames |
+| An incident's end reason | Both branches of a condition gave `car_lost` | One reason |
+
+**Verification (2026-10-11).** Temporary measurement builds (not committed) against the code before and after:
+
+| Measurement | Before | After |
+|---|---|---|
+| 50 extra people placed 115–140 m away: people after 2 and 600 frames | 350, 350 | 300, 300 |
+| Switching from a pistol reload to the rifle: frames still showing the reload | 54 of 54 | 0 |
+| Pressing the pistol's key during its reload: clip afterwards | 2 of 12 (cancelled) | 12 of 12 |
+| `chase`, a police car set on fire by the player 10 frames before WASTED: heat after the respawn | 0 → 0.8, police back with sirens | 0, no sirens |
+| `title` 300 frames: `TIMING` world drawing | 1,088 ms | 3.3 ms |
+
+`foot`, `day`, `derby` (1,500 frames), `player:Shotgun` (1,200) and `title` (300) produce identical metric lines and startup digest before and after, apart from CPU times. Then the user's playtest: changing weapons during a reload, and dying or being arrested in a chase after setting a car on fire.
+
+### CJ-035 Vehicles hitting people
+
+- **Priority:** High
+- **Status:** Open
+
+**Problem (playtest, 2026-10-11).** The player can hardly be run over: cars push the player along, even at speed. A person hit by a vehicle should, depending on its speed and size, be pushed aside, knocked backwards or thrown some way, and fall. A car driving over someone lying on the road, alive or dead, should go over them, not push them along. The user wants this realistic and well thought out.
+
+**Causes in the code (`src/game.cpp`).**
+
+- The player on foot (`UpdatePlayerOnFoot`) is only pushed out of an overlapping vehicle's box. Above a closing speed of 110 px/s (about 25 km/h) every frame of contact costs (speed − 80) × 0.12 health and adds a 120 px/s shove, which the walking control removes within a fraction of a second. The player never falls or lies down, the car loses no speed, and below 25 km/h, as with traffic braking for the player or police in pursuit, the player is simply pushed along.
+- A civilian (`VehiclePedCollisions`) hit above 95 px/s (about 21 km/h) is knocked down with 45 % of the car's velocity plus 50 px/s and slides on the ground: about 4 m ahead of a car at 100 km/h, so the car seems to push the body. A person lying down but alive who is driven over is knocked down again with the car's direction at up to 260 px/s and slides on until they die.
+- The player has no fall, lying or getting-up frames; civilians have one lying frame.
+
+**Approach (to be agreed).** One impact model for the player and civilians from the closing speed and the vehicle's mass: pushed aside at walking pace, knocked down (falls back or to the side), or thrown along the car's path a distance taken from published pedestrian throw measurements; the injury follows the same speed for both; the vehicle loses the momentum the person takes. A person on the ground is driven over: the wheels hurt the living and jolt the car, but nobody is pushed along. The player falls, lies, gets up and regains control, or dies. New fall, lying and getting-up frames for the player from the [CJ-011](#cj-011-relaxed-player-posture) pipeline. Measured in the [CJ-032](#cj-032-isolated-test-arena) arena: cars of several classes at 10–100 km/h hitting a standing person and the player, and driving over a body.
+
+### CJ-036 Dead code and simplification
+
+- **Priority:** Low
+- **Status:** Open
+
+**Findings of the 2026-10-11 review ([CJ-033](#cj-033-code-review-fixes)).** None of these changes the game; each change should leave every scenario's metric lines identical.
+
+- Functions nothing calls: `CityMap::GroundHeight`, `CityMap::RailOverRoad`, `CityMap::RandomRoadPoint`, `OBBContactPoint`, `Game::ViewRect`, `startup::OutcomeName`.
+- Unused constants and fields: `cfg::H_CAR`, `cfg::H_DECAL`; `PlayerState::triggerHeld`, `enterTimer`, `enterTarget`; `Mission::wantedClass`; `DriverAI::creep`; `DriverAI::jammed` (always 0, only logged); `RecoveryState::reverseDistance` and `lastProgress` and `Pedestrian::hitByPlayer` (written, never read); `Game::statAbandons` (never counted, so the `PHYS` line's "drivers gave up" is always 0).
+- Dead branches: drawing of the `DECAL_OIL` and `DECAL_BULLET` decals (nothing creates them); the signal branch of `CityMap::DrawLights`; an empty planter block in `DrawSprites`; a `t * 0.0f`; the composite shader's unused `time` uniform.
+- Parameters silenced with `(void)`: `DamageVehicle`'s `at`, `Crime`'s `where`, `StartMission`'s `phone`, `UpdateSpawning`'s `dt`, `VehiclePhysics::Solve`'s `h`, `CityMap::DrawLights`' `t`, and a stale `(void)dt`.
+- Simplifications: the six measurement fixtures share one interface, but `main.cpp` dispatches them in seven `if`/`else` chains; `Finite`, `SkinOf`, `ConfigHash` and `Penetration` are copied between fixture files; `PED_RADIUS` repeats 16 and 1.35 by hand ("keep in sync") instead of using `cfg::M` and `cfg::CHAR_SCALE`; `Rotate` exists twice; six local variables shadow others (`-Wshadow`).
+
+### CJ-037 Audio randomness apart from gameplay
+
+- **Priority:** Medium
+- **Status:** Open
+
+**Problem (review, 2026-10-11).** `AudioSystem::Play` varies each sound's pitch with the gameplay random number generator (`GRng`), but only when an audio device is open and the sound is within hearing. A scenario or fixture therefore draws a different random sequence on a machine without sound, so runs are not reproducible across machines ([CJ-032](#cj-032-isolated-test-arena) asks for identical runs).
+
+**Approach.** A separate generator for audio variation. Every scenario's random sequence moves once, so the recorded baselines and fixture results are measured again in the same change.
 
 ## Done
 
