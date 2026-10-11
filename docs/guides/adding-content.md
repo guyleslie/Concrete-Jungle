@@ -6,6 +6,7 @@ Vehicles, people, weapons, foliage and sounds are data-driven: you add them by d
 
 - [Data file format](#data-file-format)
 - [Vehicles](#vehicles)
+- [Vehicles hitting people](#vehicles-hitting-people)
 - [Traffic behaviour](#traffic-behaviour)
 - [Player](#player)
 - [Civilians](#civilians)
@@ -106,6 +107,33 @@ COMPOSE <class> <front file> <from> <to> <rear file> <from> <to> <rear stretch> 
 
 Paint colours of `DERIVE` and `COMPOSE`: `red blue white black silver green darkgreen beige teal maroon yellow orange cream grey darkgrey navy brown purple pink`, or `r,g,b`.
 
+## Vehicles hitting people
+
+File: `assets/data/impacts.cfg`: how vehicles meet people ([design](../design/impacts.md)). Every record is required, once, with every value; a missing, repeated or out-of-range one stops loading with its line.
+
+```
+PERSON     <mass kg> <centre of mass m>
+BALANCE    <min m/s> <max m/s> <stagger s>
+GROUND     <friction>
+WRAP       <launch deg> <impact factor>
+PROJECTION <launch deg> <impact factor>
+INJURY     <km/h> <per km/h>
+DOWN       <km/h> <fall min s> <max s> <throw min s> <max s>
+RUNOVER    <shove m> <jolt km/h>
+```
+
+| Record | Meaning |
+|---|---|
+| `PERSON` | A person's mass, and the height of their centre of mass: a vehicle's front edge (`FRONT`) below it wraps them, at or above it throws them forward |
+| `BALANCE` | The speed change a civilian withstands on their feet, drawn between the two values (the player has the mean), and how long a stagger lasts; another contact meanwhile knocks them down |
+| `GROUND` | The friction of a body sliding on the road, and of its landing |
+| `WRAP`, `PROJECTION` | The launch angle and the impact factor (the share of the speed the body keeps) for the two kinds of front |
+| `INJURY` | The speed change at which half the people die, and the slope of the logistic curve |
+| `DOWN` | The speed change that separates a fall from a throw, and the time on the ground after coming to rest for each |
+| `RUNOVER` | How far a body driven over moves, and how much speed the vehicle loses |
+
+Change these with the [person-hit scenes](../testing.md#person-hit-scenes), which check the result against the published measurements.
+
 ## Traffic behaviour
 
 File: `assets/data/traffic.cfg`. It configures physical recovery after a car is knocked from its lane, cooperative yielding, driver incidents and turning through junctions. See [Traffic](../design/traffic.md#knocked-off-the-lane) for the behaviour contract.
@@ -196,6 +224,10 @@ GAIT  <gait> <first> <count> cadence <steps/s> <at m/s>
 SET   <set> <file>
 UPPER <set> <state> <first> <count>
 LAMP  <set> <frame> <right> <ahead> <height> <yaw> <pitch>
+DOWN  <file> <px> <metres>
+FALL  <first> <count> <s>
+LIE   <frame>
+GETUP <first> <count> <s>
 ```
 
 | Record | Meaning |
@@ -208,8 +240,11 @@ LAMP  <set> <frame> <right> <ahead> <height> <yaw> <pitch>
 | `SET` | The upper-body atlas of a weapon set (the `anim set` of `weapons.cfg`) |
 | `LAMP` | A flashlight's lens in one upper-body frame of a set: metres from the frame centre at life size (right, ahead, above the ground) and the beam's direction (degrees right of the facing, below the horizontal); the beam starts there, so it moves with the drawn lamp. Written by `make_player.py --lamp` |
 | `UPPER` | Where a set's frames are: a gait (the weapon lowered, in step with the legs; as many frames as the gait's legs) or `aim`, `fire` (two: the recoil, the recovery), `reload` (four), `melee` (two: the fists' two punches, or a wind-up and the blow) |
+| `DOWN` | The atlas of the player on the ground: the whole body without the weapon, in frames of their own size (large enough for the body lying), each centred on the pelvis ([CJ-035](../design/impacts.md#on-the-ground)) |
+| `FALL`, `GETUP` | Where falling and getting up are in it, and the seconds each plays |
+| `LIE` | The frame of the player lying |
 
-Every gait must be present in the legs and in every set, and every weapon's set must have an atlas; otherwise loading fails ([ADR-0009](../adr/0009-required-character-atlases.md)). At load, every frame is cut to its visible part and packed. To change the player, see the [CJ-011 player art](../../assets/art/cj011/README.md).
+Every gait must be present in the legs and in every set, every weapon's set must have an atlas, and the frames on the ground must be there; otherwise loading fails ([ADR-0009](../adr/0009-required-character-atlases.md)). At load, every frame is cut to its visible part and packed. To change the player, see the [CJ-011 player art](../../assets/art/cj011/README.md).
 
 ## Civilians
 

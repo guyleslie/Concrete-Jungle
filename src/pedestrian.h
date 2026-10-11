@@ -66,7 +66,6 @@ struct Pedestrian {
     bool     jaywalk = false;        // crossing against the lights
     bool     hitByPlayer = false;
     float    deadTime = 0;
-    float    runOverT = 0;           // lying: time until a wheel can hurt them again
     PersonBody body;                 // what vehicles meet (impact.h)
     bool     pooled = false;         // dead: blood pool left where the body came to rest
     float    laneOffset = 0;         // personal walking line on the sidewalk (px)
@@ -118,7 +117,9 @@ void InitPed(Pedestrian& p, Vector2 pos, int skin, const CityMap& map);
 void UpdatePed(Pedestrian& p, Game& g, float dt);
 void ScarePed(Pedestrian& p, Vector2 from, float duration);                 // flee right away (victims)
 void AlarmPed(Pedestrian& p, Vector2 from, float duration, bool secondHand); // flee after the reaction time
-void KnockDownPed(Pedestrian& p, Vector2 impulse);
+// Down: on the ground at this velocity (vz upwards: thrown), 'down' s once at rest.
+void KnockDownPed(Pedestrian& p, Vector2 vel, float vz, float down);
+void StaggerPed(Pedestrian& p, const Game& g, int vehicle);                   // bumped: steps out of its path
 void ProvokePed(Pedestrian& p, const Game& g);                                // punched by the player
 void DrawPed(const Pedestrian& p);
 // The animation DrawPed shows, and the frame within it ('index'); PedDrawFrame is the atlas frame.

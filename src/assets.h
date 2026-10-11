@@ -6,7 +6,8 @@
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
 //    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / WALK / CIVILIAN: pedestrian atlases
-//    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER / LAMP: the player's layers
+//    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER / LAMP: the player's layers;
+//                    DOWN / FALL / LIE / GETUP: the player on the ground
 //  Adding content = drop the image files in assets/ and add a line. Every data file and
 //  every file it names is required (ADR-0010): a missing one stops loading with a message
 //  that names it. Street furniture, the metro car, water and effect textures are painted
@@ -63,6 +64,16 @@ struct PlayerSet {
     PedFrames   gait[(int)PlayerGait::COUNT];   // the weapon lowered, in step with the legs
     PedFrames   act[(int)PlayerAct::COUNT];
 };
+// The player on the ground (CJ-035): the whole body without the weapon, falling, lying and
+// getting up, rendered at life size.
+struct PlayerDown {
+    FrameAtlas atlas;
+    PedFrames  fall, getUp;
+    int        lie = -1;
+    float      fallS = 0, getUpS = 0;           // s each plays
+    int        framePx = 0;                     // its own frames, large enough for the body lying
+    float      frameM = 0;
+};
 
 struct VehicleSprite {
     Texture2D tex{};
@@ -110,6 +121,7 @@ struct Assets {
     FrameAtlas                playerLegs;
     PlayerGaitDef             playerGait[(int)PlayerGait::COUNT];
     std::vector<PlayerSet>    playerSets;
+    PlayerDown                playerDown;
     const PlayerSet* FindPlayerSet(const std::string& name) const;
     std::vector<WeaponDef>    weapons;
 

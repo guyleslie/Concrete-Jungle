@@ -122,7 +122,7 @@ Physics emits an `ImpactEvent` for every contact that transferred impulse: the t
 |---|---|---|
 | Vehicle damage | delta-V above `DV_DAMAGE_FREE` (90 px/s ≈ 20 km/h) | `(delta-V − 90) × DV_DAMAGE_K` health lost |
 | Driver injury | player's vehicle, delta-V above `DV_INJURY` (450 px/s ≈ 100 km/h) | `(delta-V − 450) × 0.05` player health lost |
-| Rider ejection | motorbike, delta-V above `DV_BIKE_THROW` (170 px/s ≈ 38 km/h) | The rider is thrown over the bars and hurt; the bike is left without a rider |
+| Rider ejection | motorbike, delta-V above `DV_BIKE_THROW` (170 px/s ≈ 38 km/h) | The rider is thrown over the bars at the speed the bike lost, as a person hit by a vehicle is launched ([Vehicles hitting people](impacts.md#other-falls)), and hurt; the bike is left without a rider |
 | Impact effects | closing speed above 90 px/s | Crash sound scaled by speed; sparks above 160; glass and body debris above 330; camera shake for the player |
 | Scraping | sliding above 90 px/s while pressed together | Sparks along the contact; quiet grinding sound for the player |
 | Driver reaction | traffic hit by the player | The driver panics |

@@ -118,12 +118,13 @@ People are drawn in one of three gaits by their speed: a walk, a jog from 2.0 m/
 
 | Event | Effect |
 |---|---|
-| Hit by a vehicle faster than 21 km/h | Damage 100 · (*v* / 36 km/h)², ±25 %: about half die at 36 km/h, nearly everyone above 45 km/h. The body is thrown a couple of metres and stays there. Hit and run: traffic drivers panic 60 % of the time. |
-| A vehicle faster than 9 km/h driving over someone lying | The wheels go over them — they are not shoved along. Blood splatter and a blood decal; someone knocked down takes 40 + 0.2 · *v* damage. At most once every 0.8 s. |
+| Bumped by a vehicle | They stagger, turn and step back and aside, faster than the vehicle comes on; another contact within 0.8 s knocks them down ([Vehicles hitting people](impacts.md)) |
+| Hit by a vehicle | Thrown as far and hurt as badly as published measurements give for the speed and the vehicle's front: about one in five hit at 50 km/h dies. Hit and run: traffic drivers panic 60 % of the time. |
+| A vehicle driving over someone lying | The living die; the body moves 0.2 m back under the vehicle, which drives on. Blood splatter and a blood decal; once per pass. |
 | Weapons | See [Gameplay](gameplay.md); heavy hits knock people down |
 | Death | A small blood splash where it happened; a blood pool (1.9 m, 90 s) where the body comes to rest. The body fades out between 24 and 27 s after death; the blood fades during its last 10 s. |
 
-Slower vehicles push people aside. People who are knocked down but alive get up after 2.5–4 s.
+A person on the ground flies, lands and slides to rest at a friction of 0.7. People knocked down but alive get up 1.2–2.0 s after coming to rest from a fall, 2.7–3.5 s from a throw ([Vehicles hitting people](impacts.md#on-the-ground)); a blow knocks someone as far as before CJ-035.
 
 ## Population
 

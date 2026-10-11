@@ -7,12 +7,15 @@ see assets/art/cj011/README.md for how that file is made):
   - every gait of GAITS: the legs layer and, per weapon, the upper body with the weapon
     lowered (render_player.py gait jobs, the weapons in WEAPONS);
   - per weapon, the upper body's actions (ACTIONS: aim, fire, reload, melee), posed standing
-    and pivoted on the standing pelvis (render_player.py with CJ_UPPER=1).
+    and pivoted on the standing pelvis (render_player.py with CJ_UPPER=1);
+  - the player on the ground (DOWN, CJ-035): the whole body without a weapon falling, lying and
+    getting up, each frame centred on its own pelvis, in a larger frame that holds the body
+    lying (render_player.py body jobs).
 Without it, the frames on disk are packed. Packing stylizes every frame to the 144 px atlas
 frame as the civilians' (stylize.py); the upper body's dark contour is left out where it lies
 over the legs of the same frame, so that no seam shows at the waist. It writes
 assets/characters/player/legs.png and one atlas per weapon set (<set>.png, the names of
-weapons.cfg), each a grid of COLS frames, and assets/data/player.cfg, which declares them.
+weapons.cfg), each a grid of COLS frames, down.png, and assets/data/player.cfg, which declares them.
 """
 import argparse, json, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -69,6 +72,13 @@ ACTIONS = {
     "shotgun": [("aim", ["shotgun_aim"]), ("fire", ["shotgun_fire0", "shotgun_fire1"]),
                 ("reload", ["shotgun_reload%d" % i for i in range(4)])],
 }
+# The player on the ground (CJ-035): (name, clip, frames, seconds it plays). Hit_Knockback throws
+# the body back off its feet onto its back, LayToIdle gets up from that pose.
+DOWN_M = 2.6                                            # metres a frame covers: the body lying
+DOWN_PX = round(FRAME_PX * DOWN_M / FRAME_M)            # the standing frames' pixels per metre
+DOWN = [("fall", "Hit_Knockback", list(range(3, 18, 2)), 0.5),
+        ("lie", "Hit_Knockback", [24], 0.0),
+        ("getup", "LayToIdle", list(range(0, 46, 4)), 1.4)]
 
 
 def blender(log, env_extra, *args):
@@ -98,6 +108,14 @@ def render_actions(samples):
     return "actions"
 
 
+def render_down(samples):
+    d = os.path.join(WORK, "down")
+    os.makedirs(d, exist_ok=True)
+    specs = ["body:%s:%s:%s" % (name, clip, ",".join("%g" % f for f in frames)) for name, clip, frames, _ in DOWN]
+    blender(os.path.join(d, "render.log"), {"CJ_FRAME_M": str(DOWN_M), "CJ_SAMPLES": str(samples)}, d, *specs)
+    return "down"
+
+
 def measure_lamp():
     """The flashlight's lens and beam in every frame of its set, measured without rendering
     (render_player.py, the same poses): build/cj011/atlas/lamp.json, {frame name: [right, ahead,
@@ -125,10 +143,10 @@ def measure_lamp():
     print("LAMP", len(out), "frames measured")
 
 
-def stylize_layer(render, under=None):
+def stylize_layer(render, under=None, px=FRAME_PX):
     """stylize.stylize to the atlas frame, the contour left out where 'under' (an alpha image of
     the layer below, the same size) is opaque."""
-    im = render.convert("RGBA").resize((FRAME_PX, FRAME_PX), Image.LANCZOS)
+    im = render.convert("RGBA").resize((px, px), Image.LANCZOS)
     rgb, a = im.convert("RGB"), im.getchannel("A")
     rgb = ImageEnhance.Contrast(rgb).enhance(CONTRAST)
     rgb = ImageEnhance.Color(rgb).enhance(SATURATION)
@@ -136,7 +154,7 @@ def stylize_layer(render, under=None):
     sprite = Image.merge("RGBA", (*rgb.split(), a))
     grown = np.asarray(a.filter(ImageFilter.MaxFilter(3))).astype(np.float32)
     if under is not None:
-        u = np.asarray(under.resize((FRAME_PX, FRAME_PX), Image.LANCZOS)).astype(np.float32) / 255.0
+        u = np.asarray(under.resize((px, px), Image.LANCZOS)).astype(np.float32) / 255.0
         grown *= 1.0 - np.clip(u * 1.5, 0, 1)
     contour = Image.new("RGBA", im.size, OUTLINE + (0,))
     contour.putalpha(Image.fromarray(np.clip(grown * 1.1, 0, 255).astype(np.uint8)))
@@ -144,11 +162,11 @@ def stylize_layer(render, under=None):
     return contour
 
 
-def pack(frames):
+def pack(frames, px=FRAME_PX):
     rows = (len(frames) + COLS - 1) // COLS
-    atlas = Image.new("RGBA", (COLS * FRAME_PX, rows * FRAME_PX))
+    atlas = Image.new("RGBA", (COLS * px, rows * px))
     for i, f in enumerate(frames):
-        atlas.paste(f, ((i % COLS) * FRAME_PX, (i // COLS) * FRAME_PX))
+        atlas.paste(f, ((i % COLS) * px, (i // COLS) * px))
     return atlas
 
 
@@ -167,9 +185,10 @@ def main():
     if a.lamp:
         measure_lamp()
     if a.render:
-        wanted = [x for x in a.only.split(",") if x] or list(GAITS) + ["actions"]
+        wanted = [x for x in a.only.split(",") if x] or list(GAITS) + ["actions", "down"]
+        jobs = {"actions": render_actions, "down": render_down}
         with ThreadPoolExecutor(max_workers=a.jobs) as pool:
-            futures = [pool.submit(render_actions, a.samples) if w == "actions" else pool.submit(render_gait, w, a.samples)
+            futures = [pool.submit(jobs[w], a.samples) if w in jobs else pool.submit(render_gait, w, a.samples)
                        for w in wanted]
             for f in futures:
                 print("RENDERED", f.result(), flush=True)
@@ -192,6 +211,10 @@ def main():
              "#       a flashlight's lens in that upper-body frame: metres from the frame centre at life",
              "#       size (right, ahead, above the ground), the beam degrees right of the facing and below",
              "#       the horizontal",
+             "#  DOWN <file> <px> <metres>      the player on the ground (CJ-035): the whole body without the",
+             "#       weapon, in frames of its own size, each centred on the pelvis",
+             "#  FALL <first> <count> <s>       falling, played over <s>; LIE <frame>: lying",
+             "#  GETUP <first> <count> <s>      getting up, played over <s>",
              "#  Frames face the top of the image; every layer shares the frame centre as its pivot.",
              "# =====================================================================================",
              "FRAME %d %.1f" % (FRAME_PX, FRAME_M), "SCALE %.2f" % DRAW_SCALE, "COLS %d" % COLS, "LEGS legs.png"]
@@ -236,6 +259,17 @@ def main():
         lines += lamp_lines
         pack(frames).save(os.path.join(OUT, set_name + ".png"), optimize=True)
         print("ATLAS", set_name, len(frames), "frames")
+    frames, first = [], {}
+    for name, _, clip_frames, _ in DOWN:
+        first[name] = len(frames)
+        frames += [stylize_layer(load(os.path.join(WORK, "down", "body_%s_%02d.png" % (name, i))), px=DOWN_PX)
+                   for i in range(len(clip_frames))]
+    pack(frames, DOWN_PX).save(os.path.join(OUT, "down.png"), optimize=True)
+    lines.append("DOWN down.png %d %.1f" % (DOWN_PX, DOWN_M))
+    for name, _, clip_frames, seconds in DOWN:
+        lines.append("LIE %d" % first[name] if name == "lie" else
+                     "%s %d %d %.2f" % (name.upper(), first[name], len(clip_frames), seconds))
+    print("ATLAS down", len(frames), "frames")
     open(CFG, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
     print("wrote", CFG)
 

@@ -1,6 +1,6 @@
 # CJ-011 player art
 
-The player becomes a 3D character rendered from above with the [civilian 3D pipeline](../cj004/README.md#civilian-3d-pipeline), replacing the Survivor sprites, so that it walks and runs with the weapon lowered and raises it only to aim and fire ([CJ-011](../../../docs/backlog.md#cj-011-relaxed-player-posture)). This document records the player's look, the weapon holds, the layered gaits, the reloads and melee attacks, the scripts that make them, the game's atlases and their measurements. Since 2026-10-11 the game draws the player from these renders.
+The player becomes a 3D character rendered from above with the [civilian 3D pipeline](../cj004/README.md#civilian-3d-pipeline), replacing the Survivor sprites, so that it walks and runs with the weapon lowered and raises it only to aim and fire ([CJ-011](../../../docs/backlog.md#cj-011-relaxed-player-posture)). This document records the player's look, the weapon holds, the layered gaits, the reloads and melee attacks, the player on the ground ([CJ-035](../../../docs/backlog.md#cj-035-vehicles-hitting-people)), the scripts that make them, the game's atlases and their measurements. Since 2026-10-11 the game draws the player from these renders.
 
 ## Contents
 
@@ -11,6 +11,7 @@ The player becomes a 3D character rendered from above with the [civilian 3D pipe
 - [Reloads and melee](#reloads-and-melee)
 - [Scripts](#scripts)
 - [Atlases](#atlases)
+- [On the ground](#on-the-ground)
 - [Measurements](#measurements)
 - [Open items](#open-items)
 
@@ -22,6 +23,7 @@ The player becomes a 3D character rendered from above with the [civilian 3D pipe
 | Weapons | [Ultimate Gun Pack](https://opengameart.org/content/low-poly-guns-pack) by Quaternius: `Pistol_1`, `AssaultRifle2_1` (an M4-style carbine), `Shotgun_2` (a wooden pump shotgun) and the `Bayonet_2` combat knife, chosen by the user on 2026-10-10; the rifle's magazine is separated from its model for the reloads | CC0 |
 | Flashlight, pistol magazine, shotgun shell | Modelled by script ([build_player.py](../../../tools/cj011/build_player.py), [render_player.py](../../../tools/cj011/render_player.py)): a 0.30 m black police flashlight, a steel magazine, a red 12-gauge shell with a brass head | This project |
 | Walk, run, punches | [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html) by Quaternius: `Walk_Formal_Loop`, `Sprint_Loop`, `Punch_Jab` and `Punch_Cross`, as the civilians | CC0 |
+| Knocked down, getting up | [Universal Animation Library 2](https://quaternius.itch.io/universal-animation-library-2) by Quaternius: `Hit_Knockback` and `LayToIdle` (CJ-035) | CC0 |
 | Strafes, backpedal, rifle charging, stab | [Mixamo](https://www.mixamo.com/) by Adobe: `Walk Strafe Left` and `Right`, `Jog Strafe Left` and `Right`, `Walking Backwards`, `Reloading 2 handed gun`, `Stabbing` (In Place, 30 fps, without skin), downloaded by the user on 2026-10-10 | Mixamo terms: free to use in projects; the animation files are not redistributed |
 
 The Universal Animation Library and its second volume contain no strafe or backpedal. Two first-person arm animations the user downloaded from Sketchfab (a pistol and a shotgun) served only as references for how the hands work a reload; nothing of them is used. Downloads stay in `build/art-sources/` (ignored by Git): the gun pack in `downloads/`, its OBJ files in `guns/`, the Mixamo files in `mixamo/`.
@@ -116,7 +118,7 @@ Each reload has four frames that together show the whole operation; the weapon i
 | [build_player.py](../../../tools/cj011/build_player.py) | Adds the cap, the backpack, the weapons (`GUNS`: model, real length, grip, fore grip, butt and bore read off the side views; the knife's and the flashlight's knuckle direction), the flashlight and the magazines (the rifle's separated from its model, the pistol's modelled; `mag_seat` places them in the well) |
 | [retarget_ual.py](../../../tools/cj004/retarget_ual.py) | Also reads a Mixamo FBX: its one action is named after the file, its bones are mapped by `MIXAMO` |
 | [measure_travel.py](../../../tools/cj011/measure_travel.py) | How far an in-place loop travels per cycle and in which direction, from the contact point that bears the weight; unreliable for runs, whose feet leave the ground |
-| [render_player.py](../../../tools/cj011/render_player.py) | Poses (`<weapon>_low`, `_aim`, `_fire0`/`1`, `_reload0`–`3`, `knife_stab0`/`1`, `flashlight_strike0`/`1`), clip frames (`clip:<weapon>:<action>:<frame>`, the weapon following the clip's right hand) and gait jobs (`gait:<name>:<action>:<frames>`, the weapons in `CJ_WEAPONS`): renders (`CJ_SIDE=1` adds side, front and back views), layers, leg masks and the hold measurements in `measure.json`; `CJ_MEASURE_ONLY=1` measures without rendering |
+| [render_player.py](../../../tools/cj011/render_player.py) | Poses (`<weapon>_low`, `_aim`, `_fire0`/`1`, `_reload0`–`3`, `knife_stab0`/`1`, `flashlight_strike0`/`1`), clip frames (`clip:<weapon>:<action>:<frame>`, the weapon following the clip's right hand) gait jobs (`gait:<name>:<action>:<frames>`, the weapons in `CJ_WEAPONS`) and body jobs (`body:<name>:<action>:<frames>`, the whole player without a weapon, each frame centred on its pelvis; `CJ_FRAME_M` sets the frame's metres): renders (`CJ_SIDE=1` adds side, front and back views), layers, leg masks and the hold measurements in `measure.json`; `CJ_MEASURE_ONLY=1` measures without rendering |
 | [check_layers.py](../../../tools/cj011/check_layers.py) | The layers against the whole render, and the holes at ±90° between them |
 | [make_player.py](../../../tools/cj011/make_player.py) | Renders every atlas frame and writes the atlases and `player.cfg` (see [Atlases](#atlases)) |
 | [compare_player.py](../../../tools/cj011/compare_player.py), [gait_preview.py](../../../tools/cj011/gait_preview.py), [player_frame.py](../../../tools/cj011/player_frame.py) | The renders next to the shipped player at game scale with their widths; an animated preview of the gaits at game scale; the shipped player's standing frame for the comparison tools |
@@ -143,10 +145,27 @@ The other Mixamo files are retargeted like the first; the punches come from the 
 |---|---|
 | Legs | Stand 1; walk, run, strafe left and right, backpedal, jogging strafe left and right 16 each: 113 |
 | Upper body, per set | The weapon lowered in the same 113 frames, in step with the legs; aim 1; fire 2; reload 4 (firearms); melee 2 (fists, knife, flashlight): 116 or 120 |
+| On the ground (`down.png`) | Falling 8, lying 1, getting up 12, in frames of 178 px for 2.6 m ([On the ground](#on-the-ground)) |
 
 `make_player.py --lamp` measures the flashlight's lens and direction in every frame of its set, without rendering (the same poses), and the packing writes them as `LAMP` records, so that the game starts the beam at the drawn lamp.
 
 Every frame is stylized as the civilians' ([stylize.py](../../../tools/cj004/stylize.py)); the upper body's dark contour is left out where it lies over the legs of the same frame, so that no seam shows at the waist. The action frames are rendered standing and pivoted on the standing pelvis, and drawn over whatever the legs are doing. The game cuts every frame to its visible part at load: 17.3 MB packed before mipmaps, against the old Survivor sprites' 29.0 MB, which were removed on 2026-10-11 ([ADR-0009](../../../docs/adr/0009-required-character-atlases.md)).
+
+## On the ground
+
+For [CJ-035](../../../docs/design/impacts.md#on-the-ground) the player falls when a vehicle knocks them down, lies, and gets up. The clips come from the second Universal Animation Library and were retargeted onto `player-anim.blend` like the others ([retarget_ual.py](../../../tools/cj004/retarget_ual.py)); `Death01` of the first library, the civilians' lying frame, collapses too slowly for a vehicle's blow.
+
+| Frames | Clip | Plays |
+|---|---|---|
+| Falling, 8 | `Hit_Knockback` frames 3–17, every second: thrown back off the feet, the legs swinging up, onto the back | 0.5 s |
+| Lying, 1 | `Hit_Knockback` frame 24: on the back, arms beside the body, the head where the back was | Held |
+| Getting up, 12 | `LayToIdle` frames 0–44, every fourth: from that pose, sitting up, a hand on the ground, turning onto a knee, rising facing the front | 1.4 s |
+
+`LayToIdle` starts in the pose `Hit_Knockback` ends in (the pelvis and the head within 2 cm) and ends standing, so falling, lying and getting up join without a jump. The whole body is rendered without the weapon, each frame centred on its own pelvis: the game moves the body, and the pelvis is its position there. The frames cover 2.6 m instead of 2.1 m, so that the body lying fits with its feet and head, at the standing frames' 68.6 px per metre (178 px). Checked from above, the side, the front and the back for natural poses before they were packed:
+
+![The player falling, lying and getting up from above (top two rows), and from the side and the front](player-down.png)
+
+`make_player.py --render --only down` renders them (about 2 minutes at 32 samples) and the packing writes `down.png` and the `DOWN`, `FALL`, `LIE` and `GETUP` records; the other atlases come out byte for byte as before.
 
 ## Measurements
 

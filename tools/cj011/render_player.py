@@ -21,6 +21,10 @@ of the action, posed with each weapon lowered, is rendered as
   legs_<name>_<nn>.png    the legs layer: trousers, boots and the body below the waist;
   <weapon>_<name>_<nn>.png the upper-body layer per weapon (pistol, rifle): the jacket, the
                           head, the cap, the pack and the weapon held lowered.
+Body jobs, body:<name>:<action>:<frames> (CJ-035): every frame of the action as the clip poses it,
+the whole player without a weapon, each frame centred on its own pelvis (the game moves the body),
+as body_<name>_<nn>.png; with CJ_SIDE also its side, front and back views.
+
 The layers come from one render each, the other layer's surfaces made transparent (the
 trousers by a texture mask, the body by its bones, see LAYER_KIND). While walking and running,
 the pistol stays in the swinging right hand, muzzle down; the rifle is held at the low ready,
@@ -40,7 +44,7 @@ towards a pole direction. Outputs per pose: <pose>.png (RGBA, the civilians' cam
 import bpy, json, math, os, sys
 from mathutils import Matrix, Quaternion, Vector
 
-FRAME_M = 2.1
+FRAME_M = float(os.environ.get("CJ_FRAME_M", "2.1"))      # metres a frame covers (CJ-035 lying frames: 2.6)
 FRAME_PX = round(384 * FRAME_M / 1.4)
 LEG_BONES = ("thigh_", "calf_", "foot_", "ball_")
 
@@ -1472,6 +1476,39 @@ def gait_job(spec):
     show_layer(True, True)
 
 
+def views(fname, p):
+    """Side, front and back views of the current pose about the point p, for checking it."""
+    keep = cam.location.copy(), cam.rotation_euler.copy()
+    for suffix, sx in (("_side", 1.0), ("_left", -1.0)):
+        cam.location = (p.x + 3.0 * sx, p.y, 1.1)
+        cam.rotation_euler = (math.pi / 2, 0, math.pi / 2 * sx)
+        render(os.path.join(out_dir, fname + suffix + ".png"))
+    cam.location = (p.x, p.y - 3.0, 1.1)               # from behind (the character faces +Y)
+    cam.rotation_euler = (math.pi / 2, 0, 0)
+    render(os.path.join(out_dir, fname + "_back.png"))
+    cam.location = (p.x, p.y + 3.0, 1.1)               # from the front
+    cam.rotation_euler = (math.pi / 2, 0, math.pi)
+    render(os.path.join(out_dir, fname + "_front.png"))
+    cam.location, cam.rotation_euler = keep
+
+
+def body_job(spec):
+    """The whole player on frames of a clip, no weapon, each frame centred on its pelvis."""
+    _, name, action, frames = spec.split(":")
+    for g in guns.values():
+        g.hide_render = True
+    for i, f in enumerate(float(x) for x in frames.split(",")):
+        gait_pose(action, f)
+        p = rig.matrix_world @ rig.pose.bones["pelvis"].head
+        cam.location.x, cam.location.y = p.x, p.y
+        fname = "body_%s_%02d" % (name, i)
+        results[fname] = {"frame": f, "pelvis": [p.x, p.y, p.z]}
+        render(os.path.join(out_dir, fname + ".png"))
+        if os.environ.get("CJ_SIDE"):
+            views(fname, p)
+        print("RENDERED", fname, flush=True)
+
+
 results = {}
 mpath = os.path.join(out_dir, "measure.json")
 if os.path.exists(mpath):
@@ -1486,8 +1523,8 @@ if UPPER_ONLY:                  # the poses' pivot: the standing pelvis, as the 
     gait_pose("stand", 0)
     STAND_CENTRE = (rig.matrix_world @ rig.pose.bones["pelvis"].head).xy
 for name in poses:
-    if name.startswith("gait:"):
-        gait_job(name)
+    if name.startswith("gait:") or name.startswith("body:"):
+        (gait_job if name.startswith("gait:") else body_job)(name)
         json.dump(results, open(mpath, "w"), indent=1)
         continue
     held, info = pose(name)
@@ -1503,18 +1540,6 @@ for name in poses:
     if os.environ.get("CJ_NO_RENDER"):                       # measure only
         continue
     render(os.path.join(out_dir, fname + ".png"))
-    side = os.environ.get("CJ_SIDE")
-    if side:                                           # side views for checking the hold
-        keep = cam.location.copy(), cam.rotation_euler.copy()
-        for suffix, sx in (("_side", 1.0), ("_left", -1.0)):
-            cam.location = (p.x + 3.0 * sx, p.y, 1.1)
-            cam.rotation_euler = (math.pi / 2, 0, math.pi / 2 * sx)
-            render(os.path.join(out_dir, fname + suffix + ".png"))
-        cam.location = (p.x, p.y - 3.0, 1.1)               # from behind (the character faces +Y)
-        cam.rotation_euler = (math.pi / 2, 0, 0)
-        render(os.path.join(out_dir, fname + "_back.png"))
-        cam.location = (p.x, p.y + 3.0, 1.1)               # from the front
-        cam.rotation_euler = (math.pi / 2, 0, math.pi)
-        render(os.path.join(out_dir, fname + "_front.png"))
-        cam.location, cam.rotation_euler = keep
+    if os.environ.get("CJ_SIDE"):                      # side views for checking the hold
+        views(fname, p)
 json.dump(results, open(mpath, "w"), indent=1)

@@ -216,18 +216,41 @@ void AlarmPed(Pedestrian& p, Vector2 from, float duration, bool secondHand) {
     p.alarmVehicle = -1;
 }
 
-void KnockDownPed(Pedestrian& p, Vector2 impulse) {
+void KnockDownPed(Pedestrian& p, Vector2 vel, float vz, float down) {
     if (p.state == PedState::Dead) return;
     p.state = PedState::Down;
-    p.vel = impulse;
-    p.timer = GRng().Range(2.5f, 4.0f);
+    p.vel = vel;
+    p.body.vz = vz; p.body.stagger = 0;
+    p.timer = down;
     p.alarm = -1; p.alarmVehicle = -1;
-    float il = Len(impulse);
+    float il = Len(vel);
     if (il > 1) {
-        p.angle = AngleOf(impulse * -1.0f);
-        p.threat = p.pos - impulse / il * 20.0f;                    // where the blow came from
+        p.angle = AngleOf(vel * -1.0f);
+        p.threat = p.pos - vel / il * 20.0f;                        // where the blow came from
     }
     p.spin = GRng().Range(-1.0f, 1.0f) * std::min(il, 260.0f) * 0.03f;   // tumbling
+}
+
+static void StartDodge(Pedestrian& p, const Game& g, const Danger& d);
+
+// Bumped by a vehicle (impact.h): they step out of its path, as out of one about to hit them.
+void StaggerPed(Pedestrian& p, const Game& g, int vehicle) {
+    if (p.state == PedState::Down || p.state == PedState::Dead) return;
+    const Vehicle& v = g.vehicles[vehicle];
+    Danger d;
+    Vector2 dir = v.Speed() > 1 ? Norm(v.vel) : v.Fwd();
+    d.vehicle = vehicle; d.ttc = 0; d.speed = v.Speed();
+    d.across = Perp(dir);
+    d.lateral = Dot(p.pos - v.pos, d.across);
+    d.halfAcross = OBBProjectRadius(v.Box(), d.across) + BODY_MARGIN + PED_RADIUS;
+    StartDodge(p, g, d);
+    // and back as they go, keeping ahead of the vehicle until they are out of its path: the
+    // shove turns them and sets them going at once
+    Vector2 move = p.moveDir * p.moveSpeed + dir * (d.speed * 1.3f);
+    p.moveSpeed = Len(move);
+    p.moveDir = move / p.moveSpeed;
+    p.angle = AngleOf(p.moveDir);
+    p.vel = move;
 }
 
 void ProvokePed(Pedestrian& p, const Game& g) {
@@ -342,6 +365,7 @@ void InitPed(Pedestrian& p, Vector2 pos, int skin, const CityMap& map) {
     p.walkSpeed = r.Range(19.0f, 27.0f);
     p.laneOffset = r.Range(-9.0f, 9.0f);
     p.reaction = r.Range(0.18f, 0.45f);
+    p.body.balance = BalanceLimit(r);
     p.patience = r.Range(18.0f, 45.0f);
     p.courage = r.Float();
     p.sense = r.Range(0.0f, SENSE_PERIOD);
@@ -491,18 +515,18 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
 
     // ---- on the ground ----
     if (p.state == PedState::Down || p.state == PedState::Dead) {
-        p.vel = p.vel * expf(-4.0f * dt);
+        MoveBody(p.pos, p.vel, p.body, dt);                         // flying, landing, sliding
         p.angle = WrapAngle(p.angle + p.spin * dt);
         p.spin *= expf(-3.0f * dt);
-        p.runOverT -= dt;
+        bool still = !p.body.Airborne() && Len2(p.vel) < 1.0f;
         if (p.state == PedState::Dead) {
             p.deadTime += dt;
-            if (!p.pooled && Len2(p.vel) < 15 * 15) {
+            if (!p.pooled && !p.body.Airborne() && Len2(p.vel) < 15 * 15) {
                 p.pooled = true;
                 g.fx.AddDecal(p.pos, DECAL_BLOOD, 1.9f * M, r.Range(0.0f, 6.0f), 90);
             }
         } else {
-            p.timer -= dt;
+            if (still) p.timer -= dt;                                // the time down counts from coming to rest
             if (p.health <= 0) { p.state = PedState::Dead; p.deadTime = 0; }
             else if (p.timer <= 0) {                                 // back on their feet
                 p.spin = 0;
@@ -510,11 +534,12 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
                 if (p.courage >= 0.85f && Dist(p.pos, g.player.pos) < 6 * M) ProvokePed(p, g);   // the tough ones come back for more
             }
         }
-        p.pos = p.pos + p.vel * dt;
         Collide(p, map);
         p.turnRate = 0;
         return;
     }
+
+    Steady(p.body, dt);
 
     // ---- perception: vehicles about to run into us, delayed reactions ----
     p.sense -= dt;
@@ -788,7 +813,7 @@ void DrawPedShadow(const Pedestrian& p, Vector2 sv) {
     bool lying = p.state == PedState::Down || p.state == PedState::Dead;
     float s = lying ? 1.8f * M : 0.8f * M * CHAR_SCALE;
     float fade = p.state == PedState::Dead ? 1.0f - Saturate((p.deadTime - PED_BODY_FADE) / (PED_BODY_GONE - PED_BODY_FADE)) : 1.0f;
-    DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, p.pos + sv * (lying ? 2.0f : 12.0f), 0, s, s * (lying ? 0.6f : 1.0f), p.angle, ColorA(BLACK, 0.8f * fade));
+    DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, p.pos + sv * (lying ? 2.0f + p.body.z : 12.0f), 0, s, s * (lying ? 0.6f : 1.0f), p.angle, ColorA(BLACK, 0.8f * fade));
 }
 
 // Walk, jog or run for a speed (m/s); a faster gait holds until GAIT_HYSTERESIS below its start.
@@ -840,7 +865,7 @@ void DrawPed(const Pedestrian& p) {
     const Rectangle& src = a.src[frame];
     float angle = p.angle + (lying ? 0.0f : p.sway);
     Vector2 at = p.pos + RightOf(angle) * (a.offset[frame].x * k) - Forward(angle) * (a.offset[frame].y * k);
-    float h = lying ? 1.5f : H_PED;
+    float h = lying ? 1.5f + p.body.z : H_PED;          // a body in the air flies at its height
     Color tint = WHITE;
     if (p.state == PedState::Dead) tint = ColorA({ 200, 190, 190, 255 }, 1.0f - Saturate((p.deadTime - PED_BODY_FADE) / (PED_BODY_GONE - PED_BODY_FADE)));
     DrawFlatSprite(a.tex, src, at, h, src.width * k, src.height * k, angle, tint);

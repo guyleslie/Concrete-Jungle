@@ -792,6 +792,7 @@ bool Game::NewGame(startup::Reporter* loading) {
     if (loading && !loading->ChildDone("traffic")) return false;
     // ---- player: on foot at the central square, a sports car waiting at the curb ----
     player = PlayerState{};
+    player.body.balance = PlayerBalance();
     int cb = BLOCKS_X / 2, cbj = BLOCKS_Y / 2;
     Rectangle ring = map.SidewalkRing(cb, cbj);
     player.pos = { ring.x + ring.width * 0.45f, ring.y + ring.height };
@@ -887,15 +888,21 @@ void Game::Scare(Vector2 where, float radius) {
         if (v.active && v.driver == DriverType::Traffic && Len2(v.pos - where) < radius * radius) v.ai.panic = 8;
 }
 
+// How far a blow or a blast knocks someone (px): what the knock-down of before CJ-035 slid,
+// its impulse of 60 + 3 px/s per health point (at most 260) over a drag of 4/s, 0.9-4 m.
+static float BlowSlide(float dmg) { return std::min(260.0f, 60 + dmg * 3) / 4.0f; }
+
 void Game::DamagePlayer(float dmg, Vector2 dir) {
     if (state != GameState::Playing) return;
     float absorbed = std::min(player.armor, dmg * 0.7f);
     player.armor -= absorbed;
     player.health -= dmg - absorbed;
     player.hurtFlash = 1;
-    if (!player.inVehicle && Len(dir) > 1) player.vel = player.vel + Norm(dir) * 120;
+    if (!player.inVehicle && !player.Down() && Len(dir) > 1) player.vel = player.vel + Norm(dir) * 120;
     if (player.health <= 0) {
         player.health = 0;
+        if (!player.inVehicle && !player.Down())                      // falls where they stand
+            KnockDownPlayer(Len(dir) > 1 ? Norm(dir) * SlideSpeed(BlowSlide(dmg)) : V2(0, 0), 0, 0);
         state = GameState::Wasted; stateTimer = 0;
         Big("WASTED", { 220, 40, 40, 255 }, 5);
         audio.PlayUI(Sfx::Wasted, 0.9f);
@@ -962,7 +969,7 @@ void Game::ExplodeVehicle(int idx) {
     Scare(v.pos, 900);
 }
 
-void Game::DamagePed(int idx, float dmg, Vector2 dir, bool byPlayer, bool knockDown) {
+void Game::DamagePed(int idx, float dmg, Vector2 dir, bool byPlayer, bool knockDown, const PersonHit* hit) {
     Pedestrian& p = peds[idx];
     if (!p.active || p.state == PedState::Dead) return;
     p.health -= dmg;
@@ -970,7 +977,8 @@ void Game::DamagePed(int idx, float dmg, Vector2 dir, bool byPlayer, bool knockD
     fx.BloodSpray(p.pos, d, 6 + (int)(dmg * 0.2f));
     if (byPlayer) p.hitByPlayer = true;
     if (p.health <= 0 || knockDown || dmg > 40) {
-        KnockDownPed(p, d * std::min(260.0f, 60 + dmg * 3));
+        if (hit) KnockDownPed(p, hit->vel, hit->vz, TimeDown(hit->speedChange, GRng()));
+        else KnockDownPed(p, d * SlideSpeed(BlowSlide(dmg)), 0, TimeDown(0, GRng()));
         if (p.health <= 0) {
             p.state = PedState::Dead; p.deadTime = 0;
             fx.AddDecal(p.pos + d * 8, DECAL_BLOOD, 0.9f * M, GRng().Range(0, 6), 60);   // splash; the pool forms where the body stops
@@ -1035,7 +1043,7 @@ void Game::UpdatePlaying(float dt) {
     dn.timeScale = IsKeyDown(KEY_T) ? 30.0f : 1.0f;
     dn.Update(dt);
     map.Update(dt, fx);
-    if (state == GameState::Playing) {
+    if (state == GameState::Playing || player.Down()) {     // a body still falls after WASTED
         if (player.inVehicle) UpdatePlayerDriving(dt); else UpdatePlayerOnFoot(dt);
     }
     double t0 = GetTime();
@@ -1112,8 +1120,56 @@ void Game::SelectWeapon(int weapon) {
     player.weapon = weapon;
 }
 
+// Buildings and solid street furniture stop the player, on their feet or on the ground.
+void Game::CollidePlayer() {
+    PlayerState& P = player;
+    static std::vector<int> ids;
+    Rectangle box = { P.pos.x - 30, P.pos.y - 30, 60, 60 };
+    map.QueryBuildings(box, ids);
+    for (int k : ids) { Vector2 n; float d; if (CircleOBB(P.pos, PLAYER_RADIUS, MakeAABB(map.buildings[k].r), n, d)) P.pos = P.pos + n * d; }
+    map.QueryObjects(box, ids);
+    for (int k : ids) {
+        const CityObject& o = map.objects[k];
+        if (o.walkIn) continue;
+        if (o.box) { Vector2 n; float d; if (CircleOBB(P.pos, PLAYER_RADIUS, o.Box(), n, d)) P.pos = P.pos + n * d; continue; }
+        Vector2 d = P.pos - o.pos; float l = Len(d), rr = o.radius + PLAYER_RADIUS;
+        if (l < rr && l > 0.01f) P.pos = o.pos + d / l * rr;
+    }
+    P.pos.x = Clampf(P.pos.x, 8, WORLD_W - 8);
+    P.pos.y = Clampf(P.pos.y, 8, WORLD_H - 8);
+}
+
+void Game::KnockDownPlayer(Vector2 vel, float vz, float down) {
+    PlayerState& P = player;
+    if (P.inVehicle) return;
+    CancelReload(P);
+    P.vel = vel;
+    P.body.vz = vz; P.body.stagger = 0;
+    if (Len(vel) > 1) P.aim = AngleOf(vel * -1.0f);                // on their back, the head away from the blow
+    P.fallT = 0; P.lieT = down; P.getUpT = 0;
+    P.aiming = false; P.raise = 0; P.actionTimer = 0; P.bodyState = BodyAnim::Idle;
+}
+
+// On the ground (CJ-035): the body flies and slides to rest, lies, then gets up, without
+// control meanwhile. A dead player lies there until the respawn.
+void Game::UpdatePlayerDown(float dt) {
+    PlayerState& P = player;
+    P.fallT += dt;
+    MoveBody(P.pos, P.vel, P.body, dt);
+    CollidePlayer();
+    if (P.health <= 0) return;
+    if (P.getUpT > 0) {
+        P.getUpT -= dt;
+        if (P.getUpT <= 0) { P.getUpT = 0; P.fallT = -1; P.vel = { 0, 0 }; }
+    } else if (!P.body.Airborne() && Len2(P.vel) < 1.0f && (P.lieT -= dt) <= 0) {
+        P.getUpT = gAssets.playerDown.getUpS;
+    }
+}
+
 void Game::UpdatePlayerOnFoot(float dt) {
     PlayerState& P = player;
+    if (P.Down()) { UpdatePlayerDown(dt); return; }
+    Steady(P.body, dt);
     Vector2 mv = { 0, 0 };
     if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP)) mv.y -= 1;
     if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN)) mv.y += 1;
@@ -1158,34 +1214,7 @@ void Game::UpdatePlayerOnFoot(float dt) {
     }
     P.aiming = aiming;
     P.pos = P.pos + P.vel * dt;
-    // collisions: buildings, furniture, vehicles
-    static std::vector<int> ids;
-    Rectangle box = { P.pos.x - 30, P.pos.y - 30, 60, 60 };
-    map.QueryBuildings(box, ids);
-    for (int k : ids) { Vector2 n; float d; if (CircleOBB(P.pos, PLAYER_RADIUS, MakeAABB(map.buildings[k].r), n, d)) P.pos = P.pos + n * d; }
-    map.QueryObjects(box, ids);
-    for (int k : ids) {
-        const CityObject& o = map.objects[k];
-        if (o.walkIn) continue;
-        if (o.box) { Vector2 n; float d; if (CircleOBB(P.pos, PLAYER_RADIUS, o.Box(), n, d)) P.pos = P.pos + n * d; continue; }
-        Vector2 d = P.pos - o.pos; float l = Len(d), rr = o.radius + PLAYER_RADIUS;
-        if (l < rr && l > 0.01f) P.pos = o.pos + d / l * rr;
-    }
-    for (Vehicle& v : vehicles) {
-        if (!v.active || Len2(v.pos - P.pos) > 200 * 200) continue;
-        Vector2 n; float d;
-        if (CircleOBB(P.pos, PLAYER_RADIUS, v.Box(), n, d)) {
-            float impact = Dot(v.vel, n * -1.0f);
-            if (impact > 110 && v.driver != DriverType::Player) {
-                DamagePlayer((impact - 80) * 0.12f, v.vel);
-                audio.Play(Sfx::Punch, P.pos, 0.8f, 0.8f);
-                fx.BloodSpray(P.pos, v.vel, 8);
-            }
-            P.pos = P.pos + n * d;
-        }
-    }
-    P.pos.x = Clampf(P.pos.x, 8, WORLD_W - 8);
-    P.pos.y = Clampf(P.pos.y, 8, WORLD_H - 8);
+    CollidePlayer();                                     // vehicles: VehiclePedCollisions, after the physics step
 
     // The player's layers face the aim; the legs walk, run, strafe or backpedal along the
     // motion (from 0.3 m/s): ahead within 45 degrees, sideways within 135, else backwards.
@@ -1584,63 +1613,105 @@ void Game::ThrowRider(int idx, float severity) {
         player.inVehicle = false;
         player.vehicle = -1;
         player.pos = p;
-        player.aim = AngleOf(dir);
-        player.vel = dir * std::min(260.0f, severity * 0.5f);
-        DamagePlayer(std::min(60.0f, (severity - DV_BIKE_THROW) * 0.08f + 5), dir);
+        PersonHit h = ThrownOff(dir * severity);           // the speed the bike lost
+        KnockDownPlayer(h.vel, h.vz, TimeDown(h.speedChange, GRng()));
+        DamagePlayer(std::min(60.0f, (severity - DV_BIKE_THROW) * 0.08f + 5), { 0, 0 });
         Toast_("Thrown off the bike!", { 255, 180, 120, 255 });
         cam.AddShake(0.3f);
         return;
     }
     if (v.driver == DriverType::Traffic || v.driver == DriverType::Police) {
         int k = SpawnPed(p, v.driverSkin, false);
-        DamagePed(k, std::min(90.0f, (severity - DV_BIKE_THROW) * 0.15f + 10), dir, v.hitByPlayer, true);
+        PersonHit h = ThrownOff(dir * severity);
+        DamagePed(k, std::min(90.0f, (severity - DV_BIKE_THROW) * 0.15f + 10), dir, v.hitByPlayer, true, &h);
         v.driver = DriverType::None;
         v.in = VehicleInput{};
     }
 }
 
+// A body lying under this vehicle since its last contact step: driven over once per pass.
+static bool StillUnder(PersonBody& b, const Vehicle& v, float time) {
+    if (b.underSerial != v.serial || time - b.underT > 0.25f) return false;
+    b.underT = time;
+    return true;
+}
+
+// Vehicles meeting people (impact.h): every contact is one impact, never a push.
 void Game::VehiclePedCollisions() {
     int pv = player.inVehicle ? player.vehicle : -1;
+    static std::vector<int> near;
     for (size_t i = 0; i < vehicles.size(); i++) {
         Vehicle& v = vehicles[i];
         if (!v.active) continue;
-        float r = v.length * 0.5f + 4;
-        float sp = v.Speed();
-        static std::vector<int> near;
+        bool byPlayer = (int)i == pv;
+        auto runOver = [&](Vector2 at, PersonBody& b) {
+            b.underSerial = v.serial; b.underT = time;
+            fx.BloodSpray(at, Norm(v.vel), 8);
+            fx.AddDecal(at + Norm(v.vel) * 10, DECAL_BLOOD, 1.1f * M, GRng().Range(0, 6), 75);
+            audio.Play(Sfx::Punch, at, 0.6f, 0.55f);
+            if (byPlayer) cam.AddShake(0.08f);
+        };
+        float r = Len(V2(v.width, v.length)) * 0.5f + PLAYER_RADIUS;    // the corners and a body touching them
         near.clear();
-        pedGrid.Query(v.pos, r + 20, [&](int k) { near.push_back(k); });
+        pedGrid.Query(v.pos, r, [&](int k) { near.push_back(k); });
         for (int k : near) {
             Pedestrian& p = peds[k];
-            if (!p.active || Len2(p.pos - v.pos) > r * r + 400) continue;
+            if (!p.active || Len2(p.pos - v.pos) > r * r) continue;
             Vector2 n; float depth;
             if (!CircleOBB(p.pos, PED_RADIUS, v.Box(), n, depth)) continue;
-            if (p.state == PedState::Dead || p.state == PedState::Down) {
-                // the wheels go over someone on the ground: they are not shoved along
-                if (sp > 40 && p.runOverT <= 0) {
-                    p.runOverT = 0.8f;
-                    fx.BloodSpray(p.pos, Norm(v.vel), 8);
-                    fx.AddDecal(p.pos + Norm(v.vel) * 10, DECAL_BLOOD, 1.1f * M, GRng().Range(0, 6), 75);
-                    audio.Play(Sfx::Punch, p.pos, 0.6f, 0.55f);
-                    if (p.state == PedState::Down) DamagePed((int)k, 40 + sp * 0.2f, v.vel, (int)i == pv, true);
-                    if ((int)i == pv) cam.AddShake(0.08f);
-                }
-                continue;
-            }
-            if (sp > 95) {
+            bool lying = p.state == PedState::Down || p.state == PedState::Dead;
+            if (lying && StillUnder(p.body, v, time)) continue;
+            PersonHit h = VehicleMeetsPerson(v, n, depth, p.vel, p.body, lying);
+            v.vel = v.vel + h.vehicleDv;
+            switch (h.kind) {
+            case HitKind::Obstacle: p.pos = p.pos + h.push; break;
+            case HitKind::Bump:                                  // staggers, steps out of the way
+                p.pos = p.pos + h.push;
+                p.vel = h.vel;
+                Stagger(p.body);
+                StaggerPed(p, *this, (int)i);
+                break;
+            case HitKind::Launch:
                 if (debugContacts) {
-                    if ((int)i == pv) pdiag.playerHits++; else pdiag.trafficHits++;
+                    if (byPlayer) pdiag.playerHits++; else pdiag.trafficHits++;
                     if (k < (int)pedThreat.size() && pedThreat[k] > 0) { pdiag.threatHits++; pedThreat[k] = 0; }
                 }
-                DamagePed((int)k, PersonImpactDamage(v, sp), v.vel, (int)i == pv, true);
-                p.vel = v.vel * 0.45f + n * 50;                 // thrown a couple of metres, then lies there
-                p.runOverT = 0.5f;
+                DamagePed(k, h.damage, n, byPlayer, true, &h);
                 if (v.driver == DriverType::Traffic && GRng().Chance(0.6f)) v.ai.panic = 10;   // hit and run
                 audio.Play(Sfx::Punch, p.pos, 0.8f, 0.7f);
-                v.vel = v.vel * 0.95f;
-                if ((int)i == pv) cam.AddShake(0.12f);
-                continue;
+                if (byPlayer) cam.AddShake(0.12f);
+                break;
+            case HitKind::RunOver:
+                runOver(p.pos, p.body);
+                if (p.state == PedState::Down) DamagePed(k, h.damage, v.vel, byPlayer, true, &h);
+                else p.vel = h.vel;
+                break;
+            default: break;
             }
-            p.pos = p.pos + n * depth;
+        }
+        // the player on foot, by the same rules
+        PlayerState& P = player;
+        Vector2 n; float depth;
+        if (P.inVehicle || Len2(P.pos - v.pos) > r * r || !CircleOBB(P.pos, PLAYER_RADIUS, v.Box(), n, depth)) continue;
+        if (P.Down() && StillUnder(P.body, v, time)) continue;
+        PersonHit h = VehicleMeetsPerson(v, n, depth, P.vel, P.body, P.Down());
+        v.vel = v.vel + h.vehicleDv;
+        switch (h.kind) {
+        case HitKind::Obstacle: P.pos = P.pos + h.push; break;
+        case HitKind::Bump: P.pos = P.pos + h.push; P.vel = h.vel; Stagger(P.body); break;
+        case HitKind::Launch:
+            KnockDownPlayer(h.vel, h.vz, TimeDown(h.speedChange, GRng()));
+            DamagePlayer(h.damage, { 0, 0 });
+            audio.Play(Sfx::Punch, P.pos, 0.8f, 0.8f);
+            fx.BloodSpray(P.pos, v.vel, 8);
+            cam.AddShake(0.2f);
+            break;
+        case HitKind::RunOver:
+            runOver(P.pos, P.body);
+            P.vel = h.vel;
+            DamagePlayer(h.damage, { 0, 0 });
+            break;
+        default: break;
         }
     }
 }
@@ -1915,6 +1986,8 @@ void Game::Respawn(bool busted) {
     player.pos = busted ? map.policeStation : map.hospital;
     player.vel = { 0, 0 };
     player.health = 100; player.armor = 0;
+    player.body = PersonBody{}; player.body.balance = PlayerBalance();
+    player.fallT = -1; player.lieT = player.getUpT = 0;
     if (busted) {
         int fine = std::max(0, money / 4);
         money -= fine;
@@ -1941,10 +2014,10 @@ void Game::Respawn(bool busted) {
 //  Rendering
 // -------------------------------------------------------------------------------------
 // One frame of a player atlas, its visible part drawn at its offset from the shared pivot.
-static void DrawPlayerFrame(const FrameAtlas& a, int frame, Vector2 pos, float angle, float h, Color tint) {
+// k: world px per atlas px.
+static void DrawPlayerFrame(const FrameAtlas& a, int frame, Vector2 pos, float angle, float h, Color tint, float k) {
     if (a.src.empty()) return;
     frame = std::clamp(frame, 0, (int)a.src.size() - 1);
-    float k = gAssets.playerFrameM * M * CHAR_SCALE * gAssets.playerDrawScale / gAssets.playerFramePx;
     const Rectangle& src = a.src[frame];
     Vector2 at = pos + RightOf(angle) * (a.offset[frame].x * k) - Forward(angle) * (a.offset[frame].y * k);
     DrawFlatSprite(a.tex, src, at, h, src.width * k, src.height * k, angle, tint);
@@ -1982,19 +2055,35 @@ void Game::DrawPlayerSprite(bool shadowPass, Vector2 sv) const {
     if (player.inVehicle) return;
     if (shadowPass) {
         const Texture2D& t = gAssets.softCircle;
-        DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, player.pos + sv * 14.0f, 0, 0.9f * M * CHAR_SCALE, 0.9f * M * CHAR_SCALE, 0, ColorA(BLACK, 0.85f));
+        if (player.Down()) DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, player.pos + sv * (2.0f + player.body.z), 0, 1.8f * M, 1.1f * M, player.aim, ColorA(BLACK, 0.8f));
+        else DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, player.pos + sv * 14.0f, 0, 0.9f * M * CHAR_SCALE, 0.9f * M * CHAR_SCALE, 0, ColorA(BLACK, 0.85f));
+        return;
+    }
+    Color tint = player.hurtFlash > 0 ? LerpColor(WHITE, { 255, 120, 120, 255 }, player.hurtFlash) : WHITE;
+    if (player.Down()) {
+        // falling, lying, getting up, without the weapon: from the standing look, drawn larger
+        // than life, to real size lying, as the civilians are
+        const PlayerDown& D = gAssets.playerDown;
+        auto frameOf = [](const PedFrames& f, float k) { return f.first + std::clamp((int)(k * f.count), 0, f.count - 1); };
+        int frame = D.lie;
+        float low = 1;                                       // 0 standing .. 1 lying
+        if (player.getUpT > 0) { float k = 1 - player.getUpT / D.getUpS; frame = frameOf(D.getUp, k); low = 1 - k; }
+        else if (player.fallT < D.fallS) { float k = player.fallT / D.fallS; frame = frameOf(D.fall, k); low = k; }
+        float size = Lerpf(CHAR_SCALE * gAssets.playerDrawScale, 1.0f, low);
+        DrawPlayerFrame(D.atlas, frame, player.pos, player.aim, Lerpf(H_PED, 1.5f, low) + player.body.z, tint,
+                        D.frameM * M * size / D.framePx);
         return;
     }
     const WeaponDef& W = gAssets.weapons[player.weapon];
     const PlayerSet* ps = gAssets.FindPlayerSet(W.animSet);          // validated at load
     if (!ps) return;
-    Color tint = player.hurtFlash > 0 ? LerpColor(WHITE, { 255, 120, 120, 255 }, player.hurtFlash) : WHITE;
     // both layers face the aim: the legs' clips walk, strafe or backpedal by themselves
     const PlayerGaitDef& d = gAssets.playerGait[player.gait];
     int count = std::max(1, d.frames.count);
     int index = std::min(count - 1, (int)(player.legPhase * count));
-    DrawPlayerFrame(gAssets.playerLegs, d.frames.first + index, player.pos, player.aim, H_PED - 6, tint);
-    DrawPlayerFrame(ps->atlas, PlayerUpperFrame(player, *ps, W, index, count), player.pos, player.aim, H_PED, tint);
+    float k = gAssets.playerFrameM * M * CHAR_SCALE * gAssets.playerDrawScale / gAssets.playerFramePx;
+    DrawPlayerFrame(gAssets.playerLegs, d.frames.first + index, player.pos, player.aim, H_PED - 6, tint, k);
+    DrawPlayerFrame(ps->atlas, PlayerUpperFrame(player, *ps, W, index, count), player.pos, player.aim, H_PED, tint, k);
 }
 
 void Game::DrawWorld() {
@@ -2028,15 +2117,19 @@ void Game::DrawWorld() {
         float bob = sinf(time * 3 + k.pos.x) * 3;
         DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, k.pos, 14 + bob, 0.8f * M, 0.8f * M, time * 1.2f, WHITE);
     }
-    for (const Pedestrian& p : peds) if (p.active && (p.state == PedState::Dead || p.state == PedState::Down) && CheckCollisionPointRec(p.pos, view)) DrawPed(p);
+    // people on the ground under the vehicles; in the air, over them
+    auto low = [](const Pedestrian& p) { return (p.state == PedState::Dead || p.state == PedState::Down) && !p.body.Airborne(); };
+    bool playerLow = player.Down() && !player.body.Airborne();
+    for (const Pedestrian& p : peds) if (p.active && low(p) && CheckCollisionPointRec(p.pos, view)) DrawPed(p);
+    if (playerLow) DrawPlayerSprite(false, sv);
     // vehicles: low first so tall trucks overlap small cars correctly
     static std::vector<int> order;
     order.clear();
     for (size_t i = 0; i < vehicles.size(); i++) if (vehicles[i].active && CheckCollisionPointRec(vehicles[i].pos, view)) order.push_back((int)i);
     std::sort(order.begin(), order.end(), [&](int a, int b) { return vehicles[a].height < vehicles[b].height; });
     for (int i : order) DrawVehicle(vehicles[i], time);
-    for (const Pedestrian& p : peds) if (p.active && p.state != PedState::Dead && p.state != PedState::Down && CheckCollisionPointRec(p.pos, view)) DrawPed(p);
-    DrawPlayerSprite(false, sv);
+    for (const Pedestrian& p : peds) if (p.active && !low(p) && CheckCollisionPointRec(p.pos, view)) DrawPed(p);
+    if (!playerLow) DrawPlayerSprite(false, sv);
     SetDepthWrite(true);
     map.characters.clear();
     if (!player.inVehicle) map.characters.push_back(player.pos);
@@ -2054,7 +2147,7 @@ void Game::DrawWorld() {
     fx.DrawLights(view);
     if (!player.inVehicle) {
         const WeaponDef& W = gAssets.weapons[player.weapon];
-        if (W.light) {
+        if (W.light && !player.Down()) {
             // The beam follows the lamp: aimed level it reaches 18 m; pointed down it lights the
             // ground in front of where it lands, brighter for being closer; pointed up it misses
             // the ground and fades out.

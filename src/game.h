@@ -51,9 +51,10 @@ struct PlayerState {
     int     melees = 0;            // blows struck: the fists alternate
     float   reloadTotal = 0;       // shell-by-shell reload: its length (s),
     int     reloadShells = 0, reloadLoaded = 0;   // the shells it loads and has loaded
-    // what vehicles meet (CJ-035); fallT: s since the player fell, -1 on their feet
+    // what vehicles meet (CJ-035); fallT: s since the player fell, -1 on their feet; lieT: s left
+    // lying once at rest; getUpT: s left of getting up
     PersonBody body;
-    float   fallT = -1;
+    float   fallT = -1, lieT = 0, getUpT = 0;
     bool    Down() const { return fallT >= 0; }
 };
 
@@ -191,7 +192,8 @@ public:
     // ---- events ----
     void DamageVehicle(int idx, float dmg, bool byPlayer, Vector2 at);
     void ExplodeVehicle(int idx);
-    void DamagePed(int idx, float dmg, Vector2 dir, bool byPlayer, bool knockDown);
+    // 'hit': a vehicle's launch (impact.h) instead of the knock-down of a blow
+    void DamagePed(int idx, float dmg, Vector2 dir, bool byPlayer, bool knockDown, const PersonHit* hit = nullptr);
     void DamagePlayer(float dmg, Vector2 dir);
     void Crime(float amount, Vector2 where);
     void Scare(Vector2 where, float radius);
@@ -217,6 +219,9 @@ private:
     void MeleeHit();
     void UpdateVehicles(float dt);                 // AI, physics step, impacts, effects
     void ThrowRider(int idx, float severity);      // motorbike crash: the rider comes off
+    void KnockDownPlayer(Vector2 vel, float vz, float down);   // on the ground, 'down' s once at rest
+    void UpdatePlayerDown(float dt);               // falling, lying, getting up
+    void CollidePlayer();                          // buildings and solid street furniture
     void UpdatePeds(float dt);
     void UpdatePolice(float dt);
     void UpdateSpawning(float dt);

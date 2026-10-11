@@ -251,7 +251,8 @@ struct PersonHitTests::State {
             P.pos = pos; P.vel = V2(0, 0); P.aim = angle;
             P.health = 100; P.armor = 0; P.hurtFlash = 0;
             P.bodyState = BodyAnim::Idle; P.actionTimer = 0; P.reloadTimer = 0;
-            P.body = PersonBody{}; P.fallT = -1;
+            P.body = PersonBody{}; P.body.balance = PlayerBalance();
+            P.fallT = -1; P.lieT = P.getUpT = 0;
             g.autoMode = 6;                                    // stands still, no input
         } else {
             p.ped = g.SpawnPed(pos, (int)(people.size() * 7 + 3) % std::max(1, (int)gAssets.peds.size()), false);
@@ -282,7 +283,9 @@ struct PersonHitTests::State {
         // the player stays well away unless the scene uses them
         g.player.inVehicle = false; g.player.vehicle = -1;
         g.player.pos = centre + V2(0, -150 * M); g.player.vel = V2(0, 0);
-        g.player.health = 100; g.player.armor = 0; g.player.body = PersonBody{}; g.player.fallT = -1;
+        g.player.health = 100; g.player.armor = 0;
+        g.player.body = PersonBody{}; g.player.body.balance = PlayerBalance();
+        g.player.fallT = -1; g.player.lieT = g.player.getUpT = 0;
         cars.clear(); people.clear();
         for (const VehicleLine& l : s.vehicles) {
             VClass c = FindVehicleClass(l.cls == "all" ? run.cls : l.cls);
@@ -433,12 +436,15 @@ struct PersonHitTests::State {
             Vector2 end = Pos(g, p);
             float health = Health(g, p);
             float throwM = p.restT >= 0 ? Dist(p.restPos, p.impactPos) / M : NAN;
-            TraceLog(LOG_INFO, "PERSONHIT measure fixture=%s run=%s person=%d kind=%s hit=%d impact_kmh=%.2f launch_kmh=%.2f "
-                     "throw_m=%.3f peak_m=%.3f air_s=%.3f rest_s=%.3f fell=%d died=%d up_s=%.3f health=%.1f moved_m=%.3f "
-                     "contact_s=%.3f carried_m=%.3f overlap_frames=%d momentum_ratio=%.3f runover_loss_kmh=%.3f",
-                     FIXTURE_ID, run.name.c_str(), id, KindName(p.kind), (int)p.hit, p.impactKmh, p.launch / KMH, throwM,
-                     p.maxZ / M, p.airT, p.restT, (int)p.fell, (int)p.died, p.upT, health, Dist(end, p.start) / M,
-                     p.maxTouchT, p.maxCarried / M, p.maxOverlapRun, p.momentumRatio, p.runoverLoss);
+            // two lines: raylib cuts a log message at 256 characters
+            TraceLog(LOG_INFO, "PERSONHIT measure run=%s person=%d kind=%s hit=%d impact_kmh=%.2f launch_kmh=%.2f throw_m=%.3f "
+                     "peak_m=%.3f air_s=%.3f rest_s=%.3f fell=%d died=%d up_s=%.3f health=%.1f",
+                     run.name.c_str(), id, KindName(p.kind), (int)p.hit, p.impactKmh, p.launch / KMH, throwM,
+                     p.maxZ / M, p.airT, p.restT, (int)p.fell, (int)p.died, p.upT, health);
+            TraceLog(LOG_INFO, "PERSONHIT contact run=%s person=%d moved_m=%.3f contact_s=%.3f carried_m=%.3f overlap_frames=%d "
+                     "momentum_ratio=%.3f runover_loss_kmh=%.3f",
+                     run.name.c_str(), id, Dist(end, p.start) / M, p.maxTouchT, p.maxCarried / M, p.maxOverlapRun,
+                     p.momentumRatio, p.runoverLoss);
             // always: no pushing (CJ-035 criterion 6), no passing through (criterion 7)
             if (p.kind != Kind::Dead) {
                 Check("contact_s", id, p.maxTouchT, 0, 0.1f);
@@ -581,6 +587,7 @@ void PersonHitTests::Update(Game& g, float dt) {
     g.pedGrid.Build(g.peds);
     for (Pedestrian& p : g.peds) if (p.active) UpdatePed(p, g, DT);
     g.fx.Update(DT);
+    g.player.hurtFlash = std::max(0.0f, g.player.hurtFlash - DT * 2);   // as UpdatePlaying
     s.Track(g);
     for (size_t i = 0; i < s.S().captures.size(); i++)
         if (!s.captured[i] && s.t >= s.S().captures[i].t) { s.captured[i] = 1; s.capture = s.R().name + "-" + s.S().captures[i].name; break; }

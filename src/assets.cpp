@@ -2,6 +2,7 @@
 //  Asset loading + procedural texture generation.
 // =====================================================================================
 #include "assets.h"
+#include "impact.h"
 #include "math_utils.h"
 #include <cstdio>
 #include <cstring>
@@ -512,6 +513,8 @@ static VClass RequiredClass(const DataRecord& r) {
 static void LoadVehicles(Assets& A) {
     const auto records = AssetData("assets/data/vehicles.cfg");
     { startup::AtomicSpan span(assetReporter, "data", "Vehicle classes"); LoadVehicleClasses(records); }
+    std::string impactError;                       // how vehicles meet people (CJ-035)
+    AssetValidate(LoadImpacts(AssetData("assets/data/impacts.cfg"), impactError), impactError);
     A.byClass.assign(VehicleClasses().size(), {});
     char path[256];
     const float hues[3] = { 130, 215, 0 };
@@ -809,7 +812,17 @@ static void LoadPlayer(Assets& A) {
             if (g >= 0) set->gait[g] = { r.I(3), r.I(4) };
             else if (act >= 0) set->act[act] = { r.I(3), r.I(4) };
             else TraceLog(LOG_WARNING, "player.cfg:%d unknown state '%s'", r.line, r[2].c_str());
-        } else if (r.Is("LAMP") && r.size() >= 8) {
+        } else if (r.Is("DOWN") && r.size() >= 4) {
+            PlayerDown& D = A.playerDown;
+            D.framePx = r.I(2); D.frameM = r.F(3);
+            snprintf(path, sizeof(path), "assets/characters/player/%s", r[1].c_str());
+            if (D.framePx > 0 && D.frameM > 0) bytes += PackFrames(D.atlas, LoadRequiredImage(path), D.framePx, cols);
+            else ok = false;
+        }
+        else if (r.Is("FALL") && r.size() >= 4) { A.playerDown.fall = { r.I(1), r.I(2) }; A.playerDown.fallS = r.F(3); }
+        else if (r.Is("LIE") && r.size() >= 2) A.playerDown.lie = r.I(1);
+        else if (r.Is("GETUP") && r.size() >= 4) { A.playerDown.getUp = { r.I(1), r.I(2) }; A.playerDown.getUpS = r.F(3); }
+        else if (r.Is("LAMP") && r.size() >= 8) {
             PlayerSet* set = nullptr;
             for (auto& s : A.playerSets) if (s.name == r[1]) set = &s;
             int f = r.I(2);
@@ -823,6 +836,11 @@ static void LoadPlayer(Assets& A) {
     for (const PlayerSet& s : A.playerSets)
         for (int g = 0; g < (int)PlayerGait::COUNT; g++)
             if (s.gait[g].count <= 0 || s.gait[g].first + s.gait[g].count > (int)s.atlas.src.size()) ok = false;
+    const PlayerDown& D = A.playerDown;
+    int downFrames = (int)D.atlas.src.size();
+    for (const PedFrames& f : { D.fall, D.getUp })
+        if (f.first < 0 || f.count <= 0 || f.first + f.count > downFrames) ok = false;
+    if (D.lie < 0 || D.lie >= downFrames || D.fallS <= 0 || D.getUpS <= 0) ok = false;
     AssetValidate(ok && !A.playerSets.empty(), "The player's atlases (player.cfg) are missing or incomplete");
     A.playerFramePx = framePx;
     A.playerFrameM = frameM;

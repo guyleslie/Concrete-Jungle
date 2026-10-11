@@ -16,6 +16,7 @@ An architecture decision record (ADR) captures one significant technical decisio
 | [0008](0008-human-like-traffic.md) | Human-like physical traffic and persistent drivers | Proposed | 2026-10-03 |
 | [0009](0009-required-character-atlases.md) | Required atlases for the player and the civilians | Accepted; extended to all content by ADR-0010 | 2026-10-11 |
 | [0010](0010-no-fallback-content.md) | No fallback content | Accepted | 2026-10-11 |
+| [0011](0011-vehicle-person-impact.md) | A contact between a vehicle and a person is one impact | Accepted | 2026-10-11 |
 
 ADRs 0001–0004 were recorded retroactively on 2026-09-27 for decisions made during the first development session.
 

@@ -22,7 +22,7 @@ Source: `src/game.h`, `src/game.cpp`; weapon definitions in `assets/data/weapons
 - The character turns to face where it walks. Holding the right mouse button, or attacking, turns it towards the cursor while the legs keep moving: within 45° of the aim they walk or run, within 135° they strafe (with Shift, a jogging strafe), beyond that they backpedal.
 - The weapon is carried lowered and raised only to aim: while either mouse button is held and for 0.8 s after a shot. It is raised in 0.2 s and lowered in 0.25 s; the drawing switches half way.
 - Drawn as two layers from 3D renders ([CJ-011 player art](../../assets/art/cj011/README.md), format: [Adding content › Player](../guides/adding-content.md#player)): the legs, played by the distance walked (walks, strafes and the backpedal) or by cadence (the run and the jogging strafes), and the upper body of the weapon's set, which shows the weapon lowered in step with the legs, the aim, the fire, reload and melee frames. Both layers face the aim and share the pivot.
-- The player collides with buildings, solid furniture and vehicles; a vehicle hitting the player faster than about 25 km/h hurts.
+- The player collides with buildings, solid furniture and standing vehicles. A moving vehicle meets the player as it meets anyone ([Vehicles hitting people](impacts.md)): a bump below about 5 km/h staggers them, a harder one knocks them down or throws them and hurts, and a vehicle drives over the player lying on the road, which kills. On the ground the player falls, lies and gets up without control, and is controlled again about 3 s after a fall comes to rest, about 4.5 s after a throw. A player who dies on foot falls and lies there until the respawn.
 
 ## Weapons
 
@@ -39,7 +39,7 @@ Firing scares pedestrians within 34 m (they run after their reaction time) and, 
 
 - **Enter** any drivable vehicle within 3.8 m (E, F or Enter). An occupied traffic car or police car is **hijacked**: the driver is thrown out and runs away.
 - **Exit** the same way. Jumping out faster than about 56 km/h hurts.
-- The vehicle model, damage and crash consequences are described in [Vehicles](vehicles.md) and [Physics](physics.md#crash-consequences). Very hard crashes injure the driver; motorbike riders can be thrown off.
+- The vehicle model, damage and crash consequences are described in [Vehicles](vehicles.md) and [Physics](physics.md#crash-consequences). Very hard crashes injure the driver; motorbike riders can be thrown off, and are launched like a person hit by a vehicle.
 
 ## Health and armour
 

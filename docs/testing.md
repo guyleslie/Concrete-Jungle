@@ -322,22 +322,26 @@ Every person of every scene is checked for no pushing and no passing through; th
 | `getup` | 10 | Up again 2.5–3.5 s after coming to rest from a fall (a launch below 25 km/h), 4–5 s after a throw, or dead |
 | `INJURY` | 5 | Per impact speed, the share of draws of `PersonImpactDamage` reaching 100 points within 3 percentage points of Tefft's death curve (a logistic fit of his five points: half at 67.6 km/h, slope 0.078 per km/h) |
 
-`PERSONHIT start`, `measure`, `check`, `injury` and `summary` lines record every run: the impact and launch speeds, the throw distance, the height and time in the air, rest, falling, death, getting up, contact time, distance carried, overlap and momentum. Failed checks make the exit code 1.
+`PERSONHIT start`, `measure`, `contact`, `check`, `injury` and `summary` lines record every run: the impact and launch speeds, the throw distance, the height and time in the air, rest, falling, death and getting up (`measure`); the distance moved, contact time, distance carried, overlap, momentum and the speed lost over people lying (`contact`). Failed checks make the exit code 1. Three scenes without `all` save captures for checking the art in the game: the player falling, lying and getting up, a civilian thrown by a braking taxi, and one flying over a taxi that keeps on at 90 km/h.
 
-**Before (2026-10-11).** The fixture on the model before CJ-035 (revision 469186b plus the fixture, the game's behaviour unchanged: `day` and `rampage` give the same metric lines with and without it) ran 357 runs of 22 scenes over the 17 vehicle classes, with 762 of 1,813 checks failing:
+**Before and after (2026-10-11).** Before: the fixture on the model before CJ-035 (revision 469186b plus the fixture, the game's behaviour unchanged: `day` and `rampage` give the same metric lines with and without it), 357 runs of 22 scenes over the 17 vehicle classes, 762 of 1,813 checks failing. After: the CJ-035 model, 359 runs (the two art scenes added), all 1,823 checks passing.
 
-| Criterion | Before |
-|---|---|
-| 1 Bump at 2 km/h | Buses and trucks pushed civilians for up to 4.9 s; the rest passed |
-| 2 Fall at 10 km/h | Nobody fell (0 of 34) |
-| 3 Throw, 15–100 km/h | 0.05 m at 15 km/h to 3.75 m at 100 km/h for every class, against Happer's 1.9 m and 65 m; 3 of 84 within Searle's corridor, none within Happer's band |
-| 4 Momentum | Ratio 0.22–5.33: every vehicle lost 5 % of its speed whatever its mass; 7 of 101 within 10 % |
-| 5 Injury | No deaths up to 30 km/h, 98 % at 40 km/h and 100 % above it, against Tefft's 5, 10 and 20–93 %: 8 of 10 speeds outside |
-| 6 No pushing | Creeping at 2 and 5 km/h, vehicles carried civilians and the player 3.6–10.5 m for 7–7.6 s; at 30 km/h without braking 1.4 m; the player hit at 50 km/h 1.1–1.8 m |
-| 7 No passing through | Living people lay under vehicles for 22–544 frames (driven over at 5 and 30 km/h, hit at 30 km/h without braking) |
-| 8 Driving over the living | Nobody died at 5 km/h; at 30 km/h the bodies slid 3.9–7.7 m |
-| 9 Driving over a body | Passed: 0 m, 0 km/h |
-| 10 Player | Never fell |
+| Criterion | Before | After |
+|---|---|---|
+| 1 Bump at 2 km/h | Buses and trucks pushed civilians for up to 4.9 s; the rest passed | Every civilian stepped out of the way (1.0 m), every player staggered 0.04 m; one frame of contact; nobody fell or was hurt |
+| 2 Fall at 10 km/h | Nobody fell (0 of 34) | Everyone fell (34 of 34): 0.44–0.64 m, 0.08–0.22 s in the air |
+| 3 Throw, 15–100 km/h | 0.05 m at 15 km/h to 3.75 m at 100 km/h for every class, against Happer's 1.9 m and 65 m; 3 of 84 within Searle's corridor, none within Happer's band | 1.0–1.5 m at 15 km/h, 2.8–4.1 m at 25, 7.3–10.5 m at 40, 16.4–23.8 m at 60, 52.3–66.2 m at 100: all 84 within Searle's corridor, all 70 cars and trucks within Happer's band |
+| 4 Momentum | Ratio 0.22–5.33: every vehicle lost 5 % of its speed whatever its mass; 7 of 101 within 10 % | 1.00 in all 101 |
+| 5 Injury | No deaths up to 30 km/h, 98 % at 40 km/h and 100 % above it, against Tefft's 5, 10 and 20–93 %: 8 of 10 speeds outside | 1.1, 2.1, 5.0, 10.6, 20.1, 34.2, 54.0, 72.1, 85.4 and 92.3 % from 10 to 100 km/h, within 1.5 percentage points of Tefft's curve |
+| 6 No pushing | Creeping at 2 and 5 km/h, vehicles carried civilians and the player 3.6–10.5 m for 7–7.6 s; at 30 km/h without braking 1.4 m; the player hit at 50 km/h 1.1–1.8 m | The longest contact 0.05 s, the furthest carry 0.06 m. Creeping on at 2 km/h, every civilian stepped aside; at 5 km/h 10 of 17 did, and 7 with a lower balance limit fell and were driven over; the player standing still fell at the second contact |
+| 7 No passing through | Living people lay under vehicles for 22–544 frames (driven over at 5 and 30 km/h, hit at 30 km/h without braking) | No living person inside a vehicle after the contact step |
+| 8 Driving over the living | Nobody died at 5 km/h; at 30 km/h the bodies slid 3.9–7.7 m | All 34 died; the body moved 0.20 m back under the vehicle, which lost 1.0 km/h and drove on |
+| 9 Driving over a body | Passed: 0 m, 0 km/h | 0.20 m, 1.0 km/h |
+| 10 Player | Never fell | Fell in every run at 10 km/h and more; controlled again 2.7–3.4 s after a fall came to rest and 4.1–4.9 s after a throw; 4 of 17 died at 50 km/h |
+
+Vehicles that kept on without braking drove over the person they hit at 30 km/h (17 of 17 died) and mostly at 60 km/h (14 of 17); at 90 km/h a taxi passed under the body (the `vault-art` scene).
+
+In the city (1,500 frames, `rampage` 3,600), after: traffic hit nobody in `foot` and `day`; in `rampage` 77 % of the 102 people in the car's path escaped (80 % in an earlier run of the same build; 85 % before); nobody was down too long and sliding stayed at 0.1 %. The machine ran at about 30 FPS that afternoon, both builds alike, so the pedestrian CPU time was compared alternating the two builds in `day`: 0.513 and 0.521 ms before, 0.524 and 0.532 ms after (+2 %); the vehicle update 0.38 → 0.42 ms, now that every vehicle also meets the player in its contact step. In `brawl` and `crash`, traffic hit 2 and 10 people against 16 and 13 before: the old rule counted the same person hit again and again.
 
 ## Workflow
 
