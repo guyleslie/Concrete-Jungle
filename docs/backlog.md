@@ -20,7 +20,7 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07 and CJ-032 to CJ-037 were added on 2026-10-11:
 
 1. **[CJ-032](#cj-032-isolated-test-arena) Isolated test arena** — approach agreed on 2026-10-11; the measurable criteria are confirmed and the before values measured at the start of the session. Later items that change people, animation or lighting are tested in it.
-2. **[CJ-035](#cj-035-vehicles-hitting-people) Vehicles hitting people** — playtest of 2026-10-11: the player is pushed along instead of being run over, and bodies slide in front of cars. Needs its own specification, fall and lying art for the player, and arena tests.
+2. **[CJ-035](#cj-035-vehicles-hitting-people) Vehicles hitting people** — playtest of 2026-10-11: the player is pushed along instead of being run over, and bodies slide in front of cars. Approach agreed on 2026-10-11 (speed bands, new player fall art, driving over people on the ground); its own session agrees the criteria and runs the tests in the arena.
 3. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
 4. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
 5. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
@@ -48,7 +48,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
 | [CJ-033](#cj-033-code-review-fixes) | Code review fixes | High | Implemented, awaiting playtest |
-| [CJ-035](#cj-035-vehicles-hitting-people) | Vehicles hitting people | High | Open |
+| [CJ-035](#cj-035-vehicles-hitting-people) | Vehicles hitting people | High | Approach agreed |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
@@ -517,7 +517,7 @@ The testing guide gets an arena section with the test file format and the rule: 
 ### CJ-035 Vehicles hitting people
 
 - **Priority:** High
-- **Status:** Open
+- **Status:** Approach agreed on 2026-10-11; the specification and the before run start its session
 
 **Problem (playtest, 2026-10-11).** The player can hardly be run over: cars push the player along, even at speed. A person hit by a vehicle should, depending on its speed and size, be pushed aside, knocked backwards or thrown some way, and fall. A car driving over someone lying on the road, alive or dead, should go over them, not push them along. The user wants this realistic and well thought out.
 
@@ -527,7 +527,13 @@ The testing guide gets an arena section with the test file format and the rule: 
 - A civilian (`VehiclePedCollisions`) hit above 95 px/s (about 21 km/h) is knocked down with 45 % of the car's velocity plus 50 px/s and slides on the ground: about 4 m ahead of a car at 100 km/h, so the car seems to push the body. A person lying down but alive who is driven over is knocked down again with the car's direction at up to 260 px/s and slides on until they die.
 - The player has no fall, lying or getting-up frames; civilians have one lying frame.
 
-**Approach (to be agreed).** One impact model for the player and civilians from the closing speed and the vehicle's mass: pushed aside at walking pace, knocked down (falls back or to the side), or thrown along the car's path a distance taken from published pedestrian throw measurements; the injury follows the same speed for both; the vehicle loses the momentum the person takes. A person on the ground is driven over: the wheels hurt the living and jolt the car, but nobody is pushed along. The player falls, lies, gets up and regains control, or dies. New fall, lying and getting-up frames for the player from the [CJ-011](#cj-011-relaxed-player-posture) pipeline. Measured in the [CJ-032](#cj-032-isolated-test-arena) arena: cars of several classes at 10–100 km/h hitting a standing person and the player, and driving over a body.
+**Approach (agreed with the user, 2026-10-11).**
+
+1. **One impact model for the player and civilians, by speed.** Below about 10 km/h the person is pushed aside; from 10 to 25 km/h they are knocked down (fall backwards or to the side); above 25 km/h they are thrown along the vehicle's path, as far as published pedestrian throw measurements give for that speed. The injury follows the same speed for the player and civilians; the vehicle's mass counts, and the vehicle loses the momentum the person takes.
+2. **New player art.** Fall, lying and getting-up frames for the player, made with the [CJ-011](#cj-011-relaxed-player-posture) 3D pipeline. The player falls, lies, gets up and regains control, or dies.
+3. **Driving over someone lying down.** A vehicle drives over a person on the ground, dead or alive, without pushing them along; a living person is hurt, and the vehicle jolts.
+
+The session starts by agreeing the measurable criteria (speed bands, throw distances, injuries, getting-up time) and a before run. Measured in the [CJ-032](#cj-032-isolated-test-arena) arena: cars of several classes at 10–100 km/h hitting a standing person and the player, and driving over a body.
 
 ### CJ-036 Dead code and simplification
 
