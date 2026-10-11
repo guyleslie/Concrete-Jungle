@@ -518,6 +518,8 @@ static void LoadVehicles(Assets& A) {
     AssetPlan({ { "classes", 1 }, { "records", (double)std::max<size_t>(1, records.size()), false },
                 { "train", 1 }, { "validation", 1 } });
     AssetValidate(!A.byClass.empty(), "vehicles.cfg defines no vehicle class");
+    for (const VehicleSpec& s : VehicleClasses())
+        AssetValidate(s.front > 0, "vehicles.cfg: class '" + s.name + "' has no FRONT record");
     AssetDone("classes");
     int64_t completed = 0;
     AssetCount(0, (int64_t)records.size(), "records processed");

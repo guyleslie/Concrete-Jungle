@@ -57,12 +57,14 @@ void LoadVehicleClasses(const std::vector<DataRecord>& records) {
     }
     // Turning circles; a class without one gets 2.3 lengths (about 11 m for a 4.8 m car).
     // Collision widths; a class without one takes its sprite's width (vehicle.cpp).
+    // Front edges; every class needs one (checked by the asset loader).
     for (const DataRecord& r : records) {
-        bool turn = r.Is("TURN");
-        if ((!turn && !r.Is("WIDTH")) || r.size() < 3) continue;
+        float VehicleSpec::* field = r.Is("TURN") ? &VehicleSpec::turnCircle : r.Is("WIDTH") ? &VehicleSpec::width
+                                   : r.Is("FRONT") ? &VehicleSpec::front : nullptr;
+        if (!field || r.size() < 3) continue;
         int c = FindVehicleClass(r[1]);
         if (c < 0) { TraceLog(LOG_WARNING, "vehicles.cfg line %d: %s for unknown class '%s'", r.line, r[0].c_str(), r[1].c_str()); continue; }
-        (turn ? classes[c].turnCircle : classes[c].width) = r.F(2) * M;
+        classes[c].*field = r.F(2) * M;
     }
     for (VehicleSpec& s : classes) if (s.turnCircle <= 0) s.turnCircle = s.length * 2.3f;
 }

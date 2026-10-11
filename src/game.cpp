@@ -1098,8 +1098,6 @@ void Game::UpdatePlaying(float dt) {
 // -------------------------------------------------------------------------------------
 //  Player on foot
 // -------------------------------------------------------------------------------------
-static const float PLAYER_RADIUS = 0.35f * M * CHAR_SCALE;
-
 // A reload stops when the weapon is put away (another weapon, a vehicle), and so does its
 // animation; shells already pushed in stay loaded.
 static void CancelReload(PlayerState& P) {
@@ -1131,8 +1129,9 @@ void Game::UpdatePlayerOnFoot(float dt) {
         armAll = false;
     }
     PilotInput pilot;
-    const bool piloted = autoMode == 5;
-    if (piloted) { PlayerPilot(dt, pilot); mv = pilot.move; P.running = pilot.run; }
+    const bool piloted = autoMode == 5 || autoMode == 6;      // 6: no input at all
+    if (autoMode == 5) PlayerPilot(dt, pilot);
+    if (piloted) { mv = pilot.move; P.running = pilot.run; }
     float speed = (P.running ? PLAYER_RUN : PLAYER_WALK) * M;
     if (P.reloadTimer > 0) speed *= 0.6f;
     bool autoAttack = autoMode == 4 && BrawlPilot(mv);
@@ -1632,9 +1631,7 @@ void Game::VehiclePedCollisions() {
                     if ((int)i == pv) pdiag.playerHits++; else pdiag.trafficHits++;
                     if (k < (int)pedThreat.size() && pedThreat[k] > 0) { pdiag.threatHits++; pedThreat[k] = 0; }
                 }
-                // injury grows with the impact energy: about half die at 36 km/h, nearly all above 45 km/h
-                float dmg = 100.0f * (sp / 160.0f) * (sp / 160.0f) * GRng().Range(0.8f, 1.25f);
-                DamagePed((int)k, dmg, v.vel, (int)i == pv, true);
+                DamagePed((int)k, PersonImpactDamage(v, sp), v.vel, (int)i == pv, true);
                 p.vel = v.vel * 0.45f + n * 50;                 // thrown a couple of metres, then lies there
                 p.runOverT = 0.5f;
                 if (v.driver == DriverType::Traffic && GRng().Chance(0.6f)) v.ai.panic = 10;   // hit and run

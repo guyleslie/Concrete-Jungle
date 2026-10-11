@@ -22,7 +22,8 @@ set(SOURCES
     src/main.cpp src/game.cpp src/hud.cpp src/assets.cpp src/sprite_gen.cpp src/render.cpp
     src/startup_loading.cpp src/startup_plan.cpp src/loading_screen.cpp src/loading_tests.cpp
     src/lighting.cpp src/city_map.cpp src/vehicle.cpp src/vehicle_types.cpp src/traffic.cpp src/traffic_turns.cpp src/traffic_recovery.cpp src/physics.cpp
-    src/pedestrian.cpp src/particles.cpp src/audio.cpp src/datafile.cpp src/vehicle_tests.cpp src/traffic_tests.cpp src/traffic_clearance_tests.cpp src/traffic_conflict_tests.cpp src/traffic_incidents.cpp src/traffic_incident_tests.cpp src/traffic_turn_tests.cpp)
+    src/pedestrian.cpp src/particles.cpp src/audio.cpp src/datafile.cpp src/vehicle_tests.cpp src/traffic_tests.cpp src/traffic_clearance_tests.cpp src/traffic_conflict_tests.cpp src/traffic_incidents.cpp src/traffic_incident_tests.cpp src/traffic_turn_tests.cpp
+    src/impact.cpp src/person_hit_tests.cpp)
 add_executable(ConcreteJungle ${SOURCES})
 target_include_directories(ConcreteJungle PRIVATE src)
 

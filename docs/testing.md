@@ -13,6 +13,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Cooperative yielding fixture](#cooperative-yielding-fixture)
 - [Driver incident fixture](#driver-incident-fixture)
 - [Turning fixture](#turning-fixture)
+- [Person-hit scenes](#person-hit-scenes)
 - [Startup loading checks](#startup-loading-checks)
 - [Workflow](#workflow)
 
@@ -29,6 +30,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 | `--every <n>` | Also saves `<file>_<frame>.png` every *n* frames |
 | `--scenario <name>` | The scenario to set up (default `foot`) |
 | `--vehicle <Class>` | Selects a class for the isolated `handling` or `traffic-recovery` scenario (default `Taxi`; recovery supports `Taxi`, `Bus`, `BoxTruck`) |
+| `--test <file>` | The scene file of the `person-hits` scenario (default `tests/person-hits.cfg`) |
 | `--uncapped` | Disables vsync in screenshot mode; simulation still advances exactly 1/60 s per rendered frame |
 
 Screenshot paths must be **relative** to the working directory: raylib prefixes the working directory to the file name. The window opens while the test runs. Keep test output in `build/`, which is not version-controlled. On foot, test runs ignore the mouse cursor for the camera look-ahead (it decides what is on screen and so which cars and people are recycled); before 2026-10-06 `foot`, `day` and `brawl` counts depended on where the cursor rested.
@@ -58,6 +60,7 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `traffic-recovery` | Isolated enclosed hold, free lane recovery and front-blocked garage escape for Taxi, Bus or BoxTruck, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
 | `traffic-clearance` | Taxi rejoin with separated nearby building/parked-car boxes, plus actual-overlap, clearance-only-contact and forward-blockage API guards at 60 Hz and 20 Hz; 420 frames |
 | `traffic-turns` | Isolated CJ-020 turning fixture: every traffic class turns right, turns left and goes straight through an empty junction at 60 Hz and 20 Hz; see [Turning fixture](#turning-fixture) |
+| `person-hits` | Isolated CJ-035 scenes of vehicles meeting people, read from a scene file; see [Person-hit scenes](#person-hit-scenes) |
 
 ## Startup loading checks
 
@@ -294,6 +297,47 @@ python tools/run_cj020_turns.py --phase after --run-name turns
 ```
 
 The runner runs the fixture and then the six city scenarios (`day`, `chase`, `drive`, `overview`, `crash` for 1,500 frames, `rampage` for 3,600; the others 1,800), one window at a time, and keeps the logs, captures and a manifest with the git state and input hashes under `build/shots/cj020/<phase>/<run-name>/`. `--suite fixture` or `--suite city` runs one part. `CJ_TEST_CASE=<substring>` narrows a diagnostic fixture run. Results: [turning results](design/traffic-turning-results.md).
+
+## Person-hit scenes
+
+`cj035-person-hits-v1` measures vehicles meeting people ([CJ-035](backlog.md#cj-035-vehicles-hitting-people)) on the empty test road: no city, traffic, other people, police or missions, a fixed 1/60 s step, a seed per run and a stopped clock at 13:00. Unlike the other fixtures, its cases are data: a scene file, by default [`tests/person-hits.cfg`](../tests/person-hits.cfg), describes the scenes, and a new scene needs no rebuild. Its header is the reference for the format; `tests/` is not in the release.
+
+```bash
+./ConcreteJungle.exe --shot build/shots/cj035/hits.png --scenario person-hits --frames 1000000 --uncapped > build/shots/cj035/hits.log 2>&1
+```
+
+A scene places vehicles (a class, or `all` for one run per class in `vehicles.cfg`) driving at a speed until they first touch someone, then braking or holding the speed. It places people standing (unaware of the vehicle), aware (seeing it and reacting), lying alive, dead, or the player standing still, singly, in rows or as a random crowd. It names its checks and expected shares, and it can save captures at given times. Each frame runs the game's own steps in its order: the player on foot, physics and impacts, vehicles meeting people (`Game::VehiclePedCollisions`), then the people. A scene ends half a second after everyone has come to rest, got up or died and every vehicle has stopped or passed everyone, or at its time limit. `CJ_TEST_CASE=<text>` runs only the runs whose name contains the text; an invalid file stops with its line and problem, exit code 2.
+
+Every person of every scene is checked for no pushing and no passing through; the named checks measure the other CJ-035 criteria against the published measurements, with reference values kept in the fixture rather than read from the game's data:
+
+| Check | Criterion | Measured |
+|---|---|---|
+| (always) | 6, 7 | `contact_s`: the longest contact of a standing person with a vehicle, at most 0.1 s; `carried_m`: how far a vehicle carried a living person in one contact, at most 0.3 m; `overlap_frames`: consecutive frames a living person on the ground stayed more than 3 px inside a vehicle after the contact step, at most 2 |
+| `bump` | 1 | Touched, on their feet, unhurt, no contact later than 1 s after the first |
+| `falls` | 2 | On the ground at some time |
+| `throw` | 3 | The distance from the point of impact to the point of rest, within Searle's corridor for the launch speed measured right after the contact step (μ = 0.7) and, but for two-wheelers, within Happer's band for the impact speed: the car regression ±9 km/h for a front edge below 1 m, the light-truck regression ±10.5 km/h otherwise |
+| `momentum` | 4 | The vehicle's momentum change in the contact step over the person's (75 kg), 0.9–1.1 |
+| `runover` | 8 | A person lying alive is dead; moved at most 0.3 m; the vehicles over them lost at most 2 km/h in contact steps; a vehicle got past |
+| `body` | 9 | A body moved at most 0.3 m; at most 1 km/h lost; a vehicle got past |
+| `getup` | 10 | Up again 2.5–3.5 s after coming to rest from a fall (a launch below 25 km/h), 4–5 s after a throw, or dead |
+| `INJURY` | 5 | Per impact speed, the share of draws of `PersonImpactDamage` reaching 100 points within 3 percentage points of Tefft's death curve (a logistic fit of his five points: half at 67.6 km/h, slope 0.078 per km/h) |
+
+`PERSONHIT start`, `measure`, `check`, `injury` and `summary` lines record every run: the impact and launch speeds, the throw distance, the height and time in the air, rest, falling, death, getting up, contact time, distance carried, overlap and momentum. Failed checks make the exit code 1.
+
+**Before (2026-10-11).** The fixture on the model before CJ-035 (revision 469186b plus the fixture, the game's behaviour unchanged: `day` and `rampage` give the same metric lines with and without it) ran 357 runs of 22 scenes over the 17 vehicle classes, with 762 of 1,813 checks failing:
+
+| Criterion | Before |
+|---|---|
+| 1 Bump at 2 km/h | Buses and trucks pushed civilians for up to 4.9 s; the rest passed |
+| 2 Fall at 10 km/h | Nobody fell (0 of 34) |
+| 3 Throw, 15–100 km/h | 0.05 m at 15 km/h to 3.75 m at 100 km/h for every class, against Happer's 1.9 m and 65 m; 3 of 84 within Searle's corridor, none within Happer's band |
+| 4 Momentum | Ratio 0.22–5.33: every vehicle lost 5 % of its speed whatever its mass; 7 of 101 within 10 % |
+| 5 Injury | No deaths up to 30 km/h, 98 % at 40 km/h and 100 % above it, against Tefft's 5, 10 and 20–93 %: 8 of 10 speeds outside |
+| 6 No pushing | Creeping at 2 and 5 km/h, vehicles carried civilians and the player 3.6–10.5 m for 7–7.6 s; at 30 km/h without braking 1.4 m; the player hit at 50 km/h 1.1–1.8 m |
+| 7 No passing through | Living people lay under vehicles for 22–544 frames (driven over at 5 and 30 km/h, hit at 30 km/h without braking) |
+| 8 Driving over the living | Nobody died at 5 km/h; at 30 km/h the bodies slid 3.9–7.7 m |
+| 9 Driving over a body | Passed: 0 m, 0 km/h |
+| 10 Player | Never fell |
 
 ## Workflow
 

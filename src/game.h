@@ -23,6 +23,8 @@ namespace startup { class Reporter; }
 
 enum class GameState { Title, Playing, Paused, Wasted, Busted };
 
+constexpr float PLAYER_RADIUS = 0.35f * cfg::M * cfg::CHAR_SCALE;   // the player's body on the ground
+
 struct PlayerState {
     bool    inVehicle = false;
     int     vehicle = -1;
@@ -49,6 +51,10 @@ struct PlayerState {
     int     melees = 0;            // blows struck: the fists alternate
     float   reloadTotal = 0;       // shell-by-shell reload: its length (s),
     int     reloadShells = 0, reloadLoaded = 0;   // the shells it loads and has loaded
+    // what vehicles meet (CJ-035); fallT: s since the player fell, -1 on their feet
+    PersonBody body;
+    float   fallT = -1;
+    bool    Down() const { return fallT >= 0; }
 };
 
 struct Pickup {
@@ -121,7 +127,8 @@ public:
     bool debugContacts = false;
     bool debugOverview = false;                    // AI-vs-AI collision count (diagnostics)
     void LogTrafficStats() const;
-    // --shot autopilots: 0 cruise, 1 scripted crash course, 2 demolition derby, 3 sidewalk rampage
+    // --shot autopilots: 0 cruise, 1 scripted crash course, 2 demolition derby, 3 sidewalk rampage,
+    // 4 brawl, 5 the player scenario's pilot, 6 the player stands still (person-hit scenes)
     int   autoMode = 0, autoPhase = -1, testBuilding = -1;
     float autoT = 0, autoTimer = 0, autoSteer = 0, autoReverse = 0, autoSlow = 0;
     void  AutoPilot(Vehicle& v, VehicleInput& in, float dt);
@@ -194,6 +201,8 @@ public:
     int  SpawnPed(Vector2 pos, int skin, bool fleeing = false);
     // Also driven directly by measurement fixtures.
     void HandleImpacts(float dt);                  // physics events -> damage, sparks, sounds, reactions
+    void UpdatePlayerOnFoot(float dt);
+    void VehiclePedCollisions();
     void EnterVehicle(int idx);
     void ExitVehicle();
     void SelectWeapon(int weapon);                 // an owned weapon other than the one in hand; cancels a reload
@@ -203,12 +212,10 @@ private:
     bool startupInitialized = false;
     bool NewGame(startup::Reporter* loading = nullptr);
     void UpdatePlaying(float dt);
-    void UpdatePlayerOnFoot(float dt);
     void UpdatePlayerDriving(float dt);
     void FireWeapon();
     void MeleeHit();
     void UpdateVehicles(float dt);                 // AI, physics step, impacts, effects
-    void VehiclePedCollisions();
     void ThrowRider(int idx, float severity);      // motorbike crash: the rider comes off
     void UpdatePeds(float dt);
     void UpdatePolice(float dt);

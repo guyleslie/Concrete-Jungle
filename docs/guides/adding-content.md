@@ -69,6 +69,14 @@ WIDTH <class> <width m>
 
 The width of the collision box. A class without one uses its sprite's drawn width, mirrors included. The sprite keeps its aspect either way, so mirrors or handlebars drawn wider than the `WIDTH` reach beyond the collision box, as on a real vehicle. The shipped two-wheelers give the handlebar width of comparable real bikes; the cars get their records with [CJ-023](../design/street-geometry-proposal.md#vehicle-widths).
 
+### `FRONT` — front edge
+
+```
+FRONT <class> <height m>
+```
+
+The height of the front's leading edge: the bonnet edge of a car (about 0.6–0.8 m), or the top of a flat front such as a van's, a bus's or a truck's. A person struck below their centre of mass wraps onto the vehicle; struck higher, they are thrown forward ([CJ-035](../backlog.md#cj-035-vehicles-hitting-people)). Every class needs one: a class without it stops loading. The [person-hit scenes](../testing.md#person-hit-scenes) test a new class without changes.
+
 ### `SPRITE` — an image for a class
 
 ```

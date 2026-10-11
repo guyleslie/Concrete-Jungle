@@ -19,6 +19,7 @@
 #include "config.h"
 #include "math_utils.h"
 #include "sprite_gen.h"
+#include "impact.h"
 #include <vector>
 
 class Game;
@@ -66,6 +67,7 @@ struct Pedestrian {
     bool     hitByPlayer = false;
     float    deadTime = 0;
     float    runOverT = 0;           // lying: time until a wheel can hurt them again
+    PersonBody body;                 // what vehicles meet (impact.h)
     bool     pooled = false;         // dead: blood pool left where the body came to rest
     float    laneOffset = 0;         // personal walking line on the sidewalk (px)
     float    sway = 0, spin = 0;

@@ -34,6 +34,7 @@ struct VehicleSpec {
     float    trafficWeight = 1;
     float    turnCircle = 0;                  // px, kerb-to-kerb turning circle (diameter)
     float    width = 0;                       // px, collision width (WIDTH); 0 = the sprite's width
+    float    front = 0;                       // px, height of the front's leading edge (FRONT, required)
     uint32_t flags = 0;
     bool twoWheeler() const { return flags & VF_TWO_WHEELER; }
     bool police() const { return flags & VF_POLICE; }
