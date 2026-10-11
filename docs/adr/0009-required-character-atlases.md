@@ -1,6 +1,6 @@
 # ADR-0009: Required atlases for the player and the civilians
 
-- **Status:** Accepted
+- **Status:** Accepted; extended to all content by [ADR-0010](0010-no-fallback-content.md)
 - **Date:** 2026-10-11
 - **Amends:** [ADR-0002](0002-data-driven-content.md), for people only
 

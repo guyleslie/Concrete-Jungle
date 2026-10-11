@@ -119,13 +119,16 @@ std::string Override(const std::unordered_map<std::string, std::string>& values,
     return found == values.end() ? fallback : found->second;
 }
 
-Texture2D CosmeticTexture(const std::string& path, bool wordmark) {
-    if (!FileExists(path.c_str())) {
-        TraceLog(LOG_WARNING, "LOADING: optional image '%s' missing", path.c_str());
-        return {};
-    }
+// A required file of the loading screen; a missing or unreadable one is logged.
+bool Required(const std::string& path, bool usable) {
+    if (!usable) TraceLog(LOG_ERROR, "LOADING: '%s' is %s", path.c_str(), FileExists(path.c_str()) ? "unreadable" : "missing");
+    return usable;
+}
+
+Texture2D RequiredTexture(const std::string& path, bool wordmark) {
+    if (!Required(path, FileExists(path.c_str()))) return {};
     Image image = LoadImage(path.c_str());
-    if (!image.data) return {};
+    if (!Required(path, image.data != nullptr)) return {};
     // The packaged source stays unchanged. Two reference-display pixels per logo
     // pixel keep its upload small while retaining clean filtering at large monitors.
     if (wordmark && (image.width > 1280 || image.height > 720)) {
@@ -135,29 +138,25 @@ Texture2D CosmeticTexture(const std::string& path, bool wordmark) {
     }
     Texture2D texture = LoadTextureFromImage(image);
     UnloadImage(image);
-    if (texture.id) SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
+    if (!Required(path, texture.id != 0)) return {};
+    SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
     return texture;
 }
 
-Font CosmeticFont(const std::string& path, int baseSize, bool& owned) {
-    Font fallback = GetFontDefault();
-    owned = false;
-    if (!FileExists(path.c_str())) {
-        TraceLog(LOG_WARNING, "LOADING: optional font '%s' missing", path.c_str());
-        return fallback;
-    }
+Font RequiredFont(const std::string& path, int baseSize) {
+    if (!Required(path, FileExists(path.c_str()))) return {};
     std::vector<int> codepoints;
     for (int codepoint = 32; codepoint <= 126; codepoint++) codepoints.push_back(codepoint);
     for (int codepoint = 160; codepoint <= 255; codepoint++) codepoints.push_back(codepoint);
     for (int codepoint : { 0x150, 0x151, 0x170, 0x171, 0x2026 }) codepoints.push_back(codepoint);
     Font font = LoadFontEx(path.c_str(), baseSize, codepoints.data(), static_cast<int>(codepoints.size()));
-    owned = font.glyphs && font.glyphs != fallback.glyphs;
-    if (!font.texture.id || !font.glyphs || font.glyphCount == 0) {
-        if (owned) UnloadFont(font);
-        owned = false;
-        return fallback;
+    // raylib hands back its own default font when it cannot read the file.
+    bool own = font.glyphs && font.glyphs != GetFontDefault().glyphs;
+    if (!Required(path, own && font.texture.id && font.glyphCount > 0)) {
+        if (own) UnloadFont(font);
+        return {};
     }
-    if (owned) SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
     return font;
 }
 
@@ -177,7 +176,8 @@ size_t TextureBytes(Texture2D texture) {
 
 // ---- Bootstrap configuration and resource lifetime ----
 
-void LoadingScreen::ReadConfig(const char* path) {
+bool LoadingScreen::ReadConfig(const char* path) {
+    if (!Required(path, FileExists(path))) return false;
     for (const DataRecord& record : ReadDataFile(path)) {
         if (record.Is("BACKGROUND") && record.size() == 2) theme.background = record[1];
         else if (record.Is("WORDMARK") && record.size() == 2) theme.logo = record[1];
@@ -204,40 +204,36 @@ void LoadingScreen::ReadConfig(const char* path) {
         }
         else TraceLog(LOG_WARNING, "LOADING: ignored malformed/unknown record at %s:%d", path, record.line);
     }
+    return true;
 }
 
-void LoadingScreen::Load(const char* configPath) {
+bool LoadingScreen::Load(const char* configPath) {
     Unload();
     theme = Theme{};
     headlines.clear(); labels.clear(); details.clear(); text.clear();
-    ReadConfig(configPath);
-    background = CosmeticTexture(theme.background, false);
-    logo = CosmeticTexture(theme.logo, true);
-    boldFont = CosmeticFont(theme.boldFont, 64, ownsBold);
-    semiFont = CosmeticFont(theme.semiFont, 48, ownsSemi);
+    if (!ReadConfig(configPath)) return false;
+    background = RequiredTexture(theme.background, false);
+    logo = RequiredTexture(theme.logo, true);
+    boldFont = RequiredFont(theme.boldFont, 64);
+    semiFont = RequiredFont(theme.semiFont, 48);
     TraceLog(LOG_INFO, "LOADING RESOURCES: gpu_bytes=%llu background=%dx%d logo=%dx%d",
              static_cast<unsigned long long>(GPUBytes()), background.width, background.height, logo.width, logo.height);
+    return background.id && logo.id && boldFont.texture.id && semiFont.texture.id;
 }
 
 void LoadingScreen::Unload() {
     if (background.id) UnloadTexture(background);
     if (logo.id) UnloadTexture(logo);
-    if (ownsBold) UnloadFont(boldFont);
-    if (ownsSemi) UnloadFont(semiFont);
+    if (boldFont.texture.id) UnloadFont(boldFont);
+    if (semiFont.texture.id) UnloadFont(semiFont);
     background = {}; logo = {}; boldFont = {}; semiFont = {};
-    ownsBold = false; ownsSemi = false;
 }
 
 size_t LoadingScreen::GPUBytes() const {
-    return TextureBytes(background) + TextureBytes(logo)
-         + (ownsBold ? TextureBytes(boldFont.texture) : 0)
-         + (ownsSemi ? TextureBytes(semiFont.texture) : 0);
+    return TextureBytes(background) + TextureBytes(logo) + TextureBytes(boldFont.texture) + TextureBytes(semiFont.texture);
 }
 
-Font LoadingScreen::Face(bool bold) const {
-    Font face = bold ? boldFont : semiFont;
-    return face.texture.id && face.glyphs ? face : GetFontDefault();
-}
+void LoadingScreen::DrawBackdrop() const { ClearBackground(theme.base); }
 
 std::string LoadingScreen::Text(const char* key, const char* fallback) const {
     auto found = text.find(key);
@@ -289,15 +285,11 @@ void LoadingScreen::DrawAtSize(const startup::Snapshot& snapshot, int width, int
     float scale = layout.scale;
     Font strong = Face(true), regular = Face(false);
 
-    if (background.id && background.width > 0 && background.height > 0) {
-        float factor = std::max(width / static_cast<float>(background.width), height / static_cast<float>(background.height));
-        Rectangle destination{ (width - background.width * factor) * 0.5f,
-                               (height - background.height * factor) * 0.5f,
-                               background.width * factor, background.height * factor };
-        DrawTexturePro(background, { 0, 0, static_cast<float>(background.width), static_cast<float>(background.height) },
-                       destination, { 0, 0 }, 0, Opacity(WHITE, opacity));
-    }
-    else DrawRectangle(0, 0, width, height, Opacity(theme.base, opacity));
+    float cover = std::max(width / static_cast<float>(background.width), height / static_cast<float>(background.height));
+    Rectangle destination{ (width - background.width * cover) * 0.5f, (height - background.height * cover) * 0.5f,
+                           background.width * cover, background.height * cover };
+    DrawTexturePro(background, { 0, 0, static_cast<float>(background.width), static_cast<float>(background.height) },
+                   destination, { 0, 0 }, 0, Opacity(WHITE, opacity));
 
     // Fade into a near-opaque backing before the first status row, so even bright
     // headlights cannot change the text contrast. This is an integrated scrim.
@@ -313,20 +305,10 @@ void LoadingScreen::DrawAtSize(const startup::Snapshot& snapshot, int width, int
     DrawRectangleGradientH(static_cast<int>(width * 0.82f), 0, width - static_cast<int>(width * 0.82f),
                            height, clear, Opacity(vignette, opacity));
 
-    if (logo.id && logo.width > 0 && logo.height > 0) {
-        float factor = std::min(layout.logo.width / logo.width, layout.logo.height / logo.height);
-        DrawTexturePro(logo, { 0, 0, static_cast<float>(logo.width), static_cast<float>(logo.height) },
-                       { layout.logo.x, layout.logo.y, logo.width * factor, logo.height * factor },
-                       { 0, 0 }, 0, Opacity(WHITE, opacity));
-    }
-    else {
-        float size = 104 * scale;
-        float measured = Width(strong, "CONCRETE", size);
-        if (measured > layout.logo.width) size *= layout.logo.width / measured;
-        Line(strong, "CONCRETE", layout.logo.x, layout.logo.y, size, size, Opacity(theme.primary, opacity));
-        Line(strong, "JUNGLE", layout.logo.x, layout.logo.y + size + 12 * scale,
-             size, size, Opacity(theme.accent, opacity));
-    }
+    float fit = std::min(layout.logo.width / logo.width, layout.logo.height / logo.height);
+    DrawTexturePro(logo, { 0, 0, static_cast<float>(logo.width), static_cast<float>(logo.height) },
+                   { layout.logo.x, layout.logo.y, logo.width * fit, logo.height * fit },
+                   { 0, 0 }, 0, Opacity(WHITE, opacity));
 
     bool failed = snapshot.state == startup::State::Failed;
     bool cancelled = snapshot.state == startup::State::Cancelled;

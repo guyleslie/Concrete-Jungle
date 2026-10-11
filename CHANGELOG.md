@@ -13,8 +13,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Changing weapons during a reload stopped the reload but played its animation on with the new weapon, and the number key of the weapon in hand cancelled the reload. Changing weapons or getting into a vehicle now stops the animation too; the key of the weapon in hand does nothing (CJ-033).
 - The `TIMING` test line divided the world-drawing time by the frames of play, so the `title` scenario reported the total (1,088 ms) instead of the time per frame (3.3 ms) (CJ-033).
 
+### Changed
+
+- No fallback content ([ADR-0010](docs/adr/0010-no-fallback-content.md), CJ-034): every data file in `assets/data/` and every file it names is required. A missing or unreadable file, or a record naming an unknown vehicle class or colour, stops loading with a message naming it (exit code 2) instead of being replaced. The start shows a plain dark frame until the loading screen's art and fonts are loaded, instead of its old text in raylib's pixel font.
+
+### Removed
+
+- The fallbacks (CJ-034): built-in copies of the data files, the procedural placeholder vehicles and trees with the `GEN` record of `vehicles.cfg`, noise textures for missing materials, the fallback vehicle, trees, bushes and weapon, raylib's default font as the interface font, the loading screen's text-only presentation, and `tools/sprite_dump.cpp`.
+
 ### Added
 
+- [ADR-0010](docs/adr/0010-no-fallback-content.md) No fallback content.
 - Backlog items from the code review and the playtest of 2026-10-11: [CJ-035](docs/backlog.md#cj-035-vehicles-hitting-people) vehicles hitting people, [CJ-036](docs/backlog.md#cj-036-dead-code-and-simplification) dead code and simplification, and [CJ-037](docs/backlog.md#cj-037-audio-randomness-apart-from-gameplay) audio randomness apart from gameplay.
 
 ## [0.6.0] - 2026-10-11

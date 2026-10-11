@@ -24,7 +24,7 @@ All data files live in `assets/data/` and share one format:
 - the first token is the record type (case-insensitive);
 - `#` starts a comment.
 
-Every loader has built-in defaults, so a missing file never stops the game. Unknown classes, files or generators are reported as warnings in the log.
+Every data file, and every file a record names, is required ([ADR-0010](../adr/0010-no-fallback-content.md)): when one is missing or unreadable, or a record names an unknown vehicle class or paint colour, the game stops loading and the loading screen and the log name the problem. Other malformed records are reported as warnings in the log and skipped.
 
 ## Vehicles
 
@@ -94,17 +94,9 @@ COMPOSE <class> <front file> <from> <to> <rear file> <from> <to> <rear stretch> 
 
 `DERIVE` stretches a horizontal band of a sprite (fractions of its height) — for example a limousine from a car. `COMPOSE` stacks the front section of one sprite on the rear section of another — for example a truck cab on a van body. Each paint colour adds one repainted variant; this keeps the original art style.
 
-### `GEN` — procedural placeholder art
-
-```
-GEN <class> <generator> <colours...>
-```
-
-Generators: `car_hatch`, `car_sedan`, `car_coupe`, `car_suv`, `car_limo`, `bus`, `boxtruck`, `firetruck`, `garbage`, `bike_sport`, `bike_chopper`, `bike_scooter`. Each colour token adds one variant; a token may join up to three colours with `/` (main paint / second colour / third colour — for bikes: paint / jacket / helmet). Motorbike generators also create the riderless version used for parked and abandoned bikes.
-
 ### Colours
 
-Named colours: `red blue white black silver green darkgreen beige teal maroon yellow orange cream grey darkgrey navy brown purple pink`, or `r,g,b`.
+Paint colours of `DERIVE` and `COMPOSE`: `red blue white black silver green darkgreen beige teal maroon yellow orange cream grey darkgrey navy brown purple pink`, or `r,g,b`.
 
 ## Traffic behaviour
 

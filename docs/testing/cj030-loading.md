@@ -49,7 +49,7 @@ Each subsystem derives its local count from the records, frames or generation ob
 
 [startup_plan.cpp](../../src/startup_plan.cpp) estimates current work from content metadata, image sizes, configuration and screen size. Without history, each task's current units multiply a coarse built-in unit-cost estimate, so added content changes its initial budget immediately. It optionally reads `build/cache/startup-work-profile.cfg`, whose lines contain `task-id work-units elapsed-milliseconds` from the last successful startup. A known task's next weight is its previous duration multiplied by `current units / previous units`, with finite positive bounds. Missing or invalid history uses the current units and built-in unit cost. The cache is optional and may fail to write in a read-only installation; it never establishes readiness, schedules work or introduces a wait. Freeze the resulting weights for each run. The weighting estimates the distribution of work; actual completion always controls progress, regardless of startup duration.
 
-[assets/data/loading.cfg](../../assets/data/loading.cfg) controls cosmetic paths, colors and presentation strings. It cannot create work, change dependency order, supply item totals or set stage percentages. Optional loading art/fonts have a primitive fallback. The accepted city image is copied unchanged to `assets/ui/loading-city.png`; the separate wordmark is `assets/ui/loading-logo.png`.
+[assets/data/loading.cfg](../../assets/data/loading.cfg) controls cosmetic paths, colors and presentation strings. It cannot create work, change dependency order, supply item totals or set stage percentages. Since 2026-10-11 the loading art and fonts are required ([ADR-0010](../adr/0010-no-fallback-content.md)): without them startup logs the missing file and exits with code 2, and the first frame before they load is plain dark. The accepted city image is copied unchanged to `assets/ui/loading-city.png`; the separate wordmark is `assets/ui/loading-logo.png`.
 
 The final gate checks the usable world and required graphics/resources after all declared tasks resolve. Until it succeeds, progress stays below 100%. Required composite locations are `lightMap`, `emissive`, `bloomTex` and `bloomStrength`; blur requires `dir`. The unused composite `time` uniform may legitimately return −1 after shader optimization. Preserve group-specific missing-image skips and whole-group procedural fallbacks instead of treating every missing file as fatal.
 
@@ -61,7 +61,7 @@ The following interface is implemented and exercised by the recorded checks. Kee
 |---|---|
 | `--loading-test <relative-dir>` | Dedicated presentation/reporter replay fixture with layout resolutions, more categories, long labels, unknown work, fallback, failure and readiness snapshots; headless model tests separately cover input/accounting contracts |
 | `--loading-capture <relative-prefix>` | Real startup snapshots in a TSV log plus representative PNGs from actual task progress and terminal state |
-| `--loading-config <cfg>` | Cosmetic configuration override, including missing-image/font fallback cases |
+| `--loading-config <cfg>` | Cosmetic configuration override, including missing images or fonts (exit code 2 since ADR-0010) |
 | `--loading-stop <taskid>` | Inject cancellation after confirmed work in the selected task, exercising partially initialized owners |
 | `--loading-fail <taskid>` | Inject fatal startup failure after confirmed work in the selected task; verify no Ready or title handoff |
 
@@ -86,7 +86,7 @@ The evidence below comes from executed model tests, visible game runs and export
 | Registry and counts | Unequal weights, nested child plan, unknown work, rejected late mutation, optional skip and rejected unresolved mandatory work | Passed: 49 model cases, 1,672 checks |
 | Layout and scalability | Eight resolutions; fixed four rows; 5/25/100 groups; fitted labels/counts | Passed: 20 captures, zero fixture errors; visual review |
 | Actual startup | State/count snapshot log, progress captures and required resource readiness | Passed: real task captures and Ready handoff |
-| Fallbacks | Missing cosmetic files, ordinary content fallback, absent audio device when reproducible | Cosmetic and missing-content-config fallback passed; physical no-device case not reproduced |
+| Fallbacks | Missing cosmetic files, ordinary content fallback, absent audio device when reproducible | Cosmetic and missing-content-config fallback passed; physical no-device case not reproduced. Since 2026-10-11 both missing-file cases stop startup instead ([below](#required-files-since-2026-10-11)) |
 | Partial cleanup | Cancel and fail at several assets/world boundaries; clean exit; no title screenshot, crash or duplicate resource unload | Passed: six injected runs, cleanup called twice |
 | Input handoff | Independently held Enter/Space release/repress cases and fresh first title press | Seven production-used guard cases passed; individual physical keyboard/close cases not logged |
 | Determinism | Exact initialized digest/RNG and fixed-frame title/day/drive outputs on matched content | Passed: five title pairs and six day/drive capture pairs |
@@ -109,6 +109,17 @@ The measured executable is `build/cj030/after/ConcreteJungle.exe`, SHA-256 `ae5b
 | `--loading-stop assets.animations`, `world.minimap`, `world.audio` | `build/cj030/checks/cancel-*.log` | Exit 0; Cancelled; no title handoff |
 | `--loading-fail assets.vehicles`, `world.renderer`, `world.population` | `build/cj030/checks/fail-*.log` | Exit 2; Failed; no title handoff |
 | Before/after `--scenario day` and `drive`, `--frames 180 --every 60 --uncapped` | `build/cj030/smoke/` logs and PNGs | Exit 0; exact matching pixels at frames 60, 120 and 180 |
+
+### Required files since 2026-10-11
+
+[ADR-0010](../adr/0010-no-fallback-content.md) ([CJ-034](../backlog.md#cj-034-no-fallback-content)) replaced the two fallback runs above. Re-run on 2026-10-11 with the CJ-034 build:
+
+| Run | Result |
+|---|---|
+| `--loading-test build/review/loadtest` | Exit 0; 20 captures, zero errors |
+| `--loading-config` naming a missing background | Exit 2 before anything is shown; the log names the file |
+| A copy of `assets/` without `weapons.cfg`, `traffic.cfg`, `loading.cfg`, `grass.png`, a tree image or `Rajdhani-SemiBold.ttf`, one at a time | Exit 2 each time; the log, and for content files the loading screen, name the missing file |
+| The complete copy | Exit 0 |
 
 Negative runs call partial cleanup twice while the graphics context is alive, then close it normally. This exercises cancellation during atlas work, minimap generation and audio work, and failure during textures, render-target preparation and late population work. The readiness gate prevents entering the title after any injected stop.
 

@@ -175,11 +175,11 @@ Do not show full paths, shader uniform names, debug times, log streams or a futu
 
 | State | Indicator and percentage | Status behavior |
 |---|---|---|
-| Bootstrap | Empty static track, no percentage | Primitive dark screen can draw before any optional art |
+| Bootstrap | No status | A plain dark frame in the base colour until the loading art and fonts are loaded ([ADR-0010](../adr/0010-no-fallback-content.md), 2026-10-11) |
 | Discovering | Empty static track, no percentage | Enumerate the startup plan without simulation side effects |
 | Loading | Determinate bar and integer percentage | Active task, useful local detail/count, recent completion |
 | Unmeasurable work | Static confirmed fill, no numeric percentage | Name the real operation and retain all confirmed progress visibly |
-| Loading with fallback | Actual work indicator | Preserve existing fallback policy and report usable outcomes |
+| Loading with fallback | Actual work indicator | No content fallbacks remain ([ADR-0010](../adr/0010-no-fallback-content.md), 2026-10-11); the audio still reports a missing device or sound |
 | Final preparation | Determinate, below 100% | Validate all mandatory startup prerequisites |
 | Ready | 100% and Ready | Hand off automatically at the next normal title update/draw |
 | Failed | Frozen track, no activity animation | Concise cause; “Press Esc to exit”; Alt+F4 remains available |
@@ -251,16 +251,16 @@ Readiness means the initialized title/world can actually run. Validate required 
 
 | Condition | Required behavior |
 |---|---|
-| Missing loading background/wordmark | Near-black background and plain amber title; status block remains usable |
-| Missing loading font | Built-in font; readable live status |
-| Missing data file | Preserve the loader's built-in defaults |
-| Missing regular art | Preserve that loader's existing skip/substitute behavior; distinguish valid fallbacks from skipped records |
+| Missing loading background/wordmark | Startup stops before anything is shown; the log names the file; exit code 2 ([ADR-0010](../adr/0010-no-fallback-content.md), 2026-10-11) |
+| Missing loading font | Startup stops before anything is shown; the log names the file; exit code 2 ([ADR-0010](../adr/0010-no-fallback-content.md), 2026-10-11) |
+| Missing data file | Failed state naming the file; no title handoff ([ADR-0010](../adr/0010-no-fallback-content.md), 2026-10-11) |
+| Missing regular art | Failed state naming the file; no title handoff ([ADR-0010](../adr/0010-no-fallback-content.md), 2026-10-11) |
 | No audio device | Continue silently and log the existing warning |
 | Mandatory resource cannot be prepared | Failed state, no 100%, no title handoff |
 | Alt+F4 during loading | Stop at the next safe boundary, unwind and close |
 | Optional resource legitimately omitted | Resolve it as policy-skipped; do not label absent data as loaded |
 
-Do not introduce a universal per-file fallback rule. Today some loaders skip missing records, while others generate art when an entire group is empty. Preserve these policies and validate resulting usable collections.
+Do not introduce a universal per-file fallback rule. Today some loaders skip missing records, while others generate art when an entire group is empty. Preserve these policies and validate resulting usable collections. Since 2026-10-11 every content file is required instead: [ADR-0010](../adr/0010-no-fallback-content.md) removed these policies.
 
 Shader checks validate the actual required composite/blur resources and locations, not every declared uniform. Composite requires `lightMap`, `emissive`, `bloomTex` and `bloomStrength`; blur requires `dir`. The unused composite `time` uniform may legitimately be optimized to −1. An empty or invalid required render target is not success. Log task ID, source path where relevant, error and disposition; release-screen text remains concise.
 
@@ -288,7 +288,7 @@ Runtime layers:
 |---|---|---|
 | Background | Final approved text-free 1,672 × 941 px PNG | Loading presentation |
 | Wordmark | Transparent two-line ivory/amber PNG, bounded near 640 × 360 px at reference scale | Loading presentation |
-| Status text | Small loading-only Rajdhani font atlas or the built-in bootstrap font | Loading presentation |
+| Status text | Small loading-only Rajdhani font atlas (required since [ADR-0010](../adr/0010-no-fallback-content.md)) | Loading presentation |
 | Contrast | Runtime gradient/vignette | Drawn directly |
 | Progress/status | Runtime geometry and live text | Drawn directly |
 
@@ -302,7 +302,7 @@ Target at most 16 MiB of additional loading-presentation GPU storage, including 
 
 Target presentation draw CPU time of at most 0.5 ms at 1,920 × 1,080 px on the matched baseline machine. Measure separately from waiting on VSync. The [measurement report](../testing/cj030-loading.md) records enqueue CPU, bootstrap time and resident GPU estimates; allocator-level transient CPU image memory remains uninstrumented.
 
-Release loading-only textures/font after the transition; keep them available in an error screen until exit. The fallback presentation must remain available if cosmetic loading itself fails.
+Release loading-only textures/font after the transition; keep them available in an error screen until exit. Since [ADR-0010](../adr/0010-no-fallback-content.md) there is no fallback presentation: if cosmetic loading itself fails, startup logs the missing file and exits with code 2.
 
 ## Acceptance criteria
 
@@ -316,7 +316,7 @@ The [measurement record](../testing/cj030-loading.md#verification-checklist) rec
 | L04 | Known synthetic work with unequal weights | Fill and percentage derive from confirmed weighted work; never run ahead, reverse or restart |
 | L05 | Unknown discovery/child work becoming known | Static confirmed fill; no invented percentage, animation, layout jump or changed global denominator |
 | L06 | An expensive final task and readiness rejection | 100% never appears before all mandatory checks pass |
-| L07 | Missing loading art/font and regular asset fallback cases | Presentation remains readable; original fallback policy preserved; successful/fallback/skipped outcomes distinguished |
+| L07 | Missing loading art/font and regular asset fallback cases | Presentation remains readable; original fallback policy preserved; successful/fallback/skipped outcomes distinguished. Superseded by [ADR-0010](../adr/0010-no-fallback-content.md): missing files stop startup with exit code 2 |
 | L08 | No audio device | Startup continues silently with a useful warning and valid progress |
 | L09 | Injected mandatory failure and cancellation at multiple safe boundaries | Clear stopped/error state, usable exit, no title entry, no double unload |
 | L10 | Slow cooperative work and individually timed atomic calls | 30 Hz cadence aim; checkpoint gaps ≤50 ms for subdividable work; atomic exceptions reported separately |

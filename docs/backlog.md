@@ -490,7 +490,7 @@ The testing guide gets an arena section with the test file format and the rule: 
 - **Priority:** High
 - **Status:** Implemented on 2026-10-11, awaiting playtest
 
-**Background.** On 2026-10-11 the user asked for a review of the whole code for bugs, optimisation opportunities and dead code, and chose to fix the bugs first. The dead code and simplifications are [CJ-036](#cj-036-dead-code-and-simplification); the audio's use of the gameplay random numbers is [CJ-037](#cj-037-audio-randomness-apart-from-gameplay). CPU time is no bottleneck (about 1.7 ms a frame on foot, 2.8 ms in `derby`), so no optimisation was made. Two bugs the user reported during the session are included: the police after a respawn, and the old startup frame (moved to CJ-034, which removes every fallback).
+**Background.** On 2026-10-11 the user asked for a review of the whole code for bugs, optimisation opportunities and dead code, and chose to fix the bugs first. The dead code and simplifications are [CJ-036](#cj-036-dead-code-and-simplification); the audio's use of the gameplay random numbers is [CJ-037](#cj-037-audio-randomness-apart-from-gameplay). CPU time is no bottleneck (about 1.7 ms a frame on foot, 2.8 ms in `derby`), so no optimisation was made. Two bugs the user reported during the session are included: the police after a respawn, and the old startup frame (moved to [CJ-034](#cj-034-no-fallback-content), which removes every fallback).
 
 **Fixes.**
 
@@ -562,7 +562,19 @@ The testing guide gets an arena section with the test file format and the rule: 
 | CJ-020 | Turning kinematics of traffic: the rear axle traces the path, a turn path per class from its turning circle, turning speed from lateral acceleration ([details](#cj-020-turning-kinematics-of-traffic)) | 2026-10-07 |
 | CJ-004 | Replace placeholder art: motorbikes from generated top-down art, 28 civilians rendered from 3D models ([details](#cj-004-replace-placeholder-art)) | 2026-10-08 |
 | CJ-030 | Startup loading screen: approved city art, fixed status rows and confirmed progress that adapts to actual work ([details](#cj-030-startup-loading-screen)) | 2026-10-09 |
+| CJ-034 | No fallback content: every data file and every file it names is required; the old startup frame, placeholder vehicles and trees, noise textures and the default font are gone ([details](#cj-034-no-fallback-content)) | 2026-10-11 |
 | CJ-029 | Civilian gait realism: a real walker's stride with calm arms, as much leg ahead of the body as behind it, a jog and a run that reach further, the walk locked to the distance walked ([details](#cj-029-civilian-gait-realism)) | 2026-10-09 |
+
+### CJ-034 No fallback content
+
+- **Priority:** High
+- **Status:** Done on 2026-10-11
+
+**Problem (user, 2026-10-11).** Every start showed, for about 0.4 s, an old-looking loading screen: the title and status in raylib's pixel font on a dark background, drawn before the loading screen's art and fonts were loaded. The user does not want old fallbacks in the code, and decided that a missing file stops the game with a message instead.
+
+**Result.** [ADR-0010](adr/0010-no-fallback-content.md): every data file in `assets/data/` and every file a record names is required; a missing or unreadable one, or a record naming an unknown vehicle class or colour, fails loading with a message naming it (exit code 2). The first frame is plain dark until the loading screen's art and fonts are loaded, and these are required too. Removed: the built-in copies of the data files, the procedural placeholder vehicles and trees with the `GEN` record, the noise textures, the fallback vehicle, trees, bushes and weapon, raylib's default font as the interface font, the loading screen's text-only presentation, and `tools/sprite_dump.cpp`, which only drew the removed placeholders.
+
+**Verification (2026-10-11).** `foot`, `day`, `derby`, `player:Shotgun` and `title` give the same startup digest and metric lines as before; the only log changes are `vehicles.cfg` being read once instead of twice and one mipmap line moving. `--loading-test` passes (20 captures, zero errors). From a copy of `assets/` with one file removed at a time (`weapons.cfg`, `traffic.cfg`, `loading.cfg`, `grass.png`, a tree image, `Rajdhani-SemiBold.ttf`) and with a missing loading background, startup exits with code 2 and names the file; the complete copy starts. See [CJ-030 loading checks](testing/cj030-loading.md#required-files-since-2026-10-11).
 
 ### CJ-029 Civilian gait realism
 

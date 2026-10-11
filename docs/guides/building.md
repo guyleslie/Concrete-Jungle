@@ -53,7 +53,7 @@ cmake --build build_cmake
 
 Use the Ninja generator: MinGW Make fails on the non-ASCII characters in the project path. The CMake build copies `assets/` next to the executable.
 
-All build entry points include the startup reporter, metadata discovery, loading renderer and snapshot fixture. Package the whole `assets/` directory, including `assets/data/loading.cfg` and `assets/ui/`; the loading images and fonts have a primitive fallback if missing.
+All build entry points include the startup reporter, metadata discovery, loading renderer and snapshot fixture. Package the whole `assets/` directory, including `assets/data/loading.cfg` and `assets/ui/`: every file in it is required ([ADR-0010](../adr/0010-no-fallback-content.md)).
 
 ### Manual
 
@@ -65,7 +65,7 @@ On Linux, replace the Windows libraries with `-lGL -lm -lpthread -ldl -lrt -lX11
 
 ## Running
 
-Run the executable from the project folder so it finds `assets/`; if it is not there, the game falls back to the executable's own folder. Missing data files or images do not stop the game — built-in defaults and procedural placeholders are used instead, and a warning is logged.
+Run the executable from the project folder so it finds `assets/`; if it is not there, the game falls back to the executable's own folder. Every data file and image is required ([ADR-0010](../adr/0010-no-fallback-content.md)): a missing one stops the game at startup with a message naming it, on the loading screen and in the log (exit code 2).
 
 For automated test runs, see [Testing](../testing.md).
 

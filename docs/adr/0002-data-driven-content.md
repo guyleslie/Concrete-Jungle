@@ -1,6 +1,6 @@
 # ADR-0002: Data-driven content in plain-text files
 
-- **Status:** Accepted; amended by [ADR-0009](0009-required-character-atlases.md): the player's and the civilians' atlases are required and have no procedural fallback
+- **Status:** Accepted; amended by [ADR-0009](0009-required-character-atlases.md): the player's and the civilians' atlases are required and have no procedural fallback; and by [ADR-0010](0010-no-fallback-content.md): every data file and every file it names is required, with no built-in defaults or procedural fallbacks
 - **Date:** 2026-09-26 (recorded 2026-09-27)
 
 ## Context

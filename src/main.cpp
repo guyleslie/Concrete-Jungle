@@ -3,8 +3,8 @@
 //
 //  Module overview:
 //    config.h          global constants (scale 16 px = 1 m, city size, population)
-//    assets.*          data-driven asset loading (assets/data/*.cfg) + fallbacks
-//    sprite_gen.*      procedural sprite painter (props, placeholders)
+//    assets.*          data-driven asset loading (assets/data/*.cfg), all files required
+//    sprite_gen.*      procedural sprite painter (street furniture, metro car)
 //    render.*          3D renderer core: camera, render targets, bloom, sprite helpers
 //    lighting.*        day/night cycle
 //    city_map.*        procedural city: tiles, 3D buildings, rail, furniture, signals
@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
 
     // Assets are loaded relative to the working directory; fall back to the exe folder.
     if (!DirectoryExists("assets")) ChangeDirectory(GetApplicationDirectory());
-    if (!DirectoryExists("assets")) TraceLog(LOG_WARNING, "assets/ folder not found - using procedural fallbacks");
+    if (!DirectoryExists("assets")) TraceLog(LOG_ERROR, "assets/ folder not found: the game cannot start without it");
 
     const double startupStart = GetTime();
     // Startup repaints are work checkpoints, so a swap must not add a vsync wait.
@@ -150,9 +150,13 @@ int main(int argc, char** argv) {
     const bool restoreVsync = !(shot && uncapped) && !loadingFixture;
     if (restoreVsync) ClearWindowState(FLAG_VSYNC_HINT);
     LoadingScreen loadingScreen;
-    startup::Snapshot bootstrap;
-    BeginDrawing(); loadingScreen.Draw(bootstrap); EndDrawing();
-    loadingScreen.Load(loadingConfig);
+    // The loading screen's art and fonts take about 0.4 s: a plain dark frame until then.
+    BeginDrawing(); loadingScreen.DrawBackdrop(); EndDrawing();
+    if (!loadingScreen.Load(loadingConfig)) {
+        // Without its own files the loading screen cannot report anything (ADR-0010).
+        TraceLog(LOG_ERROR, "STARTUP failed: the loading screen's files (%s) are missing or unreadable", loadingConfig);
+        loadingScreen.Unload(); CloseWindow(); return 2;
+    }
     TraceLog(LOG_INFO, "STARTUP bootstrap %.3f ms loading-gpu-bytes=%llu", (GetTime() - startupStart) * 1000,
              (unsigned long long)loadingScreen.GPUBytes());
     if (loadingTest) {

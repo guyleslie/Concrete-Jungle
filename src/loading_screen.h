@@ -23,8 +23,11 @@ public:
     LoadingScreen(const LoadingScreen&) = delete;
     LoadingScreen& operator=(const LoadingScreen&) = delete;
 
-    // Cosmetic failures retain the primitive presentation; they do not fail startup.
-    void Load(const char* configPath = "assets/data/loading.cfg");
+    // The configuration, background, wordmark and fonts are required (ADR-0010): false,
+    // with the missing file in the log, when one is missing or unreadable.
+    bool Load(const char* configPath = "assets/data/loading.cfg");
+    // Before Load: a plain frame in the base colour, so the window shows no fallback text.
+    void DrawBackdrop() const;
     void Draw(const startup::Snapshot& snapshot, float opacity = 1.0f) const;
     // Same production drawing with explicit viewport dimensions for off-screen QA.
     void DrawAtSize(const startup::Snapshot& snapshot, int width, int height,
@@ -46,10 +49,9 @@ private:
     } theme;
     Texture2D background{}, logo{};
     Font boldFont{}, semiFont{};
-    bool ownsBold = false, ownsSemi = false;
     std::unordered_map<std::string, std::string> headlines, labels, details, text;
 
-    Font Face(bool bold) const;
+    Font Face(bool bold) const { return bold ? boldFont : semiFont; }
     std::string Text(const char* key, const char* fallback) const;
-    void ReadConfig(const char* path);
+    bool ReadConfig(const char* path);
 };

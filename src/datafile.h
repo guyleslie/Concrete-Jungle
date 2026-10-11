@@ -21,6 +21,7 @@ struct DataRecord {
     bool   Is(const char* type) const;          // case-insensitive compare of token 0
 };
 
-// Parses a file (or, if it does not exist, the given fallback text).
-std::vector<DataRecord> ReadDataFile(const char* path, const char* fallbackText = nullptr);
+// Parses a file; a missing or unreadable one gives no records and an error in the log.
+// Every data file is required (ADR-0010): the loaders check that it exists first.
+std::vector<DataRecord> ReadDataFile(const char* path);
 std::vector<DataRecord> ParseDataText(const char* text);

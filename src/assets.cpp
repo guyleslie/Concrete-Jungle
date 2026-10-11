@@ -17,7 +17,6 @@ using namespace spritegen;
 // Startup stays on the main thread. This scope lets CPU image helpers report safe
 // checkpoints without coupling procedural art or the asset format to presentation.
 static startup::Reporter* assetReporter = nullptr;
-static bool assetFallback = false;
 struct AssetInterrupted {};
 
 struct AssetReportingScope {
@@ -37,14 +36,8 @@ struct AssetImageGuard {
     ~AssetImageGuard() { if (image) FreeAssetImage(*image); }
     void Release() { image = nullptr; }
 };
-struct AssetImageListGuard {
-    std::vector<Image>& images;
-    explicit AssetImageListGuard(std::vector<Image>& values) : images(values) {}
-    ~AssetImageListGuard() { for (Image& image : images) FreeAssetImage(image); }
-};
 
 static void AssetBegin(const char* id, const char* detail) {
-    assetFallback = false;
     if (assetReporter) AssetRequire(assetReporter->Begin(id, detail));
 }
 static void AssetPlan(const std::vector<startup::ChildSpec>& children) {
@@ -59,20 +52,21 @@ static void AssetFraction(const char* id, double fraction) {
 static void AssetCount(int64_t done, int64_t total, const char* unit) {
     if (assetReporter) AssetRequire(assetReporter->Count(done, total, total ? unit : ""));
 }
-static void AssetFinish(const char* warning) {
-    if (assetReporter) AssetRequire(assetReporter->Finish(assetFallback ? startup::Outcome::ReadyWithFallback : startup::Outcome::Ready,
-                                                        assetFallback ? warning : nullptr));
+static void AssetFinish() {
+    if (assetReporter) AssetRequire(assetReporter->Finish());
 }
-static void AssetValidate(bool valid, const char* cause) {
+// Every content file is required (ADR-0010): a missing or broken one stops loading with
+// a message that names it, shown on the loading screen and in the log.
+static void AssetValidate(bool valid, const std::string& cause) {
     if (valid) return;
-    TraceLog(LOG_ERROR, "ASSETS: %s", cause);
-    if (assetReporter) assetReporter->Fail(cause);
+    TraceLog(LOG_ERROR, "ASSETS: %s", cause.c_str());
+    if (assetReporter) assetReporter->Fail(cause.c_str());
     throw AssetInterrupted{};
 }
-static std::vector<DataRecord> AssetData(const char* path, const char* fallback) {
-    if (!FileExists(path)) assetFallback = true;
+static std::vector<DataRecord> AssetData(const char* path) {
+    AssetValidate(FileExists(path), std::string("Missing data file ") + path);
     startup::AtomicSpan span(assetReporter, "data", path);
-    return ReadDataFile(path, fallback);
+    return ReadDataFile(path);
 }
 template<class Make>
 static Image AssetProcedural(const char* name, Make make) {
@@ -130,26 +124,14 @@ static Texture2D MakeTexture(Image img, bool repeat, bool mipmaps) {
     return t;
 }
 
-static bool TryLoadImage(const char* path, Image& out) {
-    if (!FileExists(path)) { assetFallback = true; TraceLog(LOG_WARNING, "ASSETS: missing '%s' - using fallback", path); return false; }
-    { startup::AtomicSpan span(assetReporter, "decode", path); out = LoadImage(path); }
-    if (!out.data) { assetFallback = true; return false; }
-    { startup::AtomicSpan span(assetReporter, "image", "Image format conversion"); ImageFormat(&out, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8); }
-    return true;
-}
-
-static Image NoiseImage(int size, Color a, Color b, float scale, int seed) {
-    Image n;
-    { startup::AtomicSpan span(assetReporter, "procedural", "Material noise"); n = GenImagePerlinNoise(size, size, seed, seed * 3, scale); }
-    AssetImageGuard guard(n);
-    ImageFormat(&n, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-    Color* px = (Color*)n.data;
-    for (int i = 0; i < size * size; i++) {
-        if (i % 4096 == 0) AssetPulse();
-        px[i] = LerpColor(a, b, px[i].r / 255.0f);
-    }
-    guard.Release();
-    return n;
+// The image a data file names (RGBA): a missing or unreadable file stops loading.
+static Image LoadRequiredImage(const char* path) {
+    AssetValidate(FileExists(path), std::string("Missing image ") + path);
+    Image img;
+    { startup::AtomicSpan span(assetReporter, "decode", path); img = LoadImage(path); }
+    AssetValidate(img.data != nullptr, std::string("Unreadable image ") + path);
+    { startup::AtomicSpan span(assetReporter, "image", "Image format conversion"); ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8); }
+    return img;
 }
 
 // Shift hue of the saturated ("paint") pixels of a sprite -> colour variants.
@@ -217,11 +199,10 @@ static int AddVehicle(Assets& a, Image img, VClass cls, bool spawnable = true) {
 // -------------------------------------------------------------------------------------
 struct FacadeStyle { int cols, rows; float winW, winH; Color glassTop, glassBot, frame; };
 
-static Image MakeFacade(const char* basePath, Color fallback, const FacadeStyle& st) {
-    Image img{};
+static Image MakeFacade(const char* basePath, const FacadeStyle& st) {
+    Image img = LoadRequiredImage(basePath);
     AssetImageGuard guard(img);
-    if (TryLoadImage(basePath, img)) { startup::AtomicSpan span(assetReporter, "resize", "Facade resize"); ImageResize(&img, 256, 256); }
-    else img = NoiseImage(256, ColorMul(fallback, 0.85f), fallback, 3.0f, 7);
+    { startup::AtomicSpan span(assetReporter, "resize", "Facade resize"); ImageResize(&img, 256, 256); }
     float cw = 256.0f / st.cols, ch = 256.0f / st.rows;
     for (int r = 0; r < st.rows; r++)
         for (int c = 0; c < st.cols; c++) {
@@ -438,119 +419,7 @@ void main() {
 )";
 
 // -------------------------------------------------------------------------------------
-//  Built-in defaults for the data files (used only if assets/data/*.cfg is missing)
-// -------------------------------------------------------------------------------------
-static const char* DEFAULT_VEHICLE_SPRITES = R"(
-# SPRITE  <class> <file> <extra paint variants 0-3>
-SPRITE Stinger   audi.png       3
-SPRITE Viper     viper.png      0
-SPRITE Bruiser   muscle.png     3
-SPRITE Taxi      taxi.png       0
-SPRITE Pickup    pickup.png     3
-SPRITE Van       van.png        2
-SPRITE Ambulance ambulance.png  0
-SPRITE Police    police.png     0
-SPRITE Semi      semi.png       2
-# DERIVE  <class> stretch <file> <band start> <band end> <factor> <paint colours...>
-DERIVE Limo      stretch muscle.png 0.40 0.58 2.3  black white silver
-DERIVE Bus       stretch van.png    0.30 0.93 2.5  orange yellow blue white
-# COMPOSE <class> <front file> <from> <to> <rear file> <from> <to> <rear stretch> <paint colours...>
-COMPOSE BoxTruck  semi.png 0.00 0.52 van.png 0.28 1.00 1.35 white navy cream grey
-COMPOSE FireTruck semi.png 0.00 0.52 van.png 0.28 1.00 1.35 red
-COMPOSE Garbage   semi.png 0.00 0.52 van.png 0.28 1.00 1.30 darkgreen orange
-# BIKE <class> <empty file> <ridden file>
-BIKE Sportbike sportbike-empty.png sportbike-ridden.png
-BIKE Chopper   chopper-empty.png   chopper-ridden.png
-BIKE Scooter   scooter-empty.png   scooter-ridden.png
-)";
-
-static const char* DEFAULT_WEAPONS = R"(
-WEAPON Fists      unarmed     12  2.5  0  1  1.2  0   0    0    melee punch
-WEAPON Knife      knife       40  2.0  0  1  1.4  0   0    0    melee knife
-WEAPON Pistol     handgun     26  4.0  3  1  40   12  96   1.2  semi  pistol
-WEAPON Shotgun    shotgun     14  1.1  14 8  22   6   36   2.2  semi  shotgun shells 0.45 0.40
-WEAPON Rifle      rifle       22  10   4  1  60   30  180  2.0  auto  rifle
-WEAPON Flashlight flashlight  10  2.0  0  1  1.4  0   0    0    melee punch light
-)";
-
-static const char* DEFAULT_CIVILIANS = R"(
-FRAME 144 2.1
-SCALE 1.12
-SWAY 0
-ANIM walk 0 16
-ANIM idle 16 1
-ANIM lying 17 1
-ANIM punch 18 2
-ANIM fist 20 2
-ANIM jog 22 8
-ANIM run 30 8
-GAIT jog 2.0 2.5 4.0 2.8
-GAIT run 4.0 2.8 6.5 3.3
-WALK 1.05
-CIVILIAN civilian-01.png
-CIVILIAN civilian-02.png
-CIVILIAN civilian-03.png
-CIVILIAN civilian-04.png
-CIVILIAN civilian-05.png
-CIVILIAN civilian-06.png
-CIVILIAN civilian-07.png
-CIVILIAN civilian-08.png
-CIVILIAN civilian-09.png
-CIVILIAN civilian-10.png
-CIVILIAN civilian-11.png
-CIVILIAN civilian-12.png
-CIVILIAN civilian-13.png
-CIVILIAN civilian-14.png
-CIVILIAN civilian-15.png
-CIVILIAN civilian-16.png
-CIVILIAN civilian-17.png
-CIVILIAN civilian-18.png
-CIVILIAN civilian-19.png
-CIVILIAN civilian-20.png
-CIVILIAN civilian-21.png
-CIVILIAN civilian-22.png
-CIVILIAN civilian-23.png
-CIVILIAN civilian-24.png
-CIVILIAN civilian-25.png
-CIVILIAN civilian-26.png
-CIVILIAN civilian-27.png
-CIVILIAN civilian-28.png
-)";
-
-static const char* DEFAULT_FOLIAGE = R"(
-TREE oaktoonbranchesgreen.png
-TREE oaktoonbranchesolivegreen.png
-TREE oaktoonbranchesautunm.png
-TREE oaktoonbranchesorange.png
-TREE oaktoonbranchescold.png
-TREE treetoonbranchtextures.png
-TREE treetoonbranchautunm.png
-TREE treetoonbranchorange.png
-TREE treetoonbranchcold.png
-TREE kapoktoonleaves.png
-TREE kapoktoonleavesmatured.png
-TREE toonsimplescircularbranches.png
-TREE toonsimplesbasicbranch.png
-TREE toonsimplesbasicbranchjungle.png
-TREE toonsimplesbasicbranchautunm.png
-TREE toonsimplesbasicbranchexoticcontrastpink.png
-TREE toonsimplesbasicbranchexoticpurple.png
-BUSH toonsimplesleafs.png
-BUSH toonsimplesyoungleafs.png
-BUSH kapoktoonleavesemergent.png
-BUSH toonsimplesleafsorange.png
-BUSH toonsimplesleafreds.png
-BUSH toonsimplesleafsredcontrast.png
-BUSH toonsimplesleafintenseyellow.png
-BUSH toonsimplesleafsyellowdeciduous.png
-BUSH toonsimplesleafsyellowdesciduousextra.png
-BUSH toonsimplesbasicbranchexoticcontrastyellow.png
-BUSH toonsimplesbasicbranchexoticcontrastreds.png
-BUSH toonsimplesbasicbranchcold.png
-)";
-
-// -------------------------------------------------------------------------------------
-//  Colour parsing for GEN lines: named colours or r,g,b ; several joined by '/'
+//  Paint colours of derived vehicles: a named colour or r,g,b
 // -------------------------------------------------------------------------------------
 static Color ParseColor(const std::string& s) {
     struct Named { const char* n; Color c; };
@@ -565,22 +434,10 @@ static Color ParseColor(const std::string& s) {
     };
     for (const Named& n : table) if (s == n.n) return n.c;
     int r = 128, g = 128, b = 128;
-    if (sscanf(s.c_str(), "%d,%d,%d", &r, &g, &b) == 3) return { (unsigned char)r, (unsigned char)g, (unsigned char)b, 255 };
-    TraceLog(LOG_WARNING, "ASSETS: unknown colour '%s'", s.c_str());
-    return GRAY;
+    bool parsed = sscanf(s.c_str(), "%d,%d,%d", &r, &g, &b) == 3;
+    AssetValidate(parsed, "vehicles.cfg: unknown colour '" + s + "'");
+    return { (unsigned char)r, (unsigned char)g, (unsigned char)b, 255 };
 }
-static std::vector<Color> ParseColors(const std::string& s) {
-    std::vector<Color> out;
-    size_t a = 0;
-    while (a <= s.size()) {
-        size_t b = s.find('/', a);
-        if (b == std::string::npos) b = s.size();
-        if (b > a) out.push_back(ParseColor(s.substr(a, b - a)));
-        a = b + 1;
-    }
-    return out;
-}
-static Color Pick(const std::vector<Color>& v, size_t i, Color def) { return i < v.size() ? v[i] : def; }
 
 // -------------------------------------------------------------------------------------
 //  Deriving new vehicles from existing sprites (keeps the original art style)
@@ -644,18 +501,23 @@ static Image Repaint(const Image& src, Color target, bool neutralToo) {
 }
 
 // -------------------------------------------------------------------------------------
-//  Vehicles (vehicles.cfg: SPRITE / DERIVE / COMPOSE / BIKE / GEN records)
+//  Vehicles (vehicles.cfg: SPRITE / DERIVE / COMPOSE / BIKE records)
 // -------------------------------------------------------------------------------------
+static VClass RequiredClass(const DataRecord& r) {
+    VClass cls = FindVehicleClass(r[1]);
+    AssetValidate(cls >= 0, TextFormat("vehicles.cfg line %d: unknown class '%s'", r.line, r[1].c_str()));
+    return cls;
+}
+
 static void LoadVehicles(Assets& A) {
-    { startup::AtomicSpan span(assetReporter, "data", "Vehicle classes"); LoadVehicleClasses(); }
+    const auto records = AssetData("assets/data/vehicles.cfg");
+    { startup::AtomicSpan span(assetReporter, "data", "Vehicle classes"); LoadVehicleClasses(records); }
     A.byClass.assign(VehicleClasses().size(), {});
-    std::string fallback = std::string(DefaultVehiclesCfg()) + DEFAULT_VEHICLE_SPRITES;
     char path[256];
     const float hues[3] = { 130, 215, 0 };
-    const auto records = AssetData("assets/data/vehicles.cfg", fallback.c_str());
     AssetPlan({ { "classes", 1 }, { "records", (double)std::max<size_t>(1, records.size()), false },
-                { "fallback", 1, false }, { "train", 1 }, { "validation", 1 } });
-    AssetValidate(!A.byClass.empty(), "No usable vehicle classes are available");
+                { "train", 1 }, { "validation", 1 } });
+    AssetValidate(!A.byClass.empty(), "vehicles.cfg defines no vehicle class");
     AssetDone("classes");
     int64_t completed = 0;
     AssetCount(0, (int64_t)records.size(), "records processed");
@@ -663,12 +525,10 @@ static void LoadVehicles(Assets& A) {
         AssetRecordStep step("records", completed, (int64_t)records.size());
         AssetPulse(r[1].c_str());
         if (r.Is("SPRITE") && r.size() >= 3) {
-            VClass cls = FindVehicleClass(r[1]);
-            if (cls < 0) { assetFallback = true; TraceLog(LOG_WARNING, "vehicles.cfg:%d unknown class '%s'", r.line, r[1].c_str()); continue; }
+            VClass cls = RequiredClass(r);
             snprintf(path, sizeof(path), "assets/vehicles/%s", r[2].c_str());
-            Image img{};
+            Image img = LoadRequiredImage(path);
             AssetImageGuard guard(img);
-            if (!TryLoadImage(path, img)) continue;
             int variants = std::min(3, r.I(3, 0));
             for (int v = 0; v < variants; v++) {
                 if (v == 2) AddVehicle(A, RecolorPaint(img, 0, 0.08f, 1.15f), cls);   // silver
@@ -677,15 +537,14 @@ static void LoadVehicles(Assets& A) {
             guard.Release();
             AddVehicle(A, img, cls);
         } else if (r.Is("BIKE") && r.size() >= 4) {
-            VClass cls = FindVehicleClass(r[1]);
-            if (cls < 0) { assetFallback = true; TraceLog(LOG_WARNING, "vehicles.cfg:%d unknown class '%s'", r.line, r[1].c_str()); continue; }
+            VClass cls = RequiredClass(r);
             char pathR[256];
             snprintf(path, sizeof(path), "assets/vehicles/%s", r[2].c_str());
             snprintf(pathR, sizeof(pathR), "assets/vehicles/%s", r[3].c_str());
-            Image empty{}, ridden{};
-            AssetImageGuard emptyGuard(empty), riddenGuard(ridden);
-            if (!TryLoadImage(path, empty)) continue;
-            if (!TryLoadImage(pathR, ridden)) { FreeAssetImage(empty); continue; }
+            Image empty = LoadRequiredImage(path);
+            AssetImageGuard emptyGuard(empty);
+            Image ridden = LoadRequiredImage(pathR);
+            AssetImageGuard riddenGuard(ridden);
             emptyGuard.Release();
             int e = AddVehicle(A, empty, cls, false);
             riddenGuard.Release();
@@ -699,69 +558,32 @@ static void LoadVehicles(Assets& A) {
                 TraceLog(LOG_WARNING, "vehicles.cfg:%d '%s' and '%s' differ in aspect (%.0fx%.0f, %.0fx%.0f px)",
                          r.line, r[2].c_str(), r[3].c_str(), a.width, a.height, b.width, b.height);
         } else if ((r.Is("DERIVE") && r.size() >= 7) || (r.Is("COMPOSE") && r.size() >= 9)) {
-            VClass cls = FindVehicleClass(r[1]);
-            if (cls < 0) { assetFallback = true; TraceLog(LOG_WARNING, "vehicles.cfg:%d unknown class '%s'", r.line, r[1].c_str()); continue; }
+            VClass cls = RequiredClass(r);
             Image base{};
             AssetImageGuard baseGuard(base);
             size_t firstColour;
             if (r.Is("DERIVE")) {
                 snprintf(path, sizeof(path), "assets/vehicles/%s", r[3].c_str());
-                Image a{};
+                Image a = LoadRequiredImage(path);
                 AssetImageGuard aGuard(a);
-                if (!TryLoadImage(path, a)) continue;
                 base = StretchBand(a, r.F(4), r.F(5), r.F(6));
-                FreeAssetImage(a);
                 firstColour = 7;
             } else {
                 char pathB[256];
                 snprintf(path, sizeof(path), "assets/vehicles/%s", r[2].c_str());
                 snprintf(pathB, sizeof(pathB), "assets/vehicles/%s", r[5].c_str());
-                Image a{}, b{};
-                AssetImageGuard aGuard(a), bGuard(b);
-                if (!TryLoadImage(path, a)) continue;
-                if (!TryLoadImage(pathB, b)) { FreeAssetImage(a); continue; }
+                Image a = LoadRequiredImage(path);
+                AssetImageGuard aGuard(a);
+                Image b = LoadRequiredImage(pathB);
+                AssetImageGuard bGuard(b);
                 base = ComposeVehicle(a, r.F(3), r.F(4), b, r.F(6), r.F(7), r.F(8, 1.0f));
-                FreeAssetImage(a); FreeAssetImage(b);
                 firstColour = 9;
             }
             if (r.size() <= firstColour) AddVehicle(A, ImageCopy(base), cls);
             for (size_t k = firstColour; k < r.size(); k++) AddVehicle(A, Repaint(base, ParseColor(r[k]), true), cls);
-            FreeAssetImage(base);
-        } else if (r.Is("GEN") && r.size() >= 3) {
-            VClass cls = FindVehicleClass(r[1]);
-            if (cls < 0) { assetFallback = true; TraceLog(LOG_WARNING, "vehicles.cfg:%d unknown class '%s'", r.line, r[1].c_str()); continue; }
-            const std::string& g = r[2];
-            std::vector<std::vector<Color>> paints;
-            for (size_t k = 3; k < r.size(); k++) paints.push_back(ParseColors(r[k]));
-            if (paints.empty()) paints.push_back({ GRAY });
-            for (const auto& c : paints) {
-                Color c0 = Pick(c, 0, GRAY), c1 = Pick(c, 1, WHITE), c2 = Pick(c, 2, RED);
-                if      (g == "car_hatch")  AddVehicle(A, AssetProcedural("Hatchback", [&] { return Car(c0, CarStyle::Hatchback); }), cls);
-                else if (g == "car_sedan")  AddVehicle(A, AssetProcedural("Sedan", [&] { return Car(c0, CarStyle::Sedan); }), cls);
-                else if (g == "car_coupe")  AddVehicle(A, AssetProcedural("Coupe", [&] { return Car(c0, CarStyle::Coupe); }), cls);
-                else if (g == "car_suv")    AddVehicle(A, AssetProcedural("SUV", [&] { return Car(c0, CarStyle::SUV); }), cls);
-                else if (g == "car_limo")   AddVehicle(A, AssetProcedural("Limousine", [&] { return Car(c0, CarStyle::Limo); }), cls);
-                else if (g == "bus")        AddVehicle(A, AssetProcedural("Bus", [&] { return Bus(c0, c1); }), cls);
-                else if (g == "boxtruck")   AddVehicle(A, AssetProcedural("Box truck", [&] { return BoxTruck(c0, c1, c2); }), cls);
-                else if (g == "firetruck")  AddVehicle(A, AssetProcedural("Fire truck", [] { return FireTruck(); }), cls);
-                else if (g == "garbage")    AddVehicle(A, AssetProcedural("Garbage truck", [&] { return GarbageTruck(c0); }), cls);
-                else if (g.rfind("bike_", 0) == 0 || g == "bike_scooter") {
-                    BikeStyle st = g == "bike_chopper" ? BikeStyle::Chopper : g == "bike_scooter" ? BikeStyle::Scooter : BikeStyle::Sport;
-                    int empty = AddVehicle(A, AssetProcedural("Empty motorbike", [&] { return Motorbike(c0, false, c1, c2, st); }), cls, false);
-                    int ridden = AddVehicle(A, AssetProcedural("Ridden motorbike", [&] { return Motorbike(c0, true, c1, c2, st); }), cls);
-                    A.vehicles[ridden].emptySkin = empty;
-                    A.vehicles[empty].emptySkin = empty;
-                } else TraceLog(LOG_WARNING, "vehicles.cfg:%d unknown generator '%s'", r.line, g.c_str());
-            }
         }
     }
     AssetDone("records", records.empty() ? startup::Outcome::Skipped : startup::Outcome::Ready);
-    if (A.vehicles.empty()) {
-        assetFallback = true;
-        AssetPulse("Generating a fallback vehicle");
-        AddVehicle(A, AssetProcedural("Fallback vehicle", [] { return Car({ 200, 30, 35, 255 }, CarStyle::Hatchback); }), 0);
-        AssetDone("fallback", startup::Outcome::ReadyWithFallback);
-    } else AssetDone("fallback", startup::Outcome::Skipped);
     for (VClass c = 0; c < (VClass)A.byClass.size(); c++) {
         if (A.byClass[c].empty()) continue;
         const VehicleSprite& s = A.vehicles[A.byClass[c][0]];
@@ -832,7 +654,7 @@ static void LoadCivilians(Assets& A) {
     PedGait jog, run;
     size_t bytes = 0, uniform = 0;
     char path[256];
-    const auto records = AssetData("assets/data/civilians.cfg", DEFAULT_CIVILIANS);
+    const auto records = AssetData("assets/data/civilians.cfg");
     AssetPlan({ { "records", (double)std::max<size_t>(1, records.size()), false }, { "validation", 1 } });
     int64_t completed = 0;
     AssetCount(0, (int64_t)records.size(), "records processed");
@@ -852,23 +674,18 @@ static void LoadCivilians(Assets& A) {
             if (r[1] == "jog") jog = g; else if (r[1] == "run") run = g;
             else TraceLog(LOG_WARNING, "civilians.cfg:%d unknown gait '%s'", r.line, r[1].c_str());
         } else if (r.Is("CIVILIAN") && r.size() >= 2) {
-            if (framePx <= 0 || frameM <= 0) { TraceLog(LOG_WARNING, "civilians.cfg:%d CIVILIAN before FRAME", r.line); continue; }
+            AssetValidate(framePx > 0 && frameM > 0, TextFormat("civilians.cfg line %d: CIVILIAN before FRAME", r.line));
             snprintf(path, sizeof(path), "assets/characters/civilians/%s", r[1].c_str());
-            Image img{};
+            Image img = LoadRequiredImage(path);
             AssetImageGuard guard(img);
-            if (!TryLoadImage(path, img)) continue;
             int n = img.width / framePx, needed = 0;
             for (const PedFrames& f : layout) needed = std::max(needed, f.first + f.count);
             bool complete = layout[(int)PedAnim::Walk].count > 0 && layout[(int)PedAnim::Idle].count > 0 &&
                             layout[(int)PedAnim::Lying].count > 0 && layout[(int)PedAnim::Punch].count >= 2 &&
                             layout[(int)PedAnim::Fist].count >= 2;
-            if (img.height != framePx || !complete || n < needed || (frames && n != frames)) {
-                TraceLog(LOG_WARNING, "civilians.cfg:%d '%s' is %dx%d px: expected %d px frames, at least %d of them, like the others",
-                         r.line, r[1].c_str(), img.width, img.height, framePx, needed);
-                assetFallback = true;
-                FreeAssetImage(img);
-                continue;
-            }
+            AssetValidate(img.height == framePx && complete && n >= needed && (!frames || n == frames),
+                          TextFormat("civilians.cfg line %d: '%s' is %dx%d px: expected %d px frames, at least %d of them, like the others",
+                                     r.line, r[1].c_str(), img.width, img.height, framePx, needed));
             frames = n;
             uniform += (size_t)img.width * img.height * 4;
             CivilianAtlas a;
@@ -952,18 +769,15 @@ static int PlayerActByName(const std::string& s) {
 
 // Loads player.cfg and its atlases; the player cannot be drawn without them (ADR-0009).
 static void LoadPlayer(Assets& A) {
-    const auto records = AssetData("assets/data/player.cfg", "");
+    const auto records = AssetData("assets/data/player.cfg");
     int framePx = 0, cols = 16;
     float frameM = 0, scale = 1.0f;
     size_t bytes = 0;
     char path[256];
     auto loadAtlas = [&](FrameAtlas& atlas, const std::string& file) {
         snprintf(path, sizeof(path), "assets/characters/player/%s", file.c_str());
-        Image img{};
-        AssetImageGuard guard(img);
-        if (framePx <= 0 || !TryLoadImage(path, img)) return false;
-        guard.Release();
-        bytes += PackFrames(atlas, img, framePx, cols);
+        if (framePx <= 0) return false;
+        bytes += PackFrames(atlas, LoadRequiredImage(path), framePx, cols);
         return true;
     };
     bool ok = !records.empty();
@@ -1024,12 +838,11 @@ const PlayerSet* Assets::FindPlayerSet(const std::string& name) const {
 //  The player (player.cfg) and weapons (weapons.cfg)
 // -------------------------------------------------------------------------------------
 static void LoadCharacters(Assets& A) {
-    AssetPlan({ { "player", 7 }, { "weapons", 1, false }, { "fallback_weapon", 1, false }, { "validation", 1 } });
+    AssetPlan({ { "player", 7 }, { "weapons", 1, false }, { "validation", 1 } });
     LoadPlayer(A);
     AssetDone("player");
     int64_t completed = 0;
-    const auto weapons = AssetData("assets/data/weapons.cfg", DEFAULT_WEAPONS);
-    completed = 0;
+    const auto weapons = AssetData("assets/data/weapons.cfg");
     AssetPulse("Weapon definitions");
     AssetCount(0, (int64_t)weapons.size(), "records processed");
     for (const DataRecord& r : weapons) {
@@ -1048,14 +861,10 @@ static void LoadCharacters(Assets& A) {
         A.weapons.push_back(w);
     }
     AssetDone("weapons", weapons.empty() ? startup::Outcome::Skipped : startup::Outcome::Ready);
-    if (A.weapons.empty()) {
-        assetFallback = true;
-        WeaponDef w; w.name = "Fists"; w.animSet = "unarmed"; A.weapons.push_back(w);
-        AssetDone("fallback_weapon", startup::Outcome::ReadyWithFallback);
-    } else AssetDone("fallback_weapon", startup::Outcome::Skipped);
-    AssetValidate(!A.weapons.empty(), "No usable weapon definitions are available");
+    AssetValidate(!A.weapons.empty(), "weapons.cfg defines no weapon");
     for (const WeaponDef& w : A.weapons)
-        AssetValidate(A.FindPlayerSet(w.animSet) != nullptr, "A weapon's set has no player atlas in player.cfg");
+        AssetValidate(A.FindPlayerSet(w.animSet) != nullptr,
+                      "weapons.cfg: the set '" + w.animSet + "' of " + w.name + " has no player atlas in player.cfg");
     AssetDone("validation");
 }
 
@@ -1067,11 +876,7 @@ int Assets::FindWeapon(const std::string& name) const {
 // -------------------------------------------------------------------------------------
 //  Load everything
 // -------------------------------------------------------------------------------------
-static Texture2D LoadMaterial(const char* path, Color fa, Color fb) {
-    Image img;
-    if (!TryLoadImage(path, img)) img = NoiseImage(256, fa, fb, 4.0f, 3);
-    return MakeTexture(img, true, true);
-}
+static Texture2D LoadMaterial(const char* path) { return MakeTexture(LoadRequiredImage(path), true, true); }
 
 bool Assets::Load(startup::Reporter* reporter) {
     AssetReportingScope reporting(reporter);
@@ -1088,19 +893,19 @@ bool Assets::Load(startup::Reporter* reporter) {
         };
         AssetCount(0, 12, "textures prepared");
         AssetPulse("Asphalt");
-        asphalt  = LoadMaterial("assets/textures/asphalt.png",  { 40, 40, 42, 255 }, { 70, 70, 72, 255 });
+        asphalt  = LoadMaterial("assets/textures/asphalt.png");
         textureDone(0, 12); AssetPulse("Pavements");
-        sidewalk = LoadMaterial("assets/textures/sidewalk.png", { 150, 145, 135, 255 }, { 185, 180, 170, 255 });
+        sidewalk = LoadMaterial("assets/textures/sidewalk.png");
         textureDone(1, 12); AssetPulse("Concrete");
-        concrete = LoadMaterial("assets/textures/concrete.png", { 160, 160, 160, 255 }, { 200, 200, 200, 255 });
+        concrete = LoadMaterial("assets/textures/concrete.png");
         textureDone(2, 12); AssetPulse("Gravel");
-        gravel   = LoadMaterial("assets/textures/gravel.png",   { 90, 90, 85, 255 }, { 130, 125, 120, 255 });
+        gravel   = LoadMaterial("assets/textures/gravel.png");
         textureDone(3, 12); AssetPulse("Grass");
-        grass    = LoadMaterial("assets/textures/grass.png",    { 40, 90, 30, 255 }, { 80, 130, 50, 255 });
+        grass    = LoadMaterial("assets/textures/grass.png");
         textureDone(4, 12); AssetPulse("Plazas");
-        plaza    = LoadMaterial("assets/textures/plaza.png",    { 150, 110, 100, 255 }, { 190, 150, 130, 255 });
+        plaza    = LoadMaterial("assets/textures/plaza.png");
         textureDone(5, 12); AssetPulse("Cobblestones");
-        cobble   = LoadMaterial("assets/textures/cobble.png",   { 110, 110, 100, 255 }, { 150, 150, 140, 255 });
+        cobble   = LoadMaterial("assets/textures/cobble.png");
         textureDone(6, 12); AssetPulse("Water");
         water    = MakeWater();
         textureDone(7, 12);
@@ -1108,15 +913,15 @@ bool Assets::Load(startup::Reporter* reporter) {
         FacadeStyle brick = { 3, 1, 0.42f, 0.55f, { 38, 50, 64, 255 }, { 72, 92, 108, 255 }, { 210, 204, 192, 255 } };
         FacadeStyle glass = { 2, 1, 0.92f, 0.72f, { 58, 88, 112, 255 }, { 112, 148, 168, 255 }, { 58, 62, 68, 255 } };
         AssetPulse("Brick facades");
-        facade[0]    = MakeTexture(MakeFacade("assets/textures/bricks.png",   { 150, 80, 60, 255 }, brick), true, true);
+        facade[0]    = MakeTexture(MakeFacade("assets/textures/bricks.png", brick), true, true);
         textureDone(8, 12); AssetPulse("Glass facades");
-        facade[1]    = MakeTexture(MakeFacade("assets/textures/concrete.png", { 190, 190, 190, 255 }, glass), true, true);
+        facade[1]    = MakeTexture(MakeFacade("assets/textures/concrete.png", glass), true, true);
         textureDone(9, 12); AssetPulse("Brick windows");
         facadeLit[0] = MakeTexture(MakeFacadeLit(brick, 8, 11), true, true);
         textureDone(10, 12); AssetPulse("Office windows");
         facadeLit[1] = MakeTexture(MakeFacadeLit(glass, 8, 23), true, true);
         textureDone(11, 12);
-        AssetFinish("Ground materials prepared with procedural substitutions");
+        AssetFinish();
 
         // ---- vehicles, characters, weapons ----
         AssetBegin("assets.vehicles", "Vehicle classes, paint variants and motorbikes");
@@ -1127,19 +932,19 @@ bool Assets::Load(startup::Reporter* reporter) {
         AssetValidate(!vehicles.empty(), "No usable vehicle textures are available");
         for (const VehicleSprite& sprite : vehicles) AssetValidate(IsTextureValid(sprite.tex), "A vehicle texture is unavailable");
         AssetDone("validation");
-        AssetFinish("Vehicle definitions resolved with optional omissions or fallback content");
+        AssetFinish();
         AssetBegin("assets.civilians", "Civilian looks and animation atlases");
         LoadCivilians(*this);
-        AssetFinish("Civilian definitions resolved with optional omissions");
+        AssetFinish();
         AssetBegin("assets.animations", "Player layers and weapon definitions");
         LoadCharacters(*this);
-        AssetFinish("Weapon definitions resolved with built-in defaults");
+        AssetFinish();
 
         // ---- foliage ----
         AssetBegin("assets.foliage", "Trees and bushes");
         char path[256];
-        const auto foliage = AssetData("assets/data/foliage.cfg", DEFAULT_FOLIAGE);
-        AssetPlan({ { "records", (double)std::max<size_t>(1, foliage.size()), false }, { "trees", 5, false }, { "bushes", 1, false }, { "validation", 1 } });
+        const auto foliage = AssetData("assets/data/foliage.cfg");
+        AssetPlan({ { "records", (double)std::max<size_t>(1, foliage.size()), false }, { "validation", 1 } });
         int64_t completed = 0;
         AssetCount(0, (int64_t)foliage.size(), "records processed");
         for (const DataRecord& r : foliage) {
@@ -1148,32 +953,16 @@ bool Assets::Load(startup::Reporter* reporter) {
             if ((!tree && !bush) || r.size() < 2) continue;
             AssetPulse(tree ? "Tree textures" : "Bush textures");
             snprintf(path, sizeof(path), "assets/foliage/%s", r[1].c_str());
-            Image img{};
+            Image img = LoadRequiredImage(path);
             AssetImageGuard guard(img);
-            if (!TryLoadImage(path, img)) continue;
             Desaturate(img, tree ? 0.18f : 0.15f, tree ? 0.9f : 0.92f);   // calm the saturated toon greens
             guard.Release();
             (tree ? trees : bushes).push_back(MakeTexture(img, false, true));
         }
         AssetDone("records", foliage.empty() ? startup::Outcome::Skipped : startup::Outcome::Ready);
-        if (trees.empty()) {
-            assetFallback = true;
-            AssetPulse("Generating fallback trees");
-            for (int v = 0; v < 5; v++) {
-                trees.push_back(MakeTexture(AssetProcedural("Fallback tree", [v] { return Tree(v, 256, 7); }), false, true));
-                AssetCount(v + 1, 5, "trees prepared"); AssetFraction("trees", (v + 1) / 5.0);
-            }
-            AssetDone("trees", startup::Outcome::ReadyWithFallback);
-        } else AssetDone("trees", startup::Outcome::Skipped);
-        if (bushes.empty()) {
-            assetFallback = true;
-            AssetPulse("Generating a fallback bush");
-            bushes.push_back(MakeTexture(AssetProcedural("Fallback bush", [] { return Tree(1, 96, 3); }), false, true));
-            AssetDone("bushes", startup::Outcome::ReadyWithFallback);
-        } else AssetDone("bushes", startup::Outcome::Skipped);
-        AssetValidate(!trees.empty() && !bushes.empty(), "No usable foliage textures are available");
+        AssetValidate(!trees.empty() && !bushes.empty(), "foliage.cfg needs at least one TREE and one BUSH");
         AssetDone("validation");
-        AssetFinish("Foliage definitions resolved with optional omissions or procedural substitutions");
+        AssetFinish();
 
         // ---- props & effects ----
         AssetBegin("assets.effects", "Street furniture and lighting effects");
@@ -1201,32 +990,28 @@ bool Assets::Load(startup::Reporter* reporter) {
         textureDone((int)Prop::COUNT + 5, effectTotal);
         flare       = MakeFlare();
         textureDone((int)Prop::COUNT + 6, effectTotal);
-        AssetFinish(nullptr);
+        AssetFinish();
 
         // ---- fonts ----
         AssetBegin("assets.fonts", "Interface typefaces");
         AssetPlan({ { "bold", 1 }, { "semibold", 1 }, { "validation", 1 } });
-        const unsigned int defaultFontId = GetFontDefault().texture.id;
-        if (FileExists("assets/fonts/Rajdhani-Bold.ttf")) {
-            { startup::AtomicSpan span(assetReporter, "font", "Bold font"); font = LoadFontEx("assets/fonts/Rajdhani-Bold.ttf", 72, nullptr, 0); }
-            AssetPulse("Bold typeface");
-            if (FileExists("assets/fonts/Rajdhani-SemiBold.ttf")) {
-                startup::AtomicSpan span(assetReporter, "font", "Semibold font"); fontSemi = LoadFontEx("assets/fonts/Rajdhani-SemiBold.ttf", 48, nullptr, 0);
-            } else { fontSemi = font; assetFallback = true; }
-            { startup::AtomicSpan span(assetReporter, "mipmap", "Bold font mipmaps"); GenTextureMipmaps(&font.texture); }
-            SetTextureFilter(font.texture, TEXTURE_FILTER_TRILINEAR);
-            { startup::AtomicSpan span(assetReporter, "mipmap", "Semibold font mipmaps"); GenTextureMipmaps(&fontSemi.texture); }
-            SetTextureFilter(fontSemi.texture, TEXTURE_FILTER_TRILINEAR);
-            customFont = font.texture.id != 0;
-        }
-        if (!customFont) { font = GetFontDefault(); fontSemi = font; assetFallback = true; }
-        if (font.texture.id == defaultFontId || fontSemi.texture.id == defaultFontId) assetFallback = true;
-        AssetValidate(IsFontValid(font) && IsFontValid(fontSemi), "No usable interface typeface is available");
-        AssetDone("bold", font.texture.id == defaultFontId ? startup::Outcome::ReadyWithFallback : startup::Outcome::Ready);
+        auto loadFont = [&](const char* path, int size, const char* role) {
+            AssetValidate(FileExists(path), std::string("Missing font ") + path);
+            Font f;
+            { startup::AtomicSpan span(assetReporter, "font", role); f = LoadFontEx(path, size, nullptr, 0); }
+            AssetValidate(IsFontValid(f), std::string("Unreadable font ") + path);
+            { startup::AtomicSpan span(assetReporter, "mipmap", role); GenTextureMipmaps(&f.texture); }
+            SetTextureFilter(f.texture, TEXTURE_FILTER_TRILINEAR);
+            return f;
+        };
+        font = loadFont("assets/fonts/Rajdhani-Bold.ttf", 72, "Bold font");
+        AssetDone("bold");
         AssetCount(1, 2, "font roles prepared");
-        AssetDone("semibold", fontSemi.texture.id == defaultFontId || fontSemi.texture.id == font.texture.id ? startup::Outcome::ReadyWithFallback : startup::Outcome::Ready);
+        AssetPulse("Bold typeface");
+        fontSemi = loadFont("assets/fonts/Rajdhani-SemiBold.ttf", 48, "Semibold font");
+        AssetDone("semibold");
         AssetCount(2, 2, "font roles prepared");
-        AssetDone("validation"); AssetFinish("Interface typefaces prepared with an existing font fallback");
+        AssetDone("validation"); AssetFinish();
 
         // ---- shaders ----
         AssetBegin("assets.shaders", "Lighting composite and bloom shaders");
@@ -1243,7 +1028,7 @@ bool Assets::Load(startup::Reporter* reporter) {
         { startup::AtomicSpan span(assetReporter, "shader", "Bloom blur shader"); blur = LoadShaderFromMemory(nullptr, BLUR_FS); }
         locBlurDir  = GetShaderLocation(blur, "dir");
         AssetValidate(IsShaderValid(blur) && locBlurDir >= 0, "The bloom shader is unavailable");
-        AssetDone("blur"); AssetCount(2, 2, "shaders prepared"); AssetFinish(nullptr);
+        AssetDone("blur"); AssetCount(2, 2, "shaders prepared"); AssetFinish();
 
         TraceLog(LOG_INFO, "ASSETS: %d vehicle classes, %d vehicle skins, %d pedestrians, %d trees, %d bushes, %d player sets, %d weapons",
                  (int)VehicleClasses().size(), (int)vehicles.size(), (int)peds.size(), (int)trees.size(), (int)bushes.size(),
@@ -1268,10 +1053,9 @@ void Assets::Unload() {
     releaseTexture(playerLegs.tex);
     for (auto& set : playerSets) releaseTexture(set.atlas.tex);
     vehicles.clear(); byClass.clear(); peds.clear(); trees.clear(); bushes.clear(); playerSets.clear(); weapons.clear();
-    const unsigned int defaultFontId = GetFontDefault().texture.id;
-    if (fontSemi.texture.id && fontSemi.texture.id != defaultFontId && fontSemi.texture.id != font.texture.id) UnloadFont(fontSemi);
-    if (font.texture.id && font.texture.id != defaultFontId) UnloadFont(font);
-    font = {}; fontSemi = {}; customFont = false;
+    if (fontSemi.texture.id) UnloadFont(fontSemi);
+    if (font.texture.id) UnloadFont(font);
+    font = {}; fontSemi = {};
     if (composite.id) UnloadShader(composite);
     if (blur.id) UnloadShader(blur);
     composite = {}; blur = {};

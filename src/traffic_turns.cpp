@@ -370,6 +370,13 @@ bool RailPlanTurns(startup::Reporter* loading) {
         if (sprite.spawnable && spec.trafficWeight > 0 && !spec.police()) total++;
     }
     if (loading && !loading->Begin("traffic.turns", "Checking turn paths for traffic vehicles", total, "vehicle variants")) return false;
+    // The turn paths are the first to read the traffic data (TURN records); like every
+    // data file it is required (ADR-0010).
+    if (!FileExists(gTrafficConfigPath)) {
+        TraceLog(LOG_ERROR, "TRAFFIC DATA: '%s' is missing", gTrafficConfigPath);
+        if (loading) loading->Fail(TextFormat("Missing data file %s", gTrafficConfigPath));
+        return false;
+    }
     try {
         int done = 0;
         for (size_t i = 0; i < gAssets.vehicles.size(); i++) {

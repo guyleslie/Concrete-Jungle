@@ -1,10 +1,10 @@
 // =====================================================================================
 //  Vehicle classes - DATA DRIVEN.
 //
-//  Classes are defined in assets/data/vehicles.cfg (built-in defaults are used if the
-//  file is missing). To add a new kind of vehicle, add a CLASS line there and one or
-//  more SPRITE (image file), BIKE (motorbike pair) or GEN (procedural) lines - no code
-//  changes needed.
+//  Classes are defined in assets/data/vehicles.cfg, which is required (ADR-0010). To
+//  add a new kind of vehicle, add a CLASS line there and one or more SPRITE (image
+//  file), DERIVE / COMPOSE (made from other sprites) or BIKE (motorbike pair) lines -
+//  no code changes needed.
 //
 //    CLASS <name> <length m> <height m> <top km/h> <accel m/s2> <brake m/s2>
 //          <reverse km/h> <steer rad/s> <grip> <mass t> <hp> <traffic weight> [flags]
@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+
+struct DataRecord;
 
 enum VehicleFlag : uint32_t {
     VF_POLICE      = 1u << 0,   // used by the police response (sirens, chasing)
@@ -44,5 +46,4 @@ using VClass = int;   // index into VehicleClasses()
 std::vector<VehicleSpec>& VehicleClasses();
 const VehicleSpec&        Spec(VClass c);
 VClass                    FindVehicleClass(const std::string& name);   // -1 if unknown
-void                      LoadVehicleClasses();                          // reads vehicles.cfg
-const char*               DefaultVehiclesCfg();                          // built-in defaults
+void                      LoadVehicleClasses(const std::vector<DataRecord>& records);   // vehicles.cfg

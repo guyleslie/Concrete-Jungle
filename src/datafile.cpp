@@ -45,16 +45,14 @@ std::vector<DataRecord> ParseDataText(const char* text) {
     return out;
 }
 
-std::vector<DataRecord> ReadDataFile(const char* path, const char* fallbackText) {
-    if (FileExists(path)) {
-        char* text = LoadFileText(path);
-        if (text) {
-            auto recs = ParseDataText(text);
-            UnloadFileText(text);
-            TraceLog(LOG_INFO, "DATA: '%s' -> %d records", path, (int)recs.size());
-            return recs;
-        }
+std::vector<DataRecord> ReadDataFile(const char* path) {
+    char* text = FileExists(path) ? LoadFileText(path) : nullptr;
+    if (!text) {
+        TraceLog(LOG_ERROR, "DATA: '%s' is missing or unreadable", path);
+        return {};
     }
-    TraceLog(LOG_WARNING, "DATA: '%s' not found, using built-in defaults", path);
-    return ParseDataText(fallbackText);
+    auto recs = ParseDataText(text);
+    UnloadFileText(text);
+    TraceLog(LOG_INFO, "DATA: '%s' -> %d records", path, (int)recs.size());
+    return recs;
 }

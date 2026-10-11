@@ -2,14 +2,15 @@
 //  Asset loading - DATA DRIVEN.
 //
 //  What gets loaded is described by the text files in assets/data/:
-//    vehicles.cfg    CLASS (handling), SPRITE / BIKE (image files), GEN (procedural vehicles)
+//    vehicles.cfg    CLASS (handling), SPRITE / DERIVE / COMPOSE / BIKE (image files)
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
 //    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / WALK / CIVILIAN: pedestrian atlases
 //    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER / LAMP: the player's layers
-//  Adding content = drop the image files in assets/ and add a line. Built-in defaults
-//  are used when a file is missing, and every image has a procedural fallback, except
-//  the people: the player's and the civilians' atlases are required (ADR-0009).
+//  Adding content = drop the image files in assets/ and add a line. Every data file and
+//  every file it names is required (ADR-0010): a missing one stops loading with a message
+//  that names it. Street furniture, the metro car, water and effect textures are painted
+//  procedurally (sprite_gen.h) and need no files.
 //
 //  Sources: ambientCG (CC0) textures, Unlucky Studio (CC0) vehicles, FabinhoSC (CC0)
 //  foliage, MakeHuman, Quaternius and Mixamo for the people, Rajdhani (OFL). See CREDITS.md.
@@ -122,7 +123,6 @@ struct Assets {
 
     // --- fonts & shaders ---
     Font   font{}, fontSemi{};
-    bool   customFont = false;
     Shader composite{};
     int    locLight = -1, locEmissive = -1, locBloom = -1, locBloomStr = -1, locTime = -1;
     Shader blur{};
@@ -139,7 +139,7 @@ struct Assets {
 
 extern Assets gAssets;
 
-// Text helpers (UI font with fallback to raylib's default font)
+// Text helpers (the Rajdhani UI fonts)
 void  DrawUIText(const char* text, float x, float y, float size, Color c, bool semi = false);
 float MeasureUIText(const char* text, float size, bool semi = false);
 void  DrawUITextShadow(const char* text, float x, float y, float size, Color c, bool semi = false);

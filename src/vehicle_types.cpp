@@ -4,50 +4,6 @@
 #include "raylib.h"
 #include <cctype>
 
-// Built-in copy of assets/data/vehicles.cfg (used if the file is missing).
-static const char* DEFAULT_CFG = R"(
-# name       len  h     km/h  acc   brake rev  steer grip  mass hp   weight flags
-CLASS Stinger   4.6 1.25 202  43    90    63   3.1   10    1.0  100  10
-CLASS Viper     4.6 1.20 214  45.5  90    63   3.2   9.5   1.0  95   4
-CLASS Bruiser   4.8 1.35 198  43.5  81    63   2.9   7.0   1.15 115  10
-CLASS Taxi      4.8 1.50 162  31    81    58   2.9   9.0   1.1  110  12
-CLASS Pickup    5.3 1.90 157  30    75    56   2.6   8.0   1.5  130  10
-CLASS Van       5.0 2.00 144  26    72    54   2.4   8.0   1.6  140  10
-CLASS Limo      6.8 1.45 160  26    72    45   2.2   8.5   2.0  150  2
-CLASS Ambulance 6.0 2.60 166  31    78    54   2.5   8.5   1.8  150  2   emergency
-CLASS Police    4.9 1.50 207  45    94    67   3.2   10    1.25 150  0   police emergency
-CLASS Bus       12.0 3.2 108  15    56    40   1.6   9.0   4.5  320  5   large
-CLASS BoxTruck  7.5 3.50 121  20    59    45   2.0   9.0   2.8  230  6   large
-CLASS Semi      8.8 3.60 126  18    56    40   1.8   9.0   3.5  270  4   large
-CLASS FireTruck 8.2 3.30 130  20    60    40   1.9   9.0   3.8  300  1   large emergency
-CLASS Garbage   8.0 3.40 110  16    55    40   1.8   9.0   3.6  280  3   large
-CLASS Sportbike 2.1 1.25 212  54    94    34   3.8   12    0.45 55   3   two_wheeler
-CLASS Chopper   2.4 1.20 185  45    85    30   3.4   11    0.5  60   2   two_wheeler
-CLASS Scooter   1.8 1.20 95   30    70    20   3.6   12    0.3  45   3   two_wheeler
-TURN Stinger 10.8
-TURN Viper 11.5
-TURN Bruiser 11.8
-TURN Taxi 11.0
-TURN Pickup 12.6
-TURN Van 12.0
-TURN Limo 14.0
-TURN Ambulance 13.0
-TURN Police 11.4
-TURN Bus 23.0
-TURN BoxTruck 15.5
-TURN Semi 16.5
-TURN FireTruck 16.0
-TURN Garbage 16.0
-TURN Sportbike 5.0
-TURN Chopper 6.0
-TURN Scooter 3.8
-WIDTH Sportbike 0.75
-WIDTH Chopper 0.95
-WIDTH Scooter 0.70
-)";
-
-const char* DefaultVehiclesCfg() { return DEFAULT_CFG; }
-
 std::vector<VehicleSpec>& VehicleClasses() { static std::vector<VehicleSpec> v; return v; }
 
 const VehicleSpec& Spec(VClass c) {
@@ -69,11 +25,10 @@ VClass FindVehicleClass(const std::string& name) {
     return -1;
 }
 
-void LoadVehicleClasses() {
+void LoadVehicleClasses(const std::vector<DataRecord>& records) {
     auto& classes = VehicleClasses();
     classes.clear();
     const float M = cfg::PX_PER_METER;
-    std::vector<DataRecord> records = ReadDataFile("assets/data/vehicles.cfg", DEFAULT_CFG);
     for (const DataRecord& r : records) {
         if (!r.Is("CLASS") || r.size() < 13) continue;
         VehicleSpec s;
@@ -100,7 +55,6 @@ void LoadVehicleClasses() {
         int existing = FindVehicleClass(s.name);
         if (existing >= 0) classes[existing] = s; else classes.push_back(s);
     }
-    if (classes.empty()) classes.push_back(VehicleSpec{ "Default" });
     // Turning circles; a class without one gets 2.3 lengths (about 11 m for a 4.8 m car).
     // Collision widths; a class without one takes its sprite's width (vehicle.cpp).
     for (const DataRecord& r : records) {
