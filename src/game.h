@@ -44,6 +44,14 @@ struct PlayerState {
     bool    running = false;
     int     feetMode = 0;          // FeetAnim: idle / walk / run / strafe left / strafe right
     bool    aiming = false;
+    // the 3D player (CJ-011)
+    int     gait = 0;              // PlayerGait
+    float   legPhase = 0;          // cycles of the legs' gait (a cycle is two steps)
+    float   raise = 0;             // 0 the weapon lowered .. 1 raised to aim
+    float   actionDur = 0;         // the running action's length (s)
+    int     melees = 0;            // blows struck: the fists alternate
+    float   reloadTotal = 0;       // shell-by-shell reload: its length (s),
+    int     reloadShells = 0, reloadLoaded = 0;   // the shells it loads and has loaded
 };
 
 struct Pickup {
@@ -121,6 +129,11 @@ public:
     float autoT = 0, autoTimer = 0, autoSteer = 0, autoReverse = 0, autoSlow = 0;
     void  AutoPilot(Vehicle& v, VehicleInput& in, float dt);
     bool  BrawlPilot(Vector2& move);             // --scenario brawl: walk up to people and punch them
+    // --scenario player (CJ-011): every weapon through stand, walk, run, aim, strafes, jogging
+    // strafes, backpedal, fire, rest and reload; the log records the gaits, speeds and the
+    // weapon's raise and lower times
+    struct PilotInput { Vector2 move{}; bool run = false, aim = false, fire = false, reload = false; float aimAt = 0; };
+    void  PlayerPilot(float dt, PilotInput& in);
     // physics diagnostics (--shot): jitter = position / heading reversing frame after frame
     struct PhysDiag { Vector2 prevPos{}, prevD{}; float prevA = 0, prevDa = 0; bool init = false, rail = false; };
     std::vector<PhysDiag> diag;

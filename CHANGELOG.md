@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The player is drawn from 3D renders in two layers (CJ-011): the legs walk, run, strafe (walking or jogging) and backpedal along the motion while the upper body faces the aim, and the weapon is carried lowered and raised only to aim, while a mouse button is held and for 0.8 s after a shot. The player walks at a real walking pace, 1.5 m/s instead of 4 m/s, and runs at 6.5 m/s with Shift. Every weapon has its own lowered carry, aim, firing frames (the shotgun racks its pump), a reload that shows the magazine change and melee blows. The shotgun reloads only its missing shells, one by one (`shells` in `weapons.cfg`). The Survivor sprites are only a fallback, no longer loaded: about 15 MB less video memory. Awaiting the user's playtest.
+
 ### Added
+
+- `assets/data/player.cfg` and the player's atlases in `assets/characters/player/`, written by `tools/cj011/make_player.py`; the `player` test scenario, which drives every weapon through every gait and action and logs the gaits, speeds and the weapon's raise and lower times (CJ-011).
 
 - CJ-011 player art pipeline (`tools/cj011/`): the player built from MakeHuman CC0 assets with a modelled cap and backpack and Quaternius's CC0 pistol and carbine, the hands put on the weapon by inverse kinematics, and top-down renders in separate legs and upper-body layers for the stand, walk, run, strafe and backpedal, with the weapons lowered, plus the pistol's isosceles aim and the rifle's shouldered aim. Strafe and backpedal come from Mixamo. Scripts measure the holds, the layers, the travel per cycle and the poses at game scale; the [CJ-011 player art](assets/art/cj011/README.md) records the results.
 - CJ-011 player art, second part: the shotgun, the knife, a modelled flashlight and the fists, lowered and ready; firing, four-frame reloads that show the whole magazine change (a modelled pistol magazine, the rifle's own magazine separated from its model, a modelled shotgun shell), punches, a stab at the belly and a flashlight strike; jogging strafes, a long gun carried across the body when strafing and turned with the upper body when backpedalling. The arm's inverse kinematics keeps the elbow out of the torso. Rifle charging and the stab come from Mixamo clips the user downloaded. The game is unchanged. `build_civilian.py` can swap an asset's texture, and `retarget_ual.py` reads Mixamo FBX files. The game is unchanged.

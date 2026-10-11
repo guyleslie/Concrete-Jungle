@@ -7,6 +7,7 @@
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
 //    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / WALK / CIVILIAN: pedestrian atlases
+//    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER: the player's layers
 //  Adding content = drop the image files in assets/ and add a line. Built-in defaults
 //  are used when a file is missing, and every image has a procedural fallback.
 //
@@ -34,6 +35,28 @@ struct PedFrames { int first = 0, count = 0; };
 // A gait whose cadence rises with speed: steps per second from 'fromSteps' at 'fromSpeed' to
 // 'toSteps' at 'toSpeed' (m/s); it shows from 'fromSpeed' up.
 struct PedGait { float fromSpeed = 0, fromSteps = 0, toSpeed = 0, toSteps = 0; };
+
+// The player (player.cfg, CJ-011): a legs layer and an upper-body layer per weapon set, drawn
+// on top of each other about the same pivot. Frames are cut to their visible part at load.
+struct FrameAtlas {
+    Texture2D              tex{};
+    std::vector<Rectangle> src;          // per atlas frame: its visible part in tex
+    std::vector<Vector2>   offset;       // that part's centre minus the frame centre (frame px)
+};
+enum class PlayerGait : int { Stand = 0, Walk, Run, StrafeLeft, StrafeRight, Back, JogLeft, JogRight, COUNT };
+enum class PlayerAct : int { Aim = 0, Fire, Reload, Melee, COUNT };
+struct PlayerGaitDef {
+    PedFrames frames;
+    bool      byDistance = true;         // false: by cadence
+    float     cycleM = 1.4f;             // metres per cycle (two steps) when by distance
+    float     steps = 3.0f, atSpeed = 6.5f;   // steps per second at atSpeed (m/s) when by cadence
+};
+struct PlayerSet {
+    std::string name;                    // a weapon set of weapons.cfg (unarmed, handgun ...)
+    FrameAtlas  atlas;
+    PedFrames   gait[(int)PlayerGait::COUNT];   // the weapon lowered, in step with the legs
+    PedFrames   act[(int)PlayerAct::COUNT];
+};
 
 struct VehicleSprite {
     Texture2D tex{};
@@ -71,6 +94,7 @@ struct WeaponDef {
     int   pellets = 1, clip = 0, startAmmo = 0;
     WeaponKind kind = WeaponKind::Melee;
     bool  light = false;          // flashlight
+    float shellTime = 0, pumpTime = 0;   // > 0: reloads shell by shell, then racks the pump
 };
 
 struct Assets {
@@ -96,6 +120,14 @@ struct Assets {
     std::vector<CharacterSet> charSets;
     SpriteAnim                feet[(int)FeetAnim::COUNT];
     float                     charScale = 0.062f;    // world px per source px
+    // the 3D player (player.cfg); when missing, the Survivor sets above are drawn
+    bool                      player3D = false;
+    int                       playerFramePx = 144;
+    float                     playerFrameM = 2.1f, playerDrawScale = 1.0f;
+    FrameAtlas                playerLegs;
+    PlayerGaitDef             playerGait[(int)PlayerGait::COUNT];
+    std::vector<PlayerSet>    playerSets;
+    const PlayerSet* FindPlayerSet(const std::string& name) const;
     std::vector<WeaponDef>    weapons;
 
     // --- world dressing ---

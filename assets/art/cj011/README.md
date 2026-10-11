@@ -1,6 +1,6 @@
 # CJ-011 player art
 
-The player becomes a 3D character rendered from above with the [civilian 3D pipeline](../cj004/README.md#civilian-3d-pipeline), replacing the Survivor sprites, so that it walks and runs with the weapon lowered and raises it only to aim and fire ([CJ-011](../../../docs/backlog.md#cj-011-relaxed-player-posture)). This document records the player's look, the weapon holds, the layered gaits, the reloads and melee attacks, the scripts that make them and their measurements. The renders are not in the game yet.
+The player becomes a 3D character rendered from above with the [civilian 3D pipeline](../cj004/README.md#civilian-3d-pipeline), replacing the Survivor sprites, so that it walks and runs with the weapon lowered and raises it only to aim and fire ([CJ-011](../../../docs/backlog.md#cj-011-relaxed-player-posture)). This document records the player's look, the weapon holds, the layered gaits, the reloads and melee attacks, the scripts that make them, the game's atlases and their measurements. Since 2026-10-11 the game draws the player from these renders.
 
 ## Contents
 
@@ -10,6 +10,7 @@ The player becomes a 3D character rendered from above with the [civilian 3D pipe
 - [Layers and gaits](#layers-and-gaits)
 - [Reloads and melee](#reloads-and-melee)
 - [Scripts](#scripts)
+- [Atlases](#atlases)
 - [Measurements](#measurements)
 - [Open items](#open-items)
 
@@ -117,6 +118,7 @@ Each reload has four frames that together show the whole operation; the weapon i
 | [measure_travel.py](../../../tools/cj011/measure_travel.py) | How far an in-place loop travels per cycle and in which direction, from the contact point that bears the weight; unreliable for runs, whose feet leave the ground |
 | [render_player.py](../../../tools/cj011/render_player.py) | Poses (`<weapon>_low`, `_aim`, `_fire0`/`1`, `_reload0`–`3`, `knife_stab0`/`1`, `flashlight_strike0`/`1`), clip frames (`clip:<weapon>:<action>:<frame>`, the weapon following the clip's right hand) and gait jobs (`gait:<name>:<action>:<frames>`, the weapons in `CJ_WEAPONS`): renders (`CJ_SIDE=1` adds side, front and back views), layers, leg masks and the hold measurements in `measure.json`; `CJ_MEASURE_ONLY=1` measures without rendering |
 | [check_layers.py](../../../tools/cj011/check_layers.py) | The layers against the whole render, and the holes at ±90° between them |
+| [make_player.py](../../../tools/cj011/make_player.py) | Renders every atlas frame and writes the atlases and `player.cfg` (see [Atlases](#atlases)) |
 | [compare_player.py](../../../tools/cj011/compare_player.py), [gait_preview.py](../../../tools/cj011/gait_preview.py) | The poses next to the Survivor at game scale with their widths; an animated preview of the gaits at game scale |
 
 The steps, from the project root, with Blender 5.2 (`BL`) and the paths of the [civilian pipeline](../cj004/README.md#setting-up):
@@ -133,9 +135,20 @@ CJ_TROUSERS_MASK=build/art-sources/player/player_suit_diffuse_trousers_mask.png 
 
 The other Mixamo files are retargeted like the first; the punches come from the library like the walk. The walk's frames are the `locked_frames` that [measure_gait.py](../../../tools/cj004/measure_gait.py) gives for the walk.
 
+## Atlases
+
+[make_player.py](../../../tools/cj011/make_player.py) renders every frame the game draws (`--render`, three Blender processes, about 1.5 hours at 32 samples) and packs them: `assets/characters/player/legs.png` and one upper-body atlas per weapon set (`unarmed`, `knife`, `flashlight`, `handgun`, `rifle`, `shotgun`), grids of 16 frames of 144 px per row, and [player.cfg](../../data/player.cfg), which declares them ([format](../../../docs/guides/adding-content.md#player)).
+
+| Atlas | Frames |
+|---|---|
+| Legs | Stand 1; walk, run, strafe left and right, backpedal, jogging strafe left and right 16 each: 113 |
+| Upper body, per set | The weapon lowered in the same 113 frames, in step with the legs; aim 1; fire 2; reload 4 (firearms); melee 2 (fists, knife, flashlight): 116 or 120 |
+
+Every frame is stylized as the civilians' ([stylize.py](../../../tools/cj004/stylize.py)); the upper body's dark contour is left out where it lies over the legs of the same frame, so that no seam shows at the waist. The action frames are rendered standing and pivoted on the standing pelvis, and drawn over whatever the legs are doing. The game cuts every frame to its visible part at load: 17.3 MB packed before mipmaps, against the Survivor sprites' 29.0 MB, which are no longer loaded.
+
 ## Measurements
 
-Against the [acceptance criteria](../../../docs/backlog.md#cj-011-relaxed-player-posture), on 2026-10-10, every frame of every gait:
+Against the [acceptance criteria](../../../docs/backlog.md#cj-011-relaxed-player-posture), on 2026-10-10 (criteria 1–5, every frame of every gait) and 2026-10-11 (6–8, in the game):
 
 | Criterion | Result |
 |---|---|
@@ -144,12 +157,13 @@ Against the [acceptance criteria](../../../docs/backlog.md#cj-011-relaxed-player
 | 3. Grip within 1 cm of the right palm, fore grip within 3 cm of the left | 0 cm; at most 2.3 cm (running with the rifle) |
 | 4. Planted foot slip at most 2 cm walking; legs ahead/behind 0.75–1.33 | 0.7 cm; walk 1.03, run 1.18 |
 | 5. Layers match a whole render; no waist gap at ±90° | Mean colour difference 0.3–0.6 of 255, no pixel's alpha off by more than 0.25; new holes at ±90° 2.9 cm² walking and 11.4 cm² running (strafes 21–29 cm², where the legs already step sideways) |
-| 6. Width within 10 % of today's player (0.65 m) | Standing 0.58 m (−11 %); aiming the pistol 0.50 m, a narrow isosceles triangle. Open: a draw scale such as the civilians' `SCALE 1.12` would bring standing to 0.65 m |
+| 6. Width within 10 % of today's player (0.65 m) | Drawn with `SCALE 1.12`, as the civilians: standing 0.65 m (the renders 0.58 m); aiming the pistol 0.56 m, a narrow isosceles triangle |
+| 7. In the game: raised within 0.2 s, lowered 0.8 s after the last shot; walk 1.5 m/s, run 6.5 m/s | `player` scenario: raised in 0.12 s; lowered 0.97 s after the last shot (0.8 s, then half the 0.25 s lowering); walk 1.50 m/s, run 6.50 m/s; the expected gait in 87–100 % of the moving frames |
+| 8. Pedestrian metrics unchanged; FPS within ±3 %; video memory at most 15 MB more | `brawl` pedestrian lines identical to the build before; FPS medians of four alternating uncapped runs −2.5 % (`foot`, 295 → 287) and −2.8 % (`civilians`, 312 → 303); video memory about 15 MB less (17.3 MB of atlases instead of 29.0 MB of Survivor sprites, before mipmaps) |
 
 ![The poses next to the Survivor player at game scale](player-game-scale.png)
 
 ## Open items
 
-- The atlases: the legs layer per gait, the upper body per weapon and gait, the aim, fire, reload and melee frames in layers.
-- The game's two-layer player drawing, the walk and run speeds, the raise and lower timing, the shotgun's shell-by-shell reload and the `player` scenario (criteria 7 and 8), then the playtest (criterion 9).
+- The playtest (criterion 9).
 - A fast backpedal (with `Left Shift`): for now the walking backpedal played faster.

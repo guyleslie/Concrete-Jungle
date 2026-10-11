@@ -4,7 +4,7 @@ Third-party assets used by Concrete Jungle, their authors and licences, and the 
 
 ## Third-party assets
 
-All third-party assets are free for commercial use. Only the Survivor character requires attribution. The [CJ-011 player renders](assets/art/cj011/README.md) are not in the game yet.
+All third-party assets are free for commercial use. Only the Survivor character requires attribution. The game draws the player from the [CJ-011 player renders](assets/art/cj011/README.md); the Survivor sprites remain only as a fallback.
 
 | Asset | Used for | Author | Licence | Source |
 |---|---|---|---|---|
@@ -36,7 +36,7 @@ All third-party assets are free for commercial use. Only the Survivor character 
 | Unarmed player animations (`assets/survivor/unarmed/`) | Survivor knife frames | Blade removed by `tools/make_unarmed.py` | CC-BY 3.0, as the source |
 | Limo, bus, box truck, fire truck, garbage truck | Unlucky Studio sprites | Stretched, combined and repainted at start-up (`DERIVE` / `COMPOSE` in `assets/data/vehicles.cfg`) | CC0, as the source |
 | Civilian atlases (`assets/characters/civilians/`) | MakeHuman models animated with the Universal Animation Library | Built in Blender with the MPFB add-on (GPL-3.0, a tool only) and rendered from above by `tools/cj004/make_civilians.py` | CC0, as the sources |
-| CJ-011 player previews (`assets/art/cj011/`) | MakeHuman models, the Ultimate Gun Pack, the Universal Animation Library and Mixamo animations | Built and rendered in Blender by `tools/cj011/`; the backpack and the cap are modelled by script | CC0 sources; the Mixamo motion under Adobe's terms |
+| Player atlases (`assets/characters/player/`) and CJ-011 previews (`assets/art/cj011/`) | MakeHuman models, the Ultimate Gun Pack, the Universal Animation Library and Mixamo animations | Built and rendered in Blender by `tools/cj011/`; the backpack and the cap are modelled by script | CC0 sources; the Mixamo motion under Adobe's terms |
 
 ## Generated content
 

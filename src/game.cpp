@@ -53,6 +53,10 @@ void Game::SuppressStartupKeys(bool enterHeld, bool spaceHeld) {
 }
 
 // Test scenarios used by the --shot command line mode (automated screenshots).
+// The player on foot (CJ-011)
+static const float PLAYER_WALK = 1.5f, PLAYER_RUN = 6.5f;        // m/s: a walking pace; Left Shift runs (CJ-011)
+static const float WEAPON_RAISE = 0.2f, WEAPON_LOWER = 0.25f;    // s to raise the weapon to aim, to lower it
+
 void Game::DebugScenario(const char* name) {
     std::string n = name ? name : "foot";
     if (n == "title") return;
@@ -114,6 +118,10 @@ void Game::DebugScenario(const char* name) {
     }
     if (n == "overview") { debugOverview = true; dn.hour = 13.0f; }
     if (n == "brawl") { autoMode = 4; dn.hour = 13.0f; }
+    if (n == "player") {               // CJ-011: every weapon through every gait and action
+        autoMode = 5; dn.hour = 13.0f;           // the pilot hands out the weapons on its first step
+        TraceLog(LOG_INFO, "PLAYER: %s, walk %.1f m/s, run %.1f m/s", gAssets.player3D ? "3D layers" : "Survivor sprites", PLAYER_WALK, PLAYER_RUN);
+    }
     if (n == "night" || n == "nightdrive") dn.hour = 22.5f;
     if (n == "day") dn.hour = 13.0f;
     cam.Snap(PlayerPos(), player.inVehicle ? CAM_VIEW_IDLE : CAM_VIEW_FOOT);
@@ -308,6 +316,87 @@ bool Game::BrawlPilot(Vector2& move) {
     player.aim = AngleOf(to);
     if (Len(to) > 1.0f * M) move = Norm(to);
     return Len(to) < 1.3f * M;
+}
+
+// --scenario player: a phase table run once per weapon. Moving phases alternate directions so
+// that the player stays near the start; strafes aim east and move north or south.
+void Game::PlayerPilot(float dt, PilotInput& in) {
+    static const char* GAIT_NAMES[] = { "stand", "walk", "run", "strafel", "strafer", "back", "jogl", "jogr" };
+    struct Phase { const char* name; float time; Vector2 move; bool run, aim, fire, reload; int expect; };
+    static const Phase PHASES[] = {
+        { "stand",   0.8f, {  0,  0 }, false, false, false, false, 0 },
+        { "walk",    1.6f, {  0, -1 }, false, false, false, false, 1 },
+        { "run",     1.2f, {  0,  1 }, true,  false, false, false, 2 },
+        { "aim",     0.8f, {  0,  0 }, false, true,  false, false, 0 },
+        { "strafe",  1.2f, {  0, -1 }, false, true,  false, false, 3 },
+        { "strafe",  1.2f, {  0,  1 }, false, true,  false, false, 4 },
+        { "jog",     0.8f, {  0, -1 }, true,  true,  false, false, 6 },
+        { "jog",     0.8f, {  0,  1 }, true,  true,  false, false, 7 },
+        { "back",    1.2f, { -1,  0 }, false, true,  false, false, 5 },
+        { "back",    1.2f, {  1,  0 }, false, true,  false, false, -1 },   // returning: walks
+        { "fire",    2.2f, {  0,  0 }, false, false, true,  false, 0 },   // the trigger alone keeps it raised
+        { "rest",    1.6f, {  0,  0 }, false, false, false, false, 0 },
+        { "reload",  0.0f, {  0,  0 }, false, false, false, true,  0 },
+    };
+    const int N = sizeof(PHASES) / sizeof(PHASES[0]);
+    static int phase = 0, weapon = -1;
+    static float t = 0, dist = 0, steadyT = 0, raiseAt = -1, sinceTrigger = 0, lowerAt = -1, length = 0;
+    static int gaitHits = 0, gaitFrames = 0, finished = 0, clipAtFire = 0, meleesAtFire = 0;
+    PlayerState& P = player;
+    const int nw = (int)gAssets.weapons.size();
+    if (finished) return;
+    heat = 0; heatCooldown = 0; P.health = 100;    // the player's motion only: no police, no harm
+    if (weapon < 0) {                               // every weapon, loaded, with three spare clips
+        for (size_t k = 0; k < P.owned.size(); k++) {
+            P.owned[k] = 1;
+            P.clip[k] = gAssets.weapons[k].clip;
+            P.ammo[k] = std::max(P.ammo[k], gAssets.weapons[k].clip * 3);
+        }
+        weapon = 0; P.weapon = 0; phase = 0; t = 0;
+    }
+    const WeaponDef& W = gAssets.weapons[weapon];
+    const Phase& ph = PHASES[phase];
+    bool firearm = W.kind != WeaponKind::Melee;
+    if (t == 0) {                                   // the phase's length
+        length = ph.time;
+        if (ph.reload) {
+            int missing = std::min(W.clip - P.clip[weapon], P.ammo[weapon]);
+            length = !firearm || missing <= 0 ? 0.0f : (W.shellTime > 0 ? missing * W.shellTime + W.pumpTime : W.reloadTime) + 0.4f;
+        }
+        dist = 0; steadyT = 0; gaitHits = gaitFrames = 0; raiseAt = -1;
+        if (strcmp(ph.name, "fire") == 0) lowerAt = -1;
+        if (strcmp(ph.name, "fire") == 0) { clipAtFire = P.clip[weapon]; meleesAtFire = P.melees; }
+    }
+    in.move = ph.move; in.run = ph.run; in.aim = ph.aim; in.aimAt = PI * 0.5f;     // east
+    in.fire = ph.fire && (W.kind == WeaponKind::Auto ? t < 0.5f : fmodf(t, 0.4f) < dt * 1.5f && t < 1.9f);
+    in.reload = ph.reload && t == 0 && length > 0;
+    t += dt;
+    if (t > length * 0.5f) { dist += Len(P.vel) * dt; steadyT += dt; }   // the speed once it has settled
+    sinceTrigger = in.fire ? 0.0f : sinceTrigger + dt;               // since the last shot
+    if (ph.expect >= 0 && Len(P.vel) > 0.5f * M) { gaitFrames++; if (P.gait == ph.expect) gaitHits++; }
+    if (ph.aim && raiseAt < 0 && P.raise >= 0.5f) raiseAt = t;
+    bool afterShots = strcmp(ph.name, "fire") == 0 || strcmp(ph.name, "rest") == 0;
+    if (afterShots && !in.fire && lowerAt < 0 && P.raise < 0.5f) lowerAt = sinceTrigger;
+    if (t >= length) {
+        float speed = dist / std::max(0.01f, steadyT) / M;
+        if (ph.expect > 0 || strcmp(ph.name, "walk") == 0)
+            TraceLog(LOG_INFO, "PLAYER %-10s %-7s gait %-7s %3d %% of the moving frames, %.2f m/s",
+                     W.name.c_str(), ph.name, GAIT_NAMES[std::clamp(ph.expect, 0, 7)], gaitFrames ? 100 * gaitHits / gaitFrames : 0, speed);
+        if (strcmp(ph.name, "aim") == 0)
+            TraceLog(LOG_INFO, "PLAYER %-10s raised in %.2f s (limit %.2f s)", W.name.c_str(), raiseAt, WEAPON_RAISE);
+        if (strcmp(ph.name, "fire") == 0)
+            TraceLog(LOG_INFO, "PLAYER %-10s fired %d (clip %d of %d)", W.name.c_str(), firearm ? clipAtFire - P.clip[weapon] : P.melees - meleesAtFire, P.clip[weapon], W.clip);
+        if (strcmp(ph.name, "rest") == 0)
+            TraceLog(LOG_INFO, "PLAYER %-10s lowered %.2f s after the last shot (held 0.80 s, then lowered in %.2f s)", W.name.c_str(), lowerAt, WEAPON_LOWER);
+        if (ph.reload && length > 0)
+            TraceLog(LOG_INFO, "PLAYER %-10s reloaded %d/%d in %.2f s", W.name.c_str(), P.clip[weapon], W.clip, length - 0.4f);
+        phase++; t = 0;
+        if (phase >= N) {
+            phase = 0; weapon++;
+            if (weapon >= nw) { finished = 1; TraceLog(LOG_INFO, "PLAYER: every weapon done"); return; }
+            P.weapon = weapon; P.reloadTimer = 0;
+        }
+    }
 }
 
 void Game::PhysDiagnostics(float dt) {
@@ -1011,7 +1100,10 @@ void Game::UpdatePlayerOnFoot(float dt) {
     if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) mv.x -= 1;
     if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) mv.x += 1;
     P.running = IsKeyDown(KEY_LEFT_SHIFT) || autoMode == 4;
-    float speed = P.running ? 6.5f * M : 4.0f * M;
+    PilotInput pilot;
+    const bool piloted = autoMode == 5;
+    if (piloted) { PlayerPilot(dt, pilot); mv = pilot.move; P.running = pilot.run; }
+    float speed = (P.running ? PLAYER_RUN : PLAYER_WALK) * M;
     if (P.reloadTimer > 0) speed *= 0.6f;
     bool autoAttack = autoMode == 4 && BrawlPilot(mv);
     Vector2 want = Len2(mv) > 0 ? Norm(mv) * speed : V2(0, 0);
@@ -1020,11 +1112,15 @@ void Game::UpdatePlayerOnFoot(float dt) {
     // GTA-style: the character turns towards where it walks; holding the right mouse
     // button (aim) or attacking turns it towards the cursor instead.
     static float aimHold = 0;
-    bool aiming = IsMouseButtonDown(MOUSE_BUTTON_RIGHT) || IsMouseButtonDown(MOUSE_BUTTON_LEFT) || aimHold > 0;
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) aimHold = 0.8f; else aimHold = std::max(0.0f, aimHold - dt);
+    bool trigger = piloted ? pilot.fire : IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    bool aiming = (piloted ? pilot.aim : IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) || trigger || aimHold > 0;
+    if (trigger) aimHold = 0.8f; else aimHold = std::max(0.0f, aimHold - dt);
     float spd = Len(P.vel);
     if (autoMode == 4) {
         aiming = true;                                   // BrawlPilot has set the aim
+    } else if (piloted) {
+        if (aiming) P.aim += WrapAngle(pilot.aimAt - P.aim) * Damp(25, dt);
+        else if (spd > 8) P.aim += WrapAngle(AngleOf(P.vel) - P.aim) * Damp(12, dt);
     } else if (aiming) {
         Vector2 aimPt = cam.ScreenToGround(GetMousePosition(), H_PED * 0.8f);
         if (Dist(aimPt, P.pos) > 4) P.aim += WrapAngle(AngleOf(aimPt - P.pos) - P.aim) * Damp(25, dt);
@@ -1084,6 +1180,28 @@ void Game::UpdatePlayerOnFoot(float dt) {
 
     // torso animation: synced with the legs while moving, slow breathing idle otherwise
     if (spd > 8) P.bodyAnim = fabsf(P.feetAnim); else P.bodyAnim += dt * 12.0f;
+
+    // The 3D player's layers face the aim; the legs walk, run, strafe or backpedal along the
+    // motion (from 0.3 m/s): ahead within 45 degrees, sideways within 135, else backwards.
+    // Walks advance with the distance at their stride, runs and jogs by cadence.
+    if (gAssets.player3D) {
+        float spdM = spd / M;
+        PlayerGait g = PlayerGait::Stand;
+        if (spdM > 0.3f) {
+            float diff = WrapAngle(AngleOf(P.vel) - P.aim), ad = fabsf(diff);
+            if (ad < 0.785f || !P.aiming) g = P.running ? PlayerGait::Run : PlayerGait::Walk;
+            else if (ad < 2.356f) g = diff > 0 ? (P.running ? PlayerGait::JogRight : PlayerGait::StrafeRight)
+                                               : (P.running ? PlayerGait::JogLeft : PlayerGait::StrafeLeft);
+            else g = PlayerGait::Back;
+        }
+        const PlayerGaitDef& d = gAssets.playerGait[(int)g];
+        if (d.byDistance) P.legPhase += spd * dt / std::max(1.0f, d.cycleM * M);
+        else P.legPhase += d.steps * std::clamp(spdM / d.atSpeed, 0.6f, 1.3f) * 0.5f * dt;
+        P.legPhase -= floorf(P.legPhase);
+        P.gait = (int)g;
+    }
+    float raiseTo = P.aiming ? 1.0f : 0.0f;
+    P.raise = raiseTo > P.raise ? std::min(raiseTo, P.raise + dt / WEAPON_RAISE) : std::max(raiseTo, P.raise - dt / WEAPON_LOWER);
     static float stepT = 0;
     stepT += dt * spd / (P.running ? 60.0f : 45.0f);
     if (stepT > 1) { stepT = 0; audio.Play(Sfx::Footstep, P.pos, 0.25f, GRng().Range(0.8f, 1.2f)); }
@@ -1103,8 +1221,26 @@ void Game::UpdatePlayerOnFoot(float dt) {
     const WeaponDef& W = gAssets.weapons[P.weapon];
     P.fireCooldown -= dt;
     P.actionTimer = std::max(0.0f, P.actionTimer - dt);
+    auto startReload = [&] {
+        int missing = std::min(W.clip - P.clip[P.weapon], P.ammo[P.weapon]);
+        bool shells = W.shellTime > 0;                // a pump shotgun: shell by shell, then the pump
+        float t = shells ? missing * W.shellTime + W.pumpTime : W.reloadTime;
+        P.reloadTimer = P.reloadTotal = t;
+        P.reloadShells = shells ? missing : 0;
+        P.reloadLoaded = 0;
+        P.bodyState = BodyAnim::Reload; P.actionTimer = P.actionDur = t;
+        audio.Play(Sfx::Reload, P.pos, 0.6f);
+    };
     if (P.reloadTimer > 0) {
         P.reloadTimer -= dt;
+        if (P.reloadShells > 0) {                     // every shell goes in as it is pushed home
+            int done = std::min(P.reloadShells, (int)((P.reloadTotal - P.reloadTimer) / W.shellTime));
+            for (; P.reloadLoaded < done; P.reloadLoaded++)
+                if (P.clip[P.weapon] < W.clip && P.ammo[P.weapon] > 0) {
+                    P.clip[P.weapon]++; P.ammo[P.weapon]--;
+                    audio.Play(Sfx::Reload, P.pos, 0.35f, 1.3f);
+                }
+        }
         if (P.reloadTimer <= 0) {
             int take = std::min(W.clip - P.clip[P.weapon], P.ammo[P.weapon]);
             P.clip[P.weapon] += take; P.ammo[P.weapon] -= take;
@@ -1112,29 +1248,28 @@ void Game::UpdatePlayerOnFoot(float dt) {
     }
     bool wantFire = W.kind == WeaponKind::Auto ? IsMouseButtonDown(MOUSE_BUTTON_LEFT) : IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     if (W.kind == WeaponKind::Melee) wantFire = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    if (piloted) wantFire = pilot.fire;
     if (autoAttack) wantFire = true;
     if (wantFire && P.fireCooldown <= 0 && P.reloadTimer <= 0) {
         if (W.kind == WeaponKind::Melee) {
             MeleeHit();
             P.fireCooldown = 1.0f / W.fireRate;
-            P.bodyState = BodyAnim::Melee; P.actionTimer = 0.45f;
+            P.bodyState = BodyAnim::Melee; P.actionTimer = P.actionDur = 0.45f;
+            P.melees++;
         } else if (P.clip[P.weapon] > 0) {
             FireWeapon();
             P.clip[P.weapon]--;
             P.fireCooldown = 1.0f / W.fireRate;
-            P.bodyState = BodyAnim::Shoot; P.actionTimer = 0.12f;
+            P.bodyState = BodyAnim::Shoot; P.actionTimer = P.actionDur = std::min(0.55f, 0.9f / W.fireRate);   // the shotgun's pump shows
         } else if (P.ammo[P.weapon] > 0) {
-            P.reloadTimer = W.reloadTime; P.bodyState = BodyAnim::Reload; P.actionTimer = W.reloadTime;
-            audio.Play(Sfx::Reload, P.pos, 0.6f);
+            startReload();
         } else {
             P.fireCooldown = 0.3f;
             audio.Play(Sfx::Reload, P.pos, 0.3f, 2.0f);         // empty click
         }
     }
-    if (IsKeyPressed(KEY_R) && W.kind != WeaponKind::Melee && P.reloadTimer <= 0 && P.clip[P.weapon] < W.clip && P.ammo[P.weapon] > 0) {
-        P.reloadTimer = W.reloadTime; P.bodyState = BodyAnim::Reload; P.actionTimer = W.reloadTime;
-        audio.Play(Sfx::Reload, P.pos, 0.6f);
-    }
+    if ((piloted ? pilot.reload : IsKeyPressed(KEY_R)) && W.kind != WeaponKind::Melee && P.reloadTimer <= 0 && P.clip[P.weapon] < W.clip && P.ammo[P.weapon] > 0)
+        startReload();
     if (P.actionTimer <= 0) P.bodyState = spd > 8 ? BodyAnim::Move : BodyAnim::Idle;
 
     // ---- get into a vehicle ----
@@ -1791,6 +1926,44 @@ void Game::Respawn(bool busted) {
 // -------------------------------------------------------------------------------------
 //  Rendering
 // -------------------------------------------------------------------------------------
+// One frame of a player atlas, its visible part drawn at its offset from the shared pivot.
+static void DrawPlayerFrame(const FrameAtlas& a, int frame, Vector2 pos, float angle, float h, Color tint) {
+    if (a.src.empty()) return;
+    frame = std::clamp(frame, 0, (int)a.src.size() - 1);
+    float k = gAssets.playerFrameM * M * CHAR_SCALE * gAssets.playerDrawScale / gAssets.playerFramePx;
+    const Rectangle& src = a.src[frame];
+    Vector2 at = pos + RightOf(angle) * (a.offset[frame].x * k) - Forward(angle) * (a.offset[frame].y * k);
+    DrawFlatSprite(a.tex, src, at, h, src.width * k, src.height * k, angle, tint);
+}
+
+// The upper body's frame: an action while one runs, the aim while the weapon is raised, else
+// the weapon lowered in step with the legs.
+static int PlayerUpperFrame(const PlayerState& P, const PlayerSet& s, const WeaponDef& W, int legIndex, int legCount) {
+    float progress = P.actionDur > 0 ? Saturate(1.0f - P.actionTimer / P.actionDur) : 1.0f;
+    const PedFrames& fire = s.act[(int)PlayerAct::Fire];
+    const PedFrames& reload = s.act[(int)PlayerAct::Reload];
+    const PedFrames& melee = s.act[(int)PlayerAct::Melee];
+    if (P.actionTimer > 0 && P.bodyState == BodyAnim::Shoot && fire.count)     // the recoil, then the recovery (the pump)
+        return fire.first + (progress < 0.4f ? 0 : std::min(1, fire.count - 1));
+    if (P.actionTimer > 0 && P.bodyState == BodyAnim::Reload && reload.count) {
+        if (P.reloadShells > 0 && reload.count >= 4) {              // a shell: take, at the port, home; then the pump
+            float elapsed = P.reloadTotal - P.reloadTimer;
+            if (elapsed < P.reloadShells * W.shellTime)
+                return reload.first + std::min(2, (int)(fmodf(elapsed, W.shellTime) / W.shellTime * 3.0f));
+            return reload.first + 3;
+        }
+        return reload.first + std::clamp((int)(progress * reload.count), 0, reload.count - 1);
+    }
+    if (P.actionTimer > 0 && P.bodyState == BodyAnim::Melee && melee.count) {
+        if (W.animSet == "unarmed") return melee.first + P.melees % std::max(1, melee.count);   // jab, cross
+        return melee.first + (progress < 0.35f ? 0 : std::min(1, melee.count - 1));           // wind-up, blow
+    }
+    const PedFrames& aim = s.act[(int)PlayerAct::Aim];
+    if (P.raise >= 0.5f && aim.count) return aim.first;
+    const PedFrames& g = s.gait[P.gait];
+    return g.first + (g.count == legCount ? legIndex : legIndex % std::max(1, g.count));
+}
+
 void Game::DrawPlayerSprite(bool shadowPass, Vector2 sv) const {
     if (player.inVehicle) return;
     const WeaponDef& W = gAssets.weapons[player.weapon];
@@ -1800,6 +1973,18 @@ void Game::DrawPlayerSprite(bool shadowPass, Vector2 sv) const {
         const Texture2D& t = gAssets.softCircle;
         DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, player.pos + sv * 14.0f, 0, 0.9f * M * CHAR_SCALE, 0.9f * M * CHAR_SCALE, 0, ColorA(BLACK, 0.85f));
         return;
+    }
+    Color tint3 = player.hurtFlash > 0 ? LerpColor(WHITE, { 255, 120, 120, 255 }, player.hurtFlash) : WHITE;
+    if (gAssets.player3D) {
+        if (const PlayerSet* ps = gAssets.FindPlayerSet(W.animSet)) {
+            // both layers face the aim: the legs' clips walk, strafe or backpedal by themselves
+            const PlayerGaitDef& d = gAssets.playerGait[player.gait];
+            int count = std::max(1, d.frames.count);
+            int index = std::min(count - 1, (int)(player.legPhase * count));
+            DrawPlayerFrame(gAssets.playerLegs, d.frames.first + index, player.pos, player.aim, H_PED - 6, tint3);
+            DrawPlayerFrame(ps->atlas, PlayerUpperFrame(player, *ps, W, index, count), player.pos, player.aim, H_PED, tint3);
+            return;
+        }
     }
     // legs first (they follow the movement direction), then the upper body (aim)
     float spd = Len(player.vel);

@@ -502,7 +502,7 @@ static const char* DEFAULT_WEAPONS = R"(
 WEAPON Fists      unarmed     12  2.5  0  1  1.2  0   0    0    melee punch
 WEAPON Knife      knife       40  2.0  0  1  1.4  0   0    0    melee knife
 WEAPON Pistol     handgun     26  4.0  3  1  40   12  96   1.2  semi  pistol
-WEAPON Shotgun    shotgun     14  1.1  14 8  22   6   36   2.2  semi  shotgun
+WEAPON Shotgun    shotgun     14  1.1  14 8  22   6   36   2.2  semi  shotgun shells 0.45 0.40
 WEAPON Rifle      rifle       22  10   4  1  60   30  180  2.0  auto  rifle
 WEAPON Flashlight flashlight  10  2.0  0  1  1.4  0   0    0    melee punch light
 )";
@@ -950,6 +950,130 @@ static void LoadCivilians(Assets& A) {
 }
 
 // -------------------------------------------------------------------------------------
+//  The 3D player (player.cfg, CJ-011): a legs atlas and an upper-body atlas per weapon set
+// -------------------------------------------------------------------------------------
+// Cut every frame of a grid atlas ('cols' frames per row) to its visible part and pack the parts
+// in rows of at most 4096 px (4 px apart, so that mipmaps do not bleed); returns the bytes.
+static size_t PackFrames(FrameAtlas& a, Image grid, int framePx, int cols) {
+    AssetImageGuard gridGuard(grid);
+    const int PAD = 4, MAXW = 4096;
+    int frames = cols * (grid.height / framePx);
+    std::vector<Rectangle> part(frames), from(frames);
+    int x = PAD, y = PAD, rowH = 0, width = 1;
+    a.src.resize(frames);
+    a.offset.resize(frames);
+    for (int i = 0; i < frames; i++) {
+        Rectangle cell = { (float)((i % cols) * framePx), (float)((i / cols) * framePx), (float)framePx, (float)framePx };
+        Image f;
+        Rectangle b;
+        { startup::AtomicSpan span(assetReporter, "image", "Player frame trim");
+          f = ImageFromImage(grid, cell);
+          b = GetImageAlphaBorder(f, 0.01f); }
+        UnloadImage(f);
+        if (b.width <= 0 || b.height <= 0) b = { framePx * 0.5f, framePx * 0.5f, 1, 1 };
+        if (x + (int)b.width + PAD > MAXW) { x = PAD; y += rowH + PAD; rowH = 0; }
+        from[i] = { cell.x + b.x, cell.y + b.y, b.width, b.height };
+        a.src[i] = { (float)x, (float)y, b.width, b.height };
+        a.offset[i] = { b.x + b.width * 0.5f - framePx * 0.5f, b.y + b.height * 0.5f - framePx * 0.5f };
+        x += (int)b.width + PAD;
+        rowH = std::max(rowH, (int)b.height);
+        width = std::max(width, x);
+        AssetPulse();
+    }
+    Image packed = GenImageColor(width, y + rowH + PAD, BLANK);
+    AssetImageGuard packedGuard(packed);
+    for (int i = 0; i < frames; i++) {
+        startup::AtomicSpan span(assetReporter, "image", "Player frame packing");
+        ImageDraw(&packed, grid, from[i], a.src[i], WHITE);
+    }
+    FreeAssetImage(grid);
+    size_t bytes = (size_t)packed.width * packed.height * 4;
+    packedGuard.Release();
+    a.tex = MakeTexture(packed, false, true);
+    return bytes;
+}
+
+static int PlayerGaitByName(const std::string& s) {
+    static const char* names[] = { "stand", "walk", "run", "strafel", "strafer", "back", "jogl", "jogr" };
+    for (int i = 0; i < (int)PlayerGait::COUNT; i++) if (s == names[i]) return i;
+    return -1;
+}
+static int PlayerActByName(const std::string& s) {
+    static const char* names[] = { "aim", "fire", "reload", "melee" };
+    for (int i = 0; i < (int)PlayerAct::COUNT; i++) if (s == names[i]) return i;
+    return -1;
+}
+
+// Loads player.cfg; leaves A.player3D false (the Survivor sets are drawn) when it is missing or
+// incomplete.
+static void LoadPlayer(Assets& A) {
+    const auto records = AssetData("assets/data/player.cfg", "");
+    int framePx = 0, cols = 16;
+    float frameM = 0, scale = 1.0f;
+    size_t bytes = 0;
+    char path[256];
+    auto loadAtlas = [&](FrameAtlas& atlas, const std::string& file) {
+        snprintf(path, sizeof(path), "assets/characters/player/%s", file.c_str());
+        Image img{};
+        AssetImageGuard guard(img);
+        if (framePx <= 0 || !TryLoadImage(path, img)) return false;
+        guard.Release();
+        bytes += PackFrames(atlas, img, framePx, cols);
+        return true;
+    };
+    bool ok = !records.empty();
+    for (const DataRecord& r : records) {
+        AssetPulse("Player layers");
+        if (r.Is("FRAME") && r.size() >= 3) { framePx = r.I(1); frameM = r.F(2); }
+        else if (r.Is("SCALE") && r.size() >= 2) scale = r.F(1);
+        else if (r.Is("COLS") && r.size() >= 2) cols = std::max(1, r.I(1));
+        else if (r.Is("LEGS") && r.size() >= 2) ok = loadAtlas(A.playerLegs, r[1]) && ok;
+        else if (r.Is("GAIT") && r.size() >= 6) {
+            int g = PlayerGaitByName(r[1]);
+            if (g < 0) { TraceLog(LOG_WARNING, "player.cfg:%d unknown gait '%s'", r.line, r[1].c_str()); continue; }
+            PlayerGaitDef& d = A.playerGait[g];
+            d.frames = { r.I(2), r.I(3) };
+            d.byDistance = r[4] == "dist";
+            if (d.byDistance) d.cycleM = r.F(5);
+            else { d.steps = r.F(5); d.atSpeed = r.F(6, 6.5f); }
+        } else if (r.Is("SET") && r.size() >= 3) {
+            A.playerSets.push_back({});
+            A.playerSets.back().name = r[1];
+            if (!loadAtlas(A.playerSets.back().atlas, r[2])) { A.playerSets.pop_back(); ok = false; }
+        } else if (r.Is("UPPER") && r.size() >= 5) {
+            PlayerSet* set = nullptr;
+            for (auto& s : A.playerSets) if (s.name == r[1]) set = &s;
+            if (!set) { TraceLog(LOG_WARNING, "player.cfg:%d UPPER for an unknown set '%s'", r.line, r[1].c_str()); continue; }
+            int g = PlayerGaitByName(r[2]), act = PlayerActByName(r[2]);
+            if (g >= 0) set->gait[g] = { r.I(3), r.I(4) };
+            else if (act >= 0) set->act[act] = { r.I(3), r.I(4) };
+            else TraceLog(LOG_WARNING, "player.cfg:%d unknown state '%s'", r.line, r[2].c_str());
+        }
+    }
+    for (int g = 0; g < (int)PlayerGait::COUNT; g++)
+        if (A.playerGait[g].frames.count <= 0 || A.playerGait[g].frames.first + A.playerGait[g].frames.count > (int)A.playerLegs.src.size()) ok = false;
+    for (const PlayerSet& s : A.playerSets)
+        for (int g = 0; g < (int)PlayerGait::COUNT; g++)
+            if (s.gait[g].count <= 0 || s.gait[g].first + s.gait[g].count > (int)s.atlas.src.size()) ok = false;
+    if (!ok || A.playerSets.empty()) {
+        if (!records.empty()) TraceLog(LOG_WARNING, "PLAYER: player.cfg is incomplete - drawing the Survivor sprites");
+        assetFallback = assetFallback || !records.empty();
+        return;
+    }
+    A.player3D = true;
+    A.playerFramePx = framePx;
+    A.playerFrameM = frameM;
+    A.playerDrawScale = scale;
+    TraceLog(LOG_INFO, "PLAYER: legs and %d weapon sets, %d px frames for %.2f m, drawn x%.2f, %.1f MB packed (before mipmaps)",
+             (int)A.playerSets.size(), framePx, frameM, scale, bytes / 1048576.0);
+}
+
+const PlayerSet* Assets::FindPlayerSet(const std::string& name) const {
+    for (auto& s : playerSets) if (s.name == name) return &s;
+    return nullptr;
+}
+
+// -------------------------------------------------------------------------------------
 //  Character animation sets (characters.cfg) and weapons (weapons.cfg)
 // -------------------------------------------------------------------------------------
 static SpriteAnim LoadAnim(const std::string& dir, const std::string& prefix, int frames, Vector2 pivot, bool centrePivot, const char* child) {
@@ -1002,7 +1126,7 @@ static int StateIndex(const std::string& s) {
 
 static void LoadCharacters(Assets& A) {
     const auto records = AssetData("assets/data/characters.cfg", DEFAULT_CHARACTERS);
-    std::vector<startup::ChildSpec> children{ { "player", 1 }, { "weapons", 1, false }, { "fallback_weapon", 1, false }, { "validation", 1 } };
+    std::vector<startup::ChildSpec> children{ { "player", 1 }, { "player3d", 1, false }, { "weapons", 1, false }, { "fallback_weapon", 1, false }, { "validation", 1 } };
     for (size_t i = 0; i < records.size(); i++) {
         const DataRecord& r = records[i];
         int frames = r.Is("ANIM") ? r.I(3) : r.Is("FEET") ? r.I(2) : 0;
@@ -1011,11 +1135,14 @@ static void LoadCharacters(Assets& A) {
     AssetPlan(children);
     AssetValidate(IsTextureValid(A.playerUnarmed), "The player texture is unavailable");
     AssetDone("player");
+    LoadPlayer(A);
+    AssetDone("player3d", A.player3D ? startup::Outcome::Ready : startup::Outcome::Skipped);
     int64_t completed = 0;
     AssetCount(0, (int64_t)records.size(), "records processed");
     for (size_t i = 0; i < records.size(); i++) {
         const DataRecord& r = records[i];
         AssetChildStep step("record" + std::to_string(i), completed, (int64_t)records.size());
+        if (A.player3D && (r.Is("ANIM") || r.Is("FEET"))) { step.outcome = startup::Outcome::Skipped; continue; }   // not needed
         if (r.Is("SCALE")) A.charScale = r.F(1, A.charScale) * 2.0f;          // atlases are stored at 50%
         else if (r.Is("ANIM") && r.size() >= 8) {
             int st = StateIndex(r[2]);
@@ -1050,7 +1177,10 @@ static void LoadCharacters(Assets& A) {
         w.rangePx = r.F(7) * cfg::M; w.clip = r.I(8); w.startAmmo = r.I(9); w.reloadTime = r.F(10);
         w.kind = r[11] == "auto" ? WeaponKind::Auto : r[11] == "semi" ? WeaponKind::Semi : WeaponKind::Melee;
         w.sound = r[12];
-        for (size_t k = 13; k < r.size(); k++) if (r[k] == "light") w.light = true;
+        for (size_t k = 13; k < r.size(); k++) {
+            if (r[k] == "light") w.light = true;
+            else if (r[k] == "shells" && k + 2 < r.size()) { w.shellTime = r.F(k + 1); w.pumpTime = r.F(k + 2); k += 2; }
+        }
         A.weapons.push_back(w);
     }
     AssetDone("weapons", weapons.empty() ? startup::Outcome::Skipped : startup::Outcome::Ready);

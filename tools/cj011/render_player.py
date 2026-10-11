@@ -1468,19 +1468,27 @@ results = {}
 mpath = os.path.join(out_dir, "measure.json")
 if os.path.exists(mpath):
     results = json.load(open(mpath))
-if any(j.startswith("gait:") for j in poses):
+UPPER_ONLY = bool(os.environ.get("CJ_UPPER"))      # poses: the upper-body layer only, for the atlases
+if any(j.startswith("gait:") for j in poses) or UPPER_ONLY:
     build_leg_attribute()
     setup_layers()
     show_layer(True, True)
+STAND_CENTRE = None
+if UPPER_ONLY:                  # the poses' pivot: the standing pelvis, as the stand legs' frame
+    gait_pose("stand", 0)
+    STAND_CENTRE = (rig.matrix_world @ rig.pose.bones["pelvis"].head).xy
 for name in poses:
     if name.startswith("gait:"):
         gait_job(name)
         json.dump(results, open(mpath, "w"), indent=1)
         continue
     held, info = pose(name)
-    # the pelvis at the frame centre, as the civilians' standing frames
+    # the pelvis at the frame centre, as the civilians' standing frames; for the atlases, the
+    # standing pelvis, so that the upper body sits on the stand legs
     p = rig.matrix_world @ rig.pose.bones["pelvis"].head
-    cam.location.x, cam.location.y = p.x, p.y
+    cam.location.x, cam.location.y = (STAND_CENTRE.x, STAND_CENTRE.y) if UPPER_ONLY else (p.x, p.y)
+    if UPPER_ONLY:
+        show_layer(False, True)
     results[name] = measure(held, info)
     print("MEASURE", name, results[name])
     fname = name.replace(":", "_").replace(".", "_")        # clip:<weapon>:<action>:<frame>

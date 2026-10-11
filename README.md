@@ -66,7 +66,7 @@ Other build options (debug builds, CMake, Linux and macOS), packaging a release 
 | Key | Action |
 |---|---|
 | W A S D / arrow keys | Move (the character faces where it walks) |
-| Shift | Run |
+| Shift | Run (walking is a real walking pace) |
 | Right mouse button (hold) | Aim at the cursor, strafe or backpedal |
 | Left mouse button | Attack or shoot (also turns towards the cursor) |
 | R | Reload |

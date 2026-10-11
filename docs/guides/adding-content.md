@@ -198,7 +198,34 @@ FEET  <anim> <frames> <folder> <file prefix>
 | `ANIM` | Upper-body animation of a set; `state` is `idle`, `move`, `shoot`, `reload` or `melee`; the pivot is the body centre in source pixels |
 | `FEET` | Leg animation drawn under the body; `anim` is `idle`, `walk`, `run`, `strafe_left` or `strafe_right` |
 
-A weapon chooses which set the player's body uses.
+A weapon chooses which set the player's body uses. These Survivor sprites are only drawn when `player.cfg` is missing or incomplete; with it, they are not loaded.
+
+## Player
+
+File: `assets/data/player.cfg`, written by [make_player.py](../../tools/cj011/make_player.py) with the atlases in `assets/characters/player/`: grids of square frames, the person **facing up**, every layer pivoted on the frame centre.
+
+```
+FRAME <px> <metres>
+SCALE <factor>
+COLS  <frames per row>
+LEGS  <file>
+GAIT  <gait> <first> <count> dist <metres per cycle>
+GAIT  <gait> <first> <count> cadence <steps/s> <at m/s>
+SET   <set> <file>
+UPPER <set> <state> <first> <count>
+```
+
+| Record | Meaning |
+|---|---|
+| `FRAME` | Frame size in pixels and the metres one frame covers at life size |
+| `SCALE` | How much larger the player is drawn, on top of `CHAR_SCALE` (1.12, as the civilians) |
+| `COLS` | Frames per atlas row |
+| `LEGS` | The legs layer's atlas |
+| `GAIT` | Where a gait's legs are in it, and how they play: by the distance moved (`dist`, a cycle of two steps per that many metres) or by cadence (`cadence`, steps per second at a speed, scaled with the speed between 0.6 and 1.3 times). Gaits: `stand`, `walk`, `run`, `strafel`, `strafer`, `back`, `jogl`, `jogr` |
+| `SET` | The upper-body atlas of a weapon set (the `anim set` of `weapons.cfg`) |
+| `UPPER` | Where a set's frames are: a gait (the weapon lowered, in step with the legs; as many frames as the gait's legs) or `aim`, `fire` (two: the recoil, the recovery), `reload` (four), `melee` (two: the fists' two punches, or a wind-up and the blow) |
+
+Every gait must be present in the legs and in every set, or the game draws the Survivor sprites. At load, every frame is cut to its visible part and packed. To change the player, see the [CJ-011 player art](../../assets/art/cj011/README.md).
 
 ## Civilians
 
@@ -234,17 +261,18 @@ File: `assets/data/weapons.cfg`. The order of the lines is the order of the numb
 
 ```
 WEAPON <name> <anim set> <damage> <shots/s> <spread deg> <pellets> <range m>
-       <clip> <start ammo> <reload s> <melee|semi|auto> <sound> [light]
+       <clip> <start ammo> <reload s> <melee|semi|auto> <sound> [light] [shells <s> <pump s>]
 ```
 
 | Field | Meaning |
 |---|---|
-| anim set | A set from `characters.cfg` |
+| anim set | A set from `player.cfg` (and `characters.cfg`) |
 | spread, pellets | Random cone per shot; pellets > 1 makes a shotgun |
 | clip, start ammo, reload | Magazine size; reference ammunition (a pickup gives half of it; a gun with 0 never appears as a pickup); reload time |
 | mode | `melee`, `semi` (one shot per click) or `auto` (hold to fire) |
 | sound | `punch`, `knife`, `pistol`, `shotgun` or `rifle` |
 | `light` | The weapon casts a flashlight beam |
+| `shells` | Reloads shell by shell: only the missing shells, `<s>` each, then `<pump s>` to rack the pump; the `reload` time is then unused |
 
 ## Foliage
 

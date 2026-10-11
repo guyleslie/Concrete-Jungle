@@ -18,8 +18,10 @@ Source: `src/game.h`, `src/game.cpp`; weapon definitions in `assets/data/weapons
 
 ## Player on foot
 
-- Walks at 4 m/s and runs at 6.5 m/s (Shift); reloading slows the player to 60 %.
-- The character turns to face where it walks. Holding the right mouse button, or attacking, turns the torso towards the cursor while the legs keep walking — strafing sideways or backpedalling.
+- Walks at 1.5 m/s, a real walking pace, and runs at 6.5 m/s (Shift); reloading slows the player to 60 %.
+- The character turns to face where it walks. Holding the right mouse button, or attacking, turns it towards the cursor while the legs keep moving: within 45° of the aim they walk or run, within 135° they strafe (with Shift, a jogging strafe), beyond that they backpedal.
+- The weapon is carried lowered and raised only to aim: while either mouse button is held and for 0.8 s after a shot. It is raised in 0.2 s and lowered in 0.25 s; the drawing switches half way.
+- Drawn as two layers from 3D renders ([CJ-011 player art](../../assets/art/cj011/README.md), format: [Adding content › Player](../guides/adding-content.md#player)): the legs, played by the distance walked (walks, strafes and the backpedal) or by cadence (the run and the jogging strafes), and the upper body of the weapon's set, which shows the weapon lowered in step with the legs, the aim, the fire, reload and melee frames. Both layers face the aim and share the pivot. Without `player.cfg` the Survivor sprites of `characters.cfg` are drawn.
 - The player collides with buildings, solid furniture and vehicles; a vehicle hitting the player faster than about 25 km/h hurts.
 
 ## Weapons
@@ -31,7 +33,7 @@ Weapons are defined in `assets/data/weapons.cfg` (format: [Adding content › We
 | Melee | Hits people in front of the player; can knock them down (knife 20 %, others 45 % per hit). About 15 % of people hit back (see [Pedestrians › Fighting back](pedestrians.md#fighting-back)). Vehicles take 15 % of the damage. |
 | Semi-automatic / automatic | Each shot (or pellet) is a ray against buildings, street furniture, vehicles and people. Vehicles take 55 % of the damage and sometimes lose glass; breakable props such as hydrants and bins break. |
 
-Firing scares pedestrians within 34 m (they run after their reaction time) and, below one star, raises the wanted level slightly. An empty clip reloads automatically when the player fires again; R reloads manually.
+Firing scares pedestrians within 34 m (they run after their reaction time) and, below one star, raises the wanted level slightly. An empty clip reloads automatically when the player fires again; R reloads manually. The shotgun reloads shell by shell: only the missing shells, 0.45 s each, then 0.4 s to rack the pump; each shell counts as soon as it is in. Every shotgun shot is followed by racking the pump in the drawing.
 
 ## Vehicles
 
