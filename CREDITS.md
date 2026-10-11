@@ -22,8 +22,8 @@ All third-party assets are free for commercial use. Only the Survivor character 
 | Rajdhani | User interface font | Indian Type Foundry | SIL OFL 1.1 | [Google Fonts](https://fonts.google.com/specimen/Rajdhani) |
 | MakeHuman asset packs: system assets, shirts01, pants01, shoes01, hair01, skins01 | Civilian bodies, clothes, hair and skins | MakeHuman community | CC0 | [MakeHuman](https://static.makehumancommunity.org/assets/assetpacks.html) |
 | Universal Animation Library (Standard) | Civilian walk, run, punches and fall | Quaternius | CC0 | [Quaternius](https://quaternius.com/packs/universalanimationlibrary.html) |
-| Ultimate Gun Pack | Player weapon models in the CJ-011 renders (pistol, carbine) | Quaternius | CC0 | [OpenGameArt](https://opengameart.org/content/low-poly-guns-pack) |
-| Mixamo animations: Walk Strafe Left, Walk Strafe Right, Walking Backwards | Player strafe and backpedal legs in the CJ-011 renders | Adobe | Mixamo terms: free to use in projects; the animation files are not redistributed (they stay in the ignored `build/art-sources/`) | [Mixamo](https://www.mixamo.com/) |
+| Ultimate Gun Pack | Player weapon models in the CJ-011 renders (pistol, carbine, pump shotgun, combat knife) | Quaternius | CC0 | [OpenGameArt](https://opengameart.org/content/low-poly-guns-pack) |
+| Mixamo animations: Walk Strafe Left and Right, Jog Strafe Left and Right, Walking Backwards, Reloading 2 handed gun, Stabbing | Player strafes, backpedal, rifle charging and stab in the CJ-011 renders | Adobe | Mixamo terms: free to use in projects; the animation files are not redistributed (they stay in the ignored `build/art-sources/`) | [Mixamo](https://www.mixamo.com/) |
 
 ## Required attribution
 

@@ -6,14 +6,16 @@ The base comes from tools/cj004/build_civilian.py with tools/cj011/look-player.j
 script adds, modelled here because no CC0 MakeHuman asset exists:
   - a dark baseball cap: a crown fitted over the evaluated head and hair, with seams, a button
     and a curved peak, fixed to the head bone;
-  - a light camouflage backpack: a rounded fabric body, a flap with a buckle strap and two
-    shoulder straps, fixed to spine_03;
-and the weapons of GUNS, imported from the Ultimate Gun Pack (Quaternius, CC0) as OBJ. A
-weapon object's origin is its grip (where the right palm holds it), its X axis runs along the
+  - a camouflage fabric daypack: a soft body with rounded top corners, zips, a front pocket
+    and a grab handle, flat shoulder straps to a buckle on the chest and lower straps round
+    the side to its bottom corners, fixed to spine_03;
+and the weapons of GUNS, imported from the Ultimate Gun Pack (Quaternius, CC0) as OBJ, and a
+handheld flashlight modelled here. A weapon object's origin is its grip (where the right palm holds it), its X axis runs along the
 bore towards the muzzle, Z is the weapon's top and 1 unit is 1 m; custom properties give the
 support hand point ("fore"), the butt ("butt") and the muzzle ("muzzle") in that frame, and the
-grip axis ("grip_down", from the top of the grip to its bottom). The weapons are hidden; the
-render script places them per pose.
+grip axis ("grip_down", from the top of the grip to its bottom) and, for a weapon held in a
+hammer grip (the knife, the flashlight), the knuckles' direction ("knuckles"). The weapons are
+hidden; the render script places them per pose.
 """
 import bpy, bmesh, math, os, sys
 from mathutils import Matrix, Vector
@@ -33,8 +35,66 @@ GUNS = {
                "fore": None, "butt": None},
     "rifle": {"model": "AssaultRifle2_1", "length_m": 0.84, "bore_z": 0.66,
               "grip": (-0.22, 0.12), "grip_top": (-0.10, 0.45), "grip_bottom": (-0.35, -0.20),
-              "fore": (1.75, 0.635), "butt": (-1.56, 0.55)},
+              "fore": (1.75, 0.635), "butt": (-1.56, 0.55),
+              "mag_region": ((0.60, 1.20), 0.27)},       # the magazine: x range and top, model units
+    # a pump shotgun with a long barrel: the right hand on the stock's wrist, the left on the pump
+    "shotgun": {"model": "Shotgun_2", "length_m": 1.05, "bore_z": 0.22,
+                "grip": (0.10, 0.05), "grip_top": (0.20, 0.17), "grip_bottom": (0.0, -0.08),
+                "fore": (1.55, 0.06), "butt": (-1.42, 0.0)},          # the rear of the pump
+    # a combat knife, held in a hammer grip: the handle across the palm, the blade out of the
+    # thumb's side (grip_top at the guard), the knuckles towards the edge (-Z)
+    "knife": {"model": "Accessories/Bayonet_2", "length_m": 0.30, "bore_z": 0.0,
+              "grip": (0.05, -0.01), "grip_top": (0.17, -0.01), "grip_bottom": (-0.10, -0.01),
+              "fore": None, "butt": None, "knuckles": (0.0, 0.0, -1.0)},
+    # a handheld flashlight, modelled below; held like the knife, the lens out of the thumb's side
+    "flashlight": {"model": None, "length_m": 0.30, "bore_z": 0.0,
+                   "grip": (0.10, 0.0), "grip_top": (0.17, 0.0), "grip_bottom": (0.03, 0.0),
+                   "fore": None, "butt": None, "knuckles": (0.0, 0.0, -1.0)},
 }
+
+
+def flashlight_obj():
+    """A 0.30 m black anodised police flashlight along +X, the tail at x = 0: a knurled body,
+    a flared head and a glass lens; in metres (the GUNS scale is then 1)."""
+    import bmesh as _bm
+    prof = [(0.000, 0.000), (0.000, 0.014), (0.004, 0.016), (0.020, 0.016), (0.022, 0.0175),
+            (0.190, 0.0175), (0.200, 0.016), (0.215, 0.018), (0.245, 0.026), (0.290, 0.027),
+            (0.298, 0.026), (0.300, 0.022), (0.300, 0.000)]
+    bm = _bm.new()
+    seg = 24
+    rings = []
+    for x, rad in prof:
+        rings.append([bm.verts.new((x, rad * math.cos(2 * math.pi * j / seg), rad * math.sin(2 * math.pi * j / seg)))
+                      for j in range(seg)])
+    for r0, r1 in zip(rings, rings[1:]):
+        for j in range(seg):
+            k = (j + 1) % seg
+            bm.faces.new((r0[j], r0[k], r1[k], r1[j]))
+    me = bpy.data.meshes.new("flashlight")
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("flashlight", me)
+    bpy.context.scene.collection.objects.link(o)
+    for poly in me.polygons:
+        poly.use_smooth = True
+    body = mat("Flashlight_Metal", (0.02, 0.02, 0.022), rough=0.35, metal=0.8)
+    o.data.materials.append(body)
+    # the lens: an emissive disc in the head
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.022, depth=0.003, location=(0.2995, 0, 0), rotation=(0, math.pi / 2, 0))
+    lens = bpy.context.object
+    lm = bpy.data.materials.new("Flashlight_Lens")
+    lm.use_nodes = True
+    pb = lm.node_tree.nodes["Principled BSDF"]
+    pb.inputs["Base Color"].default_value = (0.9, 0.92, 0.85, 1)
+    pb.inputs["Emission Color"].default_value = (1.0, 0.95, 0.8, 1)
+    pb.inputs["Emission Strength"].default_value = 3.0
+    lens.data.materials.append(lm)
+    # knurling: thin rings on the body
+    for i in range(8):
+        bpy.ops.mesh.primitive_torus_add(major_radius=0.0176, minor_radius=0.0012, location=(0.05 + i * 0.016, 0, 0),
+                                         rotation=(0, math.pi / 2, 0), major_segments=24, minor_segments=6)
+        bpy.context.object.data.materials.append(body)
+    return [o, lens] + [x for x in bpy.data.objects if x.name.startswith("Torus")]
 
 
 def mat(name, rgb, rough=0.6, metal=0.0, sheen=0.0):
@@ -517,10 +577,93 @@ for o in (*buckles, *pullers):
 for o in (pack, pocket, zip_top, pocket_zip, handle, *pullers, *buckles, *straps):
     parent_to_bone(o, "spine_03")
 
+# ---- magazines ---------------------------------------------------------------------------
+# For the reloads, a magazine is an object of its own: its origin at the body's centre, +Z
+# along it towards the top (the feed lips), +X to the front. The weapon's "mag_seat" (16
+# numbers, row by row) takes the magazine's frame into the weapon's when it sits in the well.
+
+
+def frame_from(origin, up, fwd):
+    z = up.normalized()
+    x = (fwd - fwd.dot(z) * z).normalized()
+    return Matrix.Translation(origin) @ Matrix((x, z.cross(x), z)).transposed().to_4x4()
+
+
+def store_seat(gun, seat):
+    gun["mag_seat"] = [v for row in seat for v in row]
+
+
+def split_rifle_mag(gun, gx, gz, k, region):
+    """Separate the rifle's magazine (faces whose vertices all lie in 'region', model units)."""
+    (x0, x1), zmax = region
+    me = gun.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+
+    def inside(v):
+        return x0 <= v.co.x / k + gx <= x1 and v.co.z / k + gz <= zmax
+
+    faces = [f for f in bm.faces if all(inside(v) for v in f.verts)]
+    verts = {v for f in faces for v in f.verts}
+    pts = [v.co.copy() for v in verts]
+    zs = [p.z for p in pts]
+    tops = [p for p in pts if p.z > max(zs) - 0.01]
+    bots = [p for p in pts if p.z < min(zs) + 0.01]
+    top, bot = sum(tops, Vector()) / len(tops), sum(bots, Vector()) / len(bots)
+    centre = sum(pts, Vector()) / len(pts)
+    seat = frame_from(centre, top - bot, Vector((1, 0, 0)))
+    inv = seat.inverted()
+    mag_me = bpy.data.meshes.new("mag_rifle")
+    mbm = bmesh.new()
+    vmap = {v: mbm.verts.new(inv @ v.co) for v in verts}
+    for f in faces:
+        mbm.faces.new([vmap[v] for v in f.verts])
+    mbm.to_mesh(mag_me)
+    mbm.free()
+    bmesh.ops.delete(bm, geom=faces, context="FACES_ONLY")
+    loose = [v for v in bm.verts if not v.link_faces]
+    bmesh.ops.delete(bm, geom=loose, context="VERTS")
+    bm.to_mesh(me)
+    bm.free()
+    mag = bpy.data.objects.new("mag_rifle", mag_me)
+    bpy.context.scene.collection.objects.link(mag)
+    for slot in gun.material_slots:
+        mag.data.materials.append(slot.material)
+    store_seat(gun, seat)
+    mag.hide_render = True
+    print("MAG rifle: %d faces, length %.3f m" % (len(faces), (top - bot).length))
+
+
+def pistol_mag(gun):
+    """A pistol magazine: a black steel body 30 x 21 mm, 105 mm long, a base plate and feed
+    lips; seated so that the base plate is flush with the bottom of the grip."""
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    for v in bm.verts:
+        v.co = Vector((v.co.x * 0.030, v.co.y * 0.021, v.co.z * 0.105))
+    plate = bmesh.ops.create_cube(bm, size=1.0)["verts"]
+    for v in plate:
+        v.co = Vector((v.co.x * 0.036 + 0.002, v.co.y * 0.025, v.co.z * 0.007 - 0.0555))
+    me = bpy.data.meshes.new("mag_pistol")
+    bm.to_mesh(me)
+    bm.free()
+    mag = bpy.data.objects.new("mag_pistol", me)
+    bpy.context.scene.collection.objects.link(mag)
+    mag.data.materials.append(mat("Mag_Steel", (0.03, 0.03, 0.032), rough=0.35, metal=0.7))
+    mag.modifiers.new("bevel", "BEVEL").width = 0.0015
+    down = Vector(gun["grip_down"])
+    centre = down * (0.045 - 0.059)                    # the base plate's bottom at the grip's bottom
+    store_seat(gun, frame_from(centre, -down, Vector((1, 0, 0))))
+    mag.hide_render = True
+
+
 # ---- weapons -----------------------------------------------------------------------------
 for key, g in GUNS.items():
     before = set(bpy.data.objects)
-    bpy.ops.wm.obj_import(filepath=os.path.join(gun_dir, g["model"] + ".obj"))
+    if g["model"]:
+        bpy.ops.wm.obj_import(filepath=os.path.join(gun_dir, g["model"] + ".obj"))
+    else:
+        flashlight_obj()
     parts = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
     bpy.ops.object.select_all(action="DESELECT")
     for o in parts:
@@ -541,12 +684,15 @@ for key, g in GUNS.items():
     def local(p):
         return [(p[0] - gx) * k, 0.0, (p[1] - gz) * k]
 
+    if g.get("mag_region"):
+        split_rifle_mag(gun, gx, gz, k, g["mag_region"])
     gun["muzzle"] = [(max(xs) - gx) * k, 0.0, (g["bore_z"] - gz) * k]
     gun["fore"] = local(g["fore"]) if g["fore"] else []
     gun["butt"] = local(g["butt"]) if g["butt"] else []
     d = Vector(local(g["grip_bottom"])) - Vector(local(g["grip_top"]))
     gun["grip_down"] = list(d.normalized())
-    for slot in gun.material_slots:                       # glossier finish for the close camera
+    gun["knuckles"] = list(g.get("knuckles", ()))
+    for slot in gun.material_slots if g["model"] else ():                       # glossier finish for the close camera
         m = slot.material
         if m and m.use_nodes:
             p = m.node_tree.nodes.get("Principled BSDF")
@@ -562,6 +708,8 @@ for key, g in GUNS.items():
     gun.hide_render = True
     print("GUN", key, "scale %.4f" % k, "muzzle", [round(v, 3) for v in gun["muzzle"]],
           "fore", [round(v, 3) for v in gun["fore"]], "butt", [round(v, 3) for v in gun["butt"]])
+
+pistol_mag(bpy.data.objects["gun_pistol"])
 
 print("CAP top %.3f brim %.3f radii %.3f %.3f; PACK back %.3f chest %.3f" % (top_z, brim_z, rx, ry, back_y, chest_y))
 bpy.ops.wm.save_as_mainfile(filepath=out)
