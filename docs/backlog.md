@@ -17,17 +17,18 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07 and CJ-032 to CJ-037 were added on 2026-10-11:
+Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07, CJ-032 to CJ-037 were added on 2026-10-11 and the CJ-035 specification was agreed on 2026-10-11:
 
-1. **[CJ-032](#cj-032-isolated-test-arena) Isolated test arena** — approach agreed on 2026-10-11; the measurable criteria are confirmed and the before values measured at the start of the session. Later items that change people, animation or lighting are tested in it.
-2. **[CJ-035](#cj-035-vehicles-hitting-people) Vehicles hitting people** — playtest of 2026-10-11: the player is pushed along instead of being run over, and bodies slide in front of cars. Approach agreed on 2026-10-11 (speed bands, new player fall art, cars drive over the dead and hit the living); its own session agrees the criteria and runs the tests in the arena.
-3. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
-4. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
-5. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
-6. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
-7. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-8. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
-9. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
+1. **[CJ-035](#cj-035-vehicles-hitting-people) Vehicles hitting people** — specification agreed on 2026-10-11: every contact is one impact, never a push; throws and injuries from published measurements; vehicles drive over people lying on the road; new player fall art. It has its own isolated test scenario (decided on 2026-10-11, instead of waiting for the arena).
+2. **[CJ-038](#cj-038-pedestrian-attention-and-evasion) Pedestrian attention and evasion** — test of 2026-10-11: nearly everyone escapes a car driven into a crowd; not everyone notices it, or can get away, in real life.
+3. **[CJ-032](#cj-032-isolated-test-arena) Isolated test arena** — approach agreed on 2026-10-11; the measurable criteria are confirmed and the before values measured at the start of the session. Later items that change the player, animation or lighting are tested in it.
+4. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
+5. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
+6. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
+7. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
+8. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
+9. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
+10. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
 
 CJ-010 (pedestrians), CJ-013 (full screen) and CJ-033 (code review fixes) await user playtest acceptance.
 
@@ -48,7 +49,8 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
 | [CJ-033](#cj-033-code-review-fixes) | Code review fixes | High | Implemented, awaiting playtest |
-| [CJ-035](#cj-035-vehicles-hitting-people) | Vehicles hitting people | High | Approach agreed |
+| [CJ-035](#cj-035-vehicles-hitting-people) | Vehicles hitting people | High | Specification agreed |
+| [CJ-038](#cj-038-pedestrian-attention-and-evasion) | Pedestrian attention and evasion | High | Open |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
@@ -517,7 +519,7 @@ The testing guide gets an arena section with the test file format and the rule: 
 ### CJ-035 Vehicles hitting people
 
 - **Priority:** High
-- **Status:** Approach agreed on 2026-10-11; the specification and the before run start its session
+- **Status:** Specification agreed on 2026-10-11; next the before run
 
 **Problem (playtest, 2026-10-11).** The player can hardly be run over: cars push the player along, even at speed. A person hit by a vehicle should, depending on its speed and size, be pushed aside, knocked backwards or thrown some way, and fall. A car driving over someone lying on the road, alive or dead, should go over them, not push them along. The user wants this realistic and well thought out.
 
@@ -527,13 +529,51 @@ The testing guide gets an arena section with the test file format and the rule: 
 - A civilian (`VehiclePedCollisions`) hit above 95 px/s (about 21 km/h) is knocked down with 45 % of the car's velocity plus 50 px/s and slides on the ground: about 4 m ahead of a car at 100 km/h, so the car seems to push the body. A person lying down but alive who is driven over is knocked down again with the car's direction at up to 260 px/s and slides on until they die.
 - The player has no fall, lying or getting-up frames; civilians have one lying frame.
 
-**Approach (agreed with the user, 2026-10-11).**
+**Measured data.** The throw distance runs from the point of impact to where the body comes to rest.
 
-1. **One impact model for the player and civilians, by speed.** Below about 10 km/h the person is pushed aside; from 10 to 25 km/h they are knocked down (fall backwards or to the side); above 25 km/h they are thrown along the vehicle's path, as far as published pedestrian throw measurements give for that speed. The injury follows the same speed for the player and civilians; the vehicle's mass counts, and the vehicle loses the momentum the person takes.
-2. **New player art.** Fall, lying and getting-up frames for the player, made with the [CJ-011](#cj-011-relaxed-player-posture) 3D pipeline. The player falls, lies, gets up and regains control, or dies.
-3. **Dead and living people.** A vehicle drives over a dead body without moving it; the vehicle jolts a little at most. A vehicle never drives over a living person, standing or on the ground: every contact has a consequence, as in real life. Depending on the vehicle's speed and the motion of both, it bumps into them or hits them, by the impact model of point 1.
+| Source | What it gives |
+|---|---|
+| Happer et al. (2000), 106 real collisions, via the [THUMS validation](https://dynalook.com/conferences/11th-european-ls-dyna-conference/pedestrian-safety-head-impact/validation-of-thums-human-model-throw-distance-in-pedestrian-accident-scenarios) | Impact speed from the throw distance *d*: cars V = 12.7 √d − 2.6 km/h (±9 km/h), SUVs and light trucks V = 11.4 √d − 0.4 km/h (±10.5 km/h) |
+| Searle's model (same source) | A body launched at speed *v* comes to rest between v²/(2μg) and (1 + μ²) v²/(2μg) away, depending on the launch angle; μ ≈ 0.7 on a dry road |
+| [Tefft (2011), AAA Foundation](https://aaafoundation.org/impact-speed-pedestrians-risk-severe-injury-death/): US crashes, all ages, cars and light trucks | Death: 10, 25, 50, 75 and 90 % at 37, 51, 68, 80 and 93 km/h; severe injury: the same shares at 26, 37, 50, 63 and 74 km/h |
+| [Rosén, Stigson and Sander (2011)](https://swov.nl/en/publicatie/literature-review-pedestrian-fatality-risk-function-car-impact-speed): German crashes, cars, adults | Half die at 77 km/h; less lethal than Tefft, who includes light trucks and older people |
+| Run-over studies ([pedestrian deaths](https://tandf.figshare.com/articles/journal_contribution/Injury_patterns_in_motor_vehicle_collision-pediatric_pedestrian_deaths/21235749), [French national data](https://trid.trb.org/View/1488036), [NHTSA](https://www-nrd.nhtsa.dot.gov/pdf/ESV/Proceedings/20/07-0440-W.pdf)) | Being driven over is 2–10 % of pedestrian casualties, mostly below 30 km/h, with severe head injuries; in collisions with trucks about half the victims are driven over |
+| Balance recovery ([threshold study](https://media.isbweb.org/images/conf/2005/abstracts/0430.pdf), [older adults](https://cris.bgu.ac.il/en/publications/characteristics-of-first-recovery-step-response-following-unexpec/)) | Whether a push is caught by stepping depends on its position and speed; older people step at smaller pushes. No single figure, so the balance limit below is a design value |
 
-The session starts by agreeing the measurable criteria (speed bands, throw distances, injuries, getting-up time) and a before run. Measured in the [CJ-032](#cj-032-isolated-test-arena) arena: cars of several classes at 10–100 km/h hitting a standing person and the player, and driving over a body.
+**Specification (agreed with the user, 2026-10-11).**
+
+1. **A contact is one impact, never a push.** A person's legs cannot keep up with a vehicle: in real life a contact lasts a fraction of a second, and then the person staggers on their own feet, falls or is thrown. The game resolves every contact between a vehicle moving towards a person and that person once, as an impact; afterwards both move on their own. A person who walks into a vehicle that is not moving towards them is stopped by it, as by a wall.
+2. **Standing people.** Momentum is conserved: the person takes up to the share m<sub>v</sub>/(m<sub>v</sub> + m<sub>p</sub>) of the closing speed (m<sub>p</sub> = 75 kg), and the vehicle loses what the person gains.
+   - Below the person's balance limit (1.0–1.6 m/s, about 4–6 km/h) they stagger and step aside, unhurt. Another contact while they still stagger (0.8 s) knocks them down.
+   - Above it they are launched as in Searle's model: flight, a friction impulse on landing, then sliding at μ = 0.7. A front edge below the person's centre of mass (1.0 m) wraps them up onto the vehicle: a 25° launch with an impact factor of 0.94 (the share of the speed the body keeps after the wrap). A higher, flat front projects them forward: 10° and 1.0. These values put the throw inside both Happer's and Searle's bands at every speed. They also give the real-life outcomes when the vehicle does not brake: the body lands in front of it and is driven over at lower speeds, while from about 80 km/h it flies over a car, as in a roof vault. The impulse acts along the contact normal, so a corner hit throws the person to the side of the vehicle's path. A bus or truck drives over the person it hit at any speed. A person's speed change below 25 km/h is a fall, above it a throw.
+   - A body in the air touches no vehicle.
+3. **People on the ground.** A vehicle drives over anyone lying on the road: it neither pushes them nor stops. A living person dies. The body moves at most 0.2 m, and the vehicle loses 1 km/h (a jolt; in the player's vehicle the camera shakes).
+4. **Injury.** One function for the player and civilians: damage = 100 · e<sup>β(Δv − Δv<sub>50</sub>)</sup> · u / (1 − u), with *u* uniform on (0, 1) and Δv the person's speed change. The chance of reaching 100 points, death, is then exactly a logistic curve; Δv<sub>50</sub> = 60.5 km/h and β = 0.087 per km/h reproduce Tefft's death curve over impact speed (68 km/h for half the deaths) for a 1.5 t car. The share losing at least 25 points then follows Tefft's severe-injury curve within 4 km/h. Armour absorbs damage as it does today.
+5. **Getting up.** After the body comes to rest, a person lies 1.5–2.5 s after a fall and 3–4 s after a throw, then gets up. The player's getting up is an animation of about 1 s, after which the player is controlled again; civilians use the same times.
+6. **Player art.** Fall, lying and getting-up frames made with the [CJ-011](#cj-011-relaxed-player-posture) pipeline from the Universal Animation Library clips `Death01` or `Hit_Knockback` and `LayToIdle` (CC0, already downloaded). Lying, the player is drawn at real size, as the civilians are; the weapon is not drawn while on the ground. A player who dies of any cause falls the same way.
+7. **Data.** Every value is in a new `assets/data/impacts.cfg`. Every vehicle class declares the height of its front edge with a `FRONT <class> <m>` record in `vehicles.cfg`; a class without one stops loading. People knocked down by blows and explosions slide as far as they do today under the new friction. A rider thrown off a motorbike is launched the same way.
+
+**Acceptance criteria (agreed with the user, 2026-10-11).**
+
+| # | Criterion | Target |
+|---|---|---|
+| 1 | A bump at 2 km/h | The person staggers, unhurt, and recovers their balance within 1 s |
+| 2 | 10 km/h | They fall |
+| 3 | Throw distance, a vehicle braking after the impact, 15–100 km/h | Within Happer's band (low fronts the car regression ±9 km/h, high fronts the light-truck regression ±10.5 km/h) and within Searle's corridor for the person's launch speed (μ = 0.7) |
+| 4 | Momentum | The vehicle's loss of momentum equals the person's gain within 10 % |
+| 5 | Injury | Death share per impact speed, 4,000 draws each from 10 to 100 km/h, within 3 percentage points of Tefft's curve; one function for the player and civilians |
+| 6 | No pushing | One contact lasts at most 0.1 s, and a person moves at most 0.3 m with a vehicle in contact, also with vehicles creeping at 2–5 km/h and vehicles that do not brake |
+| 7 | No passing through | A living person and a vehicle overlap by at most 3 px for at most 2 consecutive frames, a body in the air excepted |
+| 8 | Driving over a living person | They die; the body moves at most 0.3 m; the vehicle does not get stuck and loses at most 2 km/h |
+| 9 | Driving over a body | It moves at most 0.3 m; the vehicle loses at most 1 km/h |
+| 10 | Player | Falls at 10 km/h and more, lies, gets up (or dies), and is not controlled meanwhile; controlled again 2.5–3.5 s after coming to rest from a fall, 4–5 s after a throw |
+| 11 | City | The [CJ-010](#cj-010-pedestrian-behaviour) metrics in `foot`, `day` and `rampage` still met; pedestrian CPU time at most 0.5 ms |
+| 12 | Art | Falling, lying and getting up checked from above, the front and the side, in natural poses |
+| 13 | Data | Every value in a data file; a new vehicle class is covered by the test without changing it |
+
+Then the user's playtest.
+
+**Test scenario (decided with the user, 2026-10-11).** CJ-035 gets its own isolated test instead of waiting for the [CJ-032](#cj-032-isolated-test-arena) arena, and the user asked for a reusable one: vehicles and people, one or many, set up by data. `--scenario person-hits` runs the scenes of a test file (`tests/person-hits.cfg`, not shipped) on the empty test road, with no traffic, other people, police or missions, a fixed time step and seed, by day. A scene places vehicles (a class, or `all` for one run per class in `vehicles.cfg`, at a speed, braking or keeping on after the first contact) and people (standing, lying, dead or the player, singly or in rows, or a random crowd), and names its checks; a new scene needs no rebuild. The CJ-035 scenes cover every class at 15–100 km/h braking, bumps at 2 and 10 km/h, creeping and non-braking vehicles, people lying alive and dead, the player and an injury sweep. [CJ-038](#cj-038-pedestrian-attention-and-evasion) adds crowds. The before values come from a run of the test on the unchanged model.
 
 ### CJ-036 Dead code and simplification
 
@@ -556,6 +596,23 @@ The session starts by agreeing the measurable criteria (speed bands, throw dista
 **Problem (review, 2026-10-11).** `AudioSystem::Play` varies each sound's pitch with the gameplay random number generator (`GRng`), but only when an audio device is open and the sound is within hearing. A scenario or fixture therefore draws a different random sequence on a machine without sound, so runs are not reproducible across machines ([CJ-032](#cj-032-isolated-test-arena) asks for identical runs).
 
 **Approach.** A separate generator for audio variation. Every scenario's random sequence moves once, so the recorded baselines and fixture results are measured again in the same change.
+
+### CJ-038 Pedestrian attention and evasion
+
+- **Priority:** High
+- **Status:** Open; after [CJ-035](#cj-035-vehicles-hitting-people)
+
+**Problem (test runs, 2026-10-11).** In `rampage` the car drives into people at 50 km/h and nearly everyone gets away: 85 % of the 141 people in its path escaped on 2026-10-11. In real life not everyone notices a car, and not everyone who does can get out of its way. Cause: everyone looks at the traffic in every direction ten times a second, reacts within 0.18–0.45 s and jumps sideways at 5.5 m/s from a standstill (`src/pedestrian.cpp`).
+
+**Measured data.**
+
+- About 30 % of pedestrians crossing at junctions are distracted: music 11 %, texting 7 %, a phone call 6 %, or talking to someone; people texting are 3.9 times as likely to cross unsafely, for example without looking ([Thompson et al. 2013](https://injuryprevention.bmj.com/content/early/2012/12/06/injuryprev-2012-040601.abstract)).
+- In a virtual-reality study, 70 % of attentive participants avoided an approaching vehicle; those who were hit decided later (0.41 s against 0.17–0.24 s), and carrying out an avoidance took 1.5–1.8 s ([Scientific Reports 2021](https://doaj.org/article/075b455608484b35865b855acb9f3542)).
+- Older people start avoiding later ([Université Laval](https://cirris.ulaval.ca/en/seniors-at-higher-risk-of-pedestrian-collisions)).
+
+**Approach (proposed, 2026-10-11).** Personal traits drawn when a person appears, from data in `civilians.cfg`: attention (about 30 % distracted, noticing vehicles late; people listening to music do not hear a vehicle behind them), a reaction-time spread, an evasive step limited by acceleration instead of an instant jump, mobility by look (older looks slower), and a small share who freeze for a moment. The [CJ-035](#cj-035-vehicles-hitting-people) balance limit becomes one of these traits.
+
+**Target (proposed).** In `rampage` 50–65 % of the people in the car's path escape; this replaces the [CJ-010](#cj-010-pedestrian-behaviour) target of at least 70 %. Traffic still hits nobody in `foot` and `day`. Measured with crowd scenes in the CJ-035 test file and in `rampage`, then the user's playtest.
 
 ## Done
 
