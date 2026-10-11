@@ -17,15 +17,16 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07:
+Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07 and CJ-032 was added on 2026-10-11:
 
-1. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
-2. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
-3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
-4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
-5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
-7. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
+1. **[CJ-032](#cj-032-isolated-test-arena) Isolated test arena** — approach agreed on 2026-10-11; the measurable criteria are confirmed and the before values measured at the start of the session. Later items that change people, animation or lighting are tested in it.
+2. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
+3. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
+4. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
+5. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
+6. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
+7. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
+8. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
 
@@ -42,6 +43,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
 | [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Done |
 | [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) | Pedestrian blocking and contact realism | High | Specification agreed |
+| [CJ-032](#cj-032-isolated-test-arena) | Isolated test arena | High | Approach agreed |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
@@ -443,6 +445,40 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 | Pedestrian CPU time | At most 0.5 ms |
 
 Then the user's playtest.
+
+### CJ-032 Isolated test arena
+
+- **Priority:** High
+- **Status:** Approach agreed on 2026-10-11; criteria to be confirmed at the start of the session
+
+**Problem (2026-10-11).** The [CJ-011](#cj-011-relaxed-player-posture) player was tested in the real city: traffic, pedestrians, buildings, the police and pay-phone missions got in the way, a run took longer than the test needed, and runs were hard to compare. The user wants features tested in an isolated, consistent and parameterised environment, as precisely as the traffic fixtures test traffic, and not on the real map unless that is the question; how a feature behaves in the real city is mostly the user's playtest.
+
+**Approach (agreed with the user, 2026-10-11).**
+
+1. **An arena mode in the game executable**, in its own source files and independent of the traffic and vehicle fixture code, so that the real renderer, lighting and atlases are tested. The traffic and vehicle fixtures stay as they are.
+2. **An empty, generic test floor**: no city, traffic, pedestrians, police, missions or HUD messages. A one-metre grid and a scale bar can be switched on, and off for clean captures. The time of day is set by the test and the clock stands still; a street lamp can be placed on request.
+3. **Faster start**: the arena skips building the city and planning the turn paths (about 1.6 s of the 6 s start of 2026-10-11); all assets still load as in the game.
+4. **Tests are data files, kept apart from the code** (`tests/arena/*.cfg`, not shipped in the release): the subject, the time of day, the weapon, timed steps (walk, run, strafe, aim, fire, reload, melee and so on), named captures at a simulated time, and expected ranges (`EXPECT <metric> <min> <max>`). A new test needs no rebuild.
+5. **Reproducible runs**: a fixed time step and seed, independent of the frame rate; captures at simulated times; the run may go faster than real time, since only the captures have to be drawn.
+6. **Output**: one `ARENA metric … result=PASS/FAIL` line per expectation and a summary line; a failed expectation or an invalid test file gives a non-zero exit code and a clear message; only the named captures are saved, and a small tool lays them out on one contact sheet.
+7. **A manual arena** for the user's own checks: the same floor with keys to step the time of day, change weapons, switch the grid, and pause or slow down time.
+8. **Retired scenarios**: `player`, `player:<weapon>` and `armed:night` are removed once the arena covers them; `armed` stays, to start the real game with every weapon.
+
+**Acceptance criteria (proposed; confirmed and measured before the change at the start of the session).**
+
+| Criterion | Target |
+|---|---|
+| Arena contents | The log shows 0 vehicles, 0 buildings and only the people a test asks for |
+| Reproducibility | Two runs of the same test give identical metric lines |
+| Start to the first arena frame | At least 1.5 s faster than `foot` |
+| A single-weapon player test (pistol) | At most a third of the wall time of today's `player:Pistol` run |
+| The CJ-011 values reproduced in the arena | Walk 1.45–1.55 m/s, run 6.45–6.55 m/s, raise at most 0.2 s, lowered 0.8–1.0 s after the last shot, gait match at least 87 % |
+| Time of day | Changing the hour changes the light only, not the metric lines |
+| Failure reporting | A failed expectation exits with a non-zero code; an invalid test file names the file, the line and the problem |
+| Captures | Only the named captures are saved; the contact sheet shows every one of them, labelled |
+| Release | `tests/` is not in the release zip |
+
+The testing guide gets an arena section with the test file format and the rule: features are tested in the arena; the real city is for integration and FPS runs and the user's playtest.
 
 ## Done
 
