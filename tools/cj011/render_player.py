@@ -881,8 +881,6 @@ def place_mag(key, m):
     o = mags[key]
     o.matrix_world = rig.matrix_world @ m
     o.hide_render = False
-    if os.environ.get("CJ_DEBUG_MAG"):
-        print("MAGPOS", key, tuple(round(v, 3) for v in o.matrix_world.to_translation()), o.hide_render, len(o.data.vertices))
     return m
 
 
@@ -1083,6 +1081,16 @@ def measure(held, info):
     ys = [(inv @ (g.matrix_world @ v.co)).y for v in ev.data.vertices]
     # ahead of the body as posed: the front of the torso (the jacket over the spine, not the arms)
     info["reach_m"] = torso_front() - min(ys)
+    if key == "flashlight":                    # the lens: right of and ahead of the pelvis, its height (m)
+        lens = m @ Vector(g["muzzle"])
+        pel = rig.pose.bones["pelvis"].head
+        info["lens_right_m"], info["lens_ahead_m"], info["lens_z_m"] = pel.x - lens.x, pel.y - lens.y, lens.z
+        # and as the frame shows it: from the frame centre (the camera), the character facing +Y
+        # (the image top), and where the beam points: degrees to the right and below the horizontal
+        lw = rig.matrix_world @ lens
+        dw = (rig.matrix_world.to_3x3() @ m.to_3x3() @ Vector((1, 0, 0))).normalized()
+        info["lamp"] = [lw.x - cam.location.x, lw.y - cam.location.y, lw.z,
+                        math.degrees(math.atan2(dw.x, dw.y)), math.degrees(math.asin(max(-1.0, min(1.0, -dw.z))))]
     if not info.pop("diagonal", False):
         info["grip_err_m"] = (palm_point("r") - (m @ Vector(GRIP_PALM.get(key, GRIP_PALM["default"])))).length
     if g["butt"] and info.pop("across", False):
@@ -1091,7 +1099,7 @@ def measure(held, info):
         info["butt_shoulder_m"] = (gp(key, m, "butt") - info.pop("pocket")).length
         slide = FIRE[key][1][3] if info.pop("pump", False) else 0.0
         info["fore_err_m"] = (palm_point("l") - fore_palm(key, m, slide)).length
-    return {k: round(v, 3) for k, v in info.items()}
+    return {k: ([round(x, 4) for x in v] if isinstance(v, list) else round(v, 3)) for k, v in info.items()}
 
 
 # ---- camera, light, render (as tools/cj004/render_civilian.py) ----
@@ -1492,6 +1500,8 @@ for name in poses:
     results[name] = measure(held, info)
     print("MEASURE", name, results[name])
     fname = name.replace(":", "_").replace(".", "_")        # clip:<weapon>:<action>:<frame>
+    if os.environ.get("CJ_NO_RENDER"):                       # measure only
+        continue
     render(os.path.join(out_dir, fname + ".png"))
     side = os.environ.get("CJ_SIDE")
     if side:                                           # side views for checking the hold

@@ -118,8 +118,14 @@ void Game::DebugScenario(const char* name) {
     }
     if (n == "overview") { debugOverview = true; dn.hour = 13.0f; }
     if (n == "brawl") { autoMode = 4; dn.hour = 13.0f; }
-    if (n == "player") {               // CJ-011: every weapon through every gait and action
+    if (n == "armed" || n == "armed:night") { armAll = true; dn.hour = n == "armed" ? 13.0f : 22.5f; }   // play by hand with every weapon
+    if (n == "player" || n.rfind("player:", 0) == 0) {   // CJ-011: every weapon (or one) through every gait and action
         autoMode = 5; dn.hour = 13.0f;           // the pilot hands out the weapons on its first step
+        if (n.size() > 7) {
+            pilotOnly = n.substr(7);
+            int w = gAssets.FindWeapon(pilotOnly);
+            if (w >= 0 && gAssets.weapons[w].light) dn.hour = 22.5f;   // a flashlight shows at night
+        }
         TraceLog(LOG_INFO, "PLAYER: %s, walk %.1f m/s, run %.1f m/s", gAssets.player3D ? "3D layers" : "Survivor sprites", PLAYER_WALK, PLAYER_RUN);
     }
     if (n == "night" || n == "nightdrive") dn.hour = 22.5f;
@@ -352,7 +358,8 @@ void Game::PlayerPilot(float dt, PilotInput& in) {
             P.clip[k] = gAssets.weapons[k].clip;
             P.ammo[k] = std::max(P.ammo[k], gAssets.weapons[k].clip * 3);
         }
-        weapon = 0; P.weapon = 0; phase = 0; t = 0;
+        weapon = pilotOnly.empty() ? 0 : std::max(0, gAssets.FindWeapon(pilotOnly));
+        P.weapon = weapon; phase = 0; t = 0;
     }
     const WeaponDef& W = gAssets.weapons[weapon];
     const Phase& ph = PHASES[phase];
@@ -393,7 +400,7 @@ void Game::PlayerPilot(float dt, PilotInput& in) {
         phase++; t = 0;
         if (phase >= N) {
             phase = 0; weapon++;
-            if (weapon >= nw) { finished = 1; TraceLog(LOG_INFO, "PLAYER: every weapon done"); return; }
+            if (weapon >= nw || !pilotOnly.empty()) { finished = 1; TraceLog(LOG_INFO, "PLAYER: every weapon done"); return; }
             P.weapon = weapon; P.reloadTimer = 0;
         }
     }
@@ -1100,6 +1107,14 @@ void Game::UpdatePlayerOnFoot(float dt) {
     if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) mv.x -= 1;
     if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) mv.x += 1;
     P.running = IsKeyDown(KEY_LEFT_SHIFT) || autoMode == 4;
+    if (armAll) {                                   // --scenario armed (after the new game's equipment)
+        for (size_t k = 0; k < P.owned.size(); k++) {
+            P.owned[k] = 1;
+            P.clip[k] = gAssets.weapons[k].clip;
+            P.ammo[k] = std::max(P.ammo[k], gAssets.weapons[k].clip * 3);
+        }
+        armAll = false;
+    }
     PilotInput pilot;
     const bool piloted = autoMode == 5;
     if (piloted) { PlayerPilot(dt, pilot); mv = pilot.move; P.running = pilot.run; }
@@ -2069,7 +2084,29 @@ void Game::DrawWorld() {
     fx.DrawLights(view);
     if (!player.inVehicle) {
         const WeaponDef& W = gAssets.weapons[player.weapon];
-        if (W.light) Renderer::Cone(player.pos + Forward(player.aim) * 10.0f, 3, player.aim, 18 * M, 11 * M, { 230, 240, 255, 255 }, 1.3f);
+        if (W.light) {
+            // The beam follows the lamp: aimed level it reaches 18 m; pointed down it lights the
+            // ground in front of where it lands, brighter for being closer; pointed up it misses
+            // the ground and fades out.
+            // the lens as the drawn upper-body frame holds it (LAMP in player.cfg)
+            PlayerLamp L = { true, 0.0f, 0.4f, 0.9f, 0.0f, 0.0f };
+            const PlayerSet* ps = gAssets.player3D ? gAssets.FindPlayerSet(W.animSet) : nullptr;
+            if (ps) {
+                const PlayerGaitDef& d = gAssets.playerGait[player.gait];
+                int count = std::max(1, d.frames.count);
+                int frame = PlayerUpperFrame(player, *ps, W, std::min(count - 1, (int)(player.legPhase * count)), count);
+                if (frame < (int)ps->lamp.size() && ps->lamp[frame].set) L = ps->lamp[frame];
+            }
+            float size = gAssets.player3D ? CHAR_SCALE * gAssets.playerDrawScale : CHAR_SCALE;   // as the player is drawn
+            float a = player.aim + L.yaw * DEG2RAD;
+            Vector2 apex = player.pos + Forward(player.aim) * (L.ahead * size * M) + RightOf(player.aim) * (L.right * size * M);
+            float reach = 18.0f, glow = 1.3f;
+            if (L.pitch > 2.0f) {
+                reach = std::clamp(L.height * size / tanf(L.pitch * DEG2RAD) + 2.0f, 2.5f, 18.0f);
+                glow = Lerpf(1.3f, 1.8f, 1.0f - reach / 18.0f);
+            } else if (L.pitch < -5.0f) glow *= Saturate(1.0f - (-L.pitch - 5.0f) / 20.0f);
+            if (glow > 0.01f) Renderer::Cone(apex, 3, a, reach * M, std::max(2.0f, reach * 0.6f) * M, { 230, 240, 255, 255 }, glow);
+        }
         if (dn.night > 0.2f) Renderer::Radial(player.pos, 3, 2.5f * M, { 255, 230, 200, 255 }, 0.15f * dn.night);   // readability
     }
     for (const Pickup& k : pickups)

@@ -144,6 +144,8 @@ The other Mixamo files are retargeted like the first; the punches come from the 
 | Legs | Stand 1; walk, run, strafe left and right, backpedal, jogging strafe left and right 16 each: 113 |
 | Upper body, per set | The weapon lowered in the same 113 frames, in step with the legs; aim 1; fire 2; reload 4 (firearms); melee 2 (fists, knife, flashlight): 116 or 120 |
 
+`make_player.py --lamp` measures the flashlight's lens and direction in every frame of its set, without rendering (the same poses), and the packing writes them as `LAMP` records, so that the game starts the beam at the drawn lamp.
+
 Every frame is stylized as the civilians' ([stylize.py](../../../tools/cj004/stylize.py)); the upper body's dark contour is left out where it lies over the legs of the same frame, so that no seam shows at the waist. The action frames are rendered standing and pivoted on the standing pelvis, and drawn over whatever the legs are doing. The game cuts every frame to its visible part at load: 17.3 MB packed before mipmaps, against the Survivor sprites' 29.0 MB, which are no longer loaded.
 
 ## Measurements
@@ -165,5 +167,4 @@ Against the [acceptance criteria](../../../docs/backlog.md#cj-011-relaxed-player
 
 ## Open items
 
-- The playtest (criterion 9).
 - A fast backpedal (with `Left Shift`): for now the walking backpedal played faster.

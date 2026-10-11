@@ -35,6 +35,8 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 
 ## Scenarios
 
+`--scenario` without `--shot` starts that scenario for playing by hand (for example `armed`); the autopilots of `crash`, `derby`, `rampage`, `brawl` and `player` then drive as in a test.
+
 | Scenario | Setup |
 |---|---|
 | `title` | The title screen with the city simulating behind it |
@@ -49,7 +51,8 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `derby` | Full throttle through traffic with random steering; reverses when stuck |
 | `rampage` | At 13:00: straight 4 s runs at 50 km/h along the sidewalk walking lines of the blocks around the start, each from a fixed start point, so people have to get out of the way. Run it for 3,600 frames. |
 | `brawl` | At 13:00, on foot with fists: runs up to the nearest person standing (preferring anyone fighting back, not chasing runners) and punches them |
-| `player` | At 13:00, on foot with every weapon, loaded, in turn: stands, walks, runs, aims east, strafes north and south (walking and with Shift), backpedals west and walks back, fires (melee: strikes), rests and reloads; no police and no harm. About 5,900 frames; add `--every 30` for a picture series ([CJ-011](backlog.md#cj-011-relaxed-player-posture)) |
+| `armed`, `armed:night` | At 13:00 or 22:30, on foot with every weapon, loaded, with three spare clips, played by hand: start it without `--shot` |
+| `player`, `player:<weapon>` | At 13:00 (a weapon with a flashlight at 22:30), on foot with every weapon (or only the one named, as in `weapons.cfg`), loaded, in turn: stands, walks, runs, aims east, strafes north and south (walking and with Shift), backpedals west and walks back, fires (melee: strikes), rests and reloads; no police and no harm. About 5,900 frames; add `--every 30` for a picture series ([CJ-011](backlog.md#cj-011-relaxed-player-posture)) |
 | `handling` | Isolated acceleration, braking, top-speed, skidpad, rear-brake, reverse and surface measurements for the selected class; 14,400 frames |
 | `crash-handling` | Prescribed-speed contacts with isolated forces and production consequences measured separately, at 1/60 s and 1/20 s physics intervals; 14,400 frames |
 | `traffic-recovery` | Isolated enclosed hold, free lane recovery and front-blocked garage escape for Taxi, Bus or BoxTruck, at 1/60 s and 1/20 s physics intervals; 14,400 frames |

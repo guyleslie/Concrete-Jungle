@@ -98,6 +98,33 @@ def render_actions(samples):
     return "actions"
 
 
+def measure_lamp():
+    """The flashlight's lens and beam in every frame of its set, measured without rendering
+    (render_player.py, the same poses): build/cj011/atlas/lamp.json, {frame name: [right, ahead,
+    height, yaw, pitch]} from the frame centre, metres at life size and degrees."""
+    d = os.path.join(WORK, "lamp")
+    os.makedirs(d, exist_ok=True)
+    out = {}
+    for g in GAITS:
+        action, frames, _ = GAITS[g]
+        spec = "gait:%s:%s:%s" % (g, action, ",".join("%.3f" % f for f in frames()))
+        sub = os.path.join(d, g)
+        os.makedirs(sub, exist_ok=True)
+        blender(os.path.join(sub, "measure.log"), {"CJ_WEAPONS": "flashlight", "CJ_MEASURE_ONLY": "1"}, sub, spec)
+        for k, v in json.load(open(os.path.join(sub, "measure.json"))).items():
+            if "lamp" in v:
+                out[k] = v["lamp"]
+    sub = os.path.join(d, "actions")
+    os.makedirs(sub, exist_ok=True)
+    names = [p for _, ps in ACTIONS["flashlight"] for p in ps]
+    blender(os.path.join(sub, "measure.log"), {"CJ_UPPER": "1", "CJ_NO_RENDER": "1"}, sub, *names)
+    for k, v in json.load(open(os.path.join(sub, "measure.json"))).items():
+        if "lamp" in v:
+            out[k] = v["lamp"]
+    json.dump(out, open(os.path.join(WORK, "lamp.json"), "w"), indent=1)
+    print("LAMP", len(out), "frames measured")
+
+
 def stylize_layer(render, under=None):
     """stylize.stylize to the atlas frame, the contour left out where 'under' (an alpha image of
     the layer below, the same size) is opaque."""
@@ -135,7 +162,10 @@ def main():
     ap.add_argument("--only", default="")
     ap.add_argument("--jobs", type=int, default=3)
     ap.add_argument("--samples", type=int, default=32)
+    ap.add_argument("--lamp", action="store_true", help="measure the flashlight's lens in every frame")
     a = ap.parse_args()
+    if a.lamp:
+        measure_lamp()
     if a.render:
         wanted = [x for x in a.only.split(",") if x] or list(GAITS) + ["actions"]
         with ThreadPoolExecutor(max_workers=a.jobs) as pool:
@@ -158,6 +188,10 @@ def main():
              "#  SET <set> <file>               a weapon set's upper-body atlas (sets as in weapons.cfg)",
              "#  UPPER <set> <state> <first> <count>",
              "#       state: a gait (the weapon lowered, in step with the legs) or aim fire reload melee",
+             "#  LAMP <set> <frame> <right> <ahead> <height> <yaw> <pitch>",
+             "#       a flashlight's lens in that upper-body frame: metres from the frame centre at life",
+             "#       size (right, ahead, above the ground), the beam degrees right of the facing and below",
+             "#       the horizontal",
              "#  Frames face the top of the image; every layer shares the frame centre as its pivot.",
              "# =====================================================================================",
              "FRAME %d %.1f" % (FRAME_PX, FRAME_M), "SCALE %.2f" % DRAW_SCALE, "COLS %d" % COLS, "LEGS legs.png"]
@@ -177,22 +211,29 @@ def main():
         else:
             lines.append("GAIT %s %d %d dist 0" % (g, first, n))
     pack(legs_frames).save(os.path.join(OUT, "legs.png"), optimize=True)
+    lamp_path = os.path.join(WORK, "lamp.json")
+    lamp = json.load(open(lamp_path)) if os.path.exists(lamp_path) else {}
     for key, set_name in WEAPONS.items():
-        frames = []
+        frames, lamp_lines = [], []
         lines.append("SET %s %s.png" % (set_name, set_name))
         for g in GAITS:
             d = os.path.join(WORK, g)
             n = len(GAITS[g][1]())
             first = len(frames)
             for i in range(n):
+                if "%s_%s_%02d" % (key, g, i) in lamp:
+                    lamp_lines.append("LAMP %s %d %s" % (set_name, len(frames), " ".join("%.3f" % x for x in lamp["%s_%s_%02d" % (key, g, i)])))
                 frames.append(stylize_layer(load(os.path.join(d, "%s_%s_%02d.png" % (key, g, i))), legs_alpha[(g, i)]))
             lines.append("UPPER %s %s %d %d" % (set_name, g, first, n))
         for state, names in ACTIONS[key]:
             first = len(frames)
             for nm in names:
+                if nm in lamp:
+                    lamp_lines.append("LAMP %s %d %s" % (set_name, len(frames), " ".join("%.3f" % x for x in lamp[nm])))
                 f = nm.replace(":", "_").replace(".", "_")
                 frames.append(stylize_layer(load(os.path.join(WORK, "actions", f + ".png")), legs_alpha[("stand", 0)]))
             lines.append("UPPER %s %s %d %d" % (set_name, state, first, len(names)))
+        lines += lamp_lines
         pack(frames).save(os.path.join(OUT, set_name + ".png"), optimize=True)
         print("ATLAS", set_name, len(frames), "frames")
     open(CFG, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")

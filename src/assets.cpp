@@ -1048,6 +1048,13 @@ static void LoadPlayer(Assets& A) {
             if (g >= 0) set->gait[g] = { r.I(3), r.I(4) };
             else if (act >= 0) set->act[act] = { r.I(3), r.I(4) };
             else TraceLog(LOG_WARNING, "player.cfg:%d unknown state '%s'", r.line, r[2].c_str());
+        } else if (r.Is("LAMP") && r.size() >= 8) {
+            PlayerSet* set = nullptr;
+            for (auto& s : A.playerSets) if (s.name == r[1]) set = &s;
+            int f = r.I(2);
+            if (!set || f < 0) { TraceLog(LOG_WARNING, "player.cfg:%d LAMP for an unknown set or frame", r.line); continue; }
+            if ((int)set->lamp.size() <= f) set->lamp.resize(f + 1);
+            set->lamp[f] = { true, r.F(3), r.F(4), r.F(5), r.F(6), r.F(7) };
         }
     }
     for (int g = 0; g < (int)PlayerGait::COUNT; g++)

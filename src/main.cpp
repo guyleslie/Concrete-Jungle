@@ -101,6 +101,7 @@ int main(int argc, char** argv) {
     // --shot <file.png> [--frames N] [--every N] [--scenario foot|drive|night|nightdrive|chase|day|crash|derby|rampage|bikes|...]
     // (file names are relative to the working directory; --every also saves <file>_<frame>.png)
     const char* shot = nullptr; const char* scenario = "foot"; int shotFrames = 180, every = 0;
+    bool scenarioGiven = false;          // --scenario without --shot: play that scenario by hand
     const char* testVehicle = "Taxi";
     bool uncapped = false;
     const char* loadingTest = nullptr;
@@ -112,7 +113,7 @@ int main(int argc, char** argv) {
         if (TextIsEqual(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
         else if (TextIsEqual(argv[i], "--frames") && i + 1 < argc) shotFrames = TextToInteger(argv[++i]);
         else if (TextIsEqual(argv[i], "--every") && i + 1 < argc) every = TextToInteger(argv[++i]);
-        else if (TextIsEqual(argv[i], "--scenario") && i + 1 < argc) scenario = argv[++i];
+        else if (TextIsEqual(argv[i], "--scenario") && i + 1 < argc) { scenario = argv[++i]; scenarioGiven = true; }
         else if (TextIsEqual(argv[i], "--vehicle") && i + 1 < argc) testVehicle = argv[++i];
         else if (TextIsEqual(argv[i], "--uncapped")) uncapped = true;
         // Measurement runs may read an alternative traffic data file (e.g. a baseline).
@@ -306,6 +307,7 @@ int main(int argc, char** argv) {
         game.Unload(); gAssets.Unload(); loadingScreen.Unload(); CloseWindow(); return 2;
     }
     if (shot && !fixture) { game.DebugScenario(scenario); game.debugContacts = true; }
+    else if (!shot && scenarioGiven) game.DebugScenario(scenario);
     if (trafficFixture || clearanceFixture || conflictFixture) game.debugContacts = true;
     int frame = 0;
 

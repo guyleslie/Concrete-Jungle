@@ -134,6 +134,8 @@ public:
     // weapon's raise and lower times
     struct PilotInput { Vector2 move{}; bool run = false, aim = false, fire = false, reload = false; float aimAt = 0; };
     void  PlayerPilot(float dt, PilotInput& in);
+    std::string pilotOnly;                         // --scenario player:<weapon>: that weapon only
+    bool  armAll = false;                         // --scenario armed: every weapon, loaded, on the first step
     // physics diagnostics (--shot): jitter = position / heading reversing frame after frame
     struct PhysDiag { Vector2 prevPos{}, prevD{}; float prevA = 0, prevDa = 0; bool init = false, rail = false; };
     std::vector<PhysDiag> diag;

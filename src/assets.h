@@ -7,7 +7,7 @@
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
 //    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / WALK / CIVILIAN: pedestrian atlases
-//    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER: the player's layers
+//    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER / LAMP: the player's layers
 //  Adding content = drop the image files in assets/ and add a line. Built-in defaults
 //  are used when a file is missing, and every image has a procedural fallback.
 //
@@ -51,9 +51,14 @@ struct PlayerGaitDef {
     float     cycleM = 1.4f;             // metres per cycle (two steps) when by distance
     float     steps = 3.0f, atSpeed = 6.5f;   // steps per second at atSpeed (m/s) when by cadence
 };
+// A flashlight's lens in one upper-body frame (LAMP): metres from the frame centre at life size
+// (right, ahead, above the ground) and the beam's direction (degrees right of the facing, below
+// the horizontal).
+struct PlayerLamp { bool set = false; float right = 0, ahead = 0, height = 0, yaw = 0, pitch = 0; };
 struct PlayerSet {
     std::string name;                    // a weapon set of weapons.cfg (unarmed, handgun ...)
     FrameAtlas  atlas;
+    std::vector<PlayerLamp> lamp;        // per atlas frame, for a set with a flashlight
     PedFrames   gait[(int)PlayerGait::COUNT];   // the weapon lowered, in step with the legs
     PedFrames   act[(int)PlayerAct::COUNT];
 };

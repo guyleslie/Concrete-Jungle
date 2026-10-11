@@ -24,7 +24,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 3. **[CJ-002](#cj-002-vehicle-handling-model) Vehicle handling model** — retain its approved specification and recorded baseline; implement the controller/physical capabilities that [ADR-0008](adr/0008-human-like-traffic.md) still needs deliberately rather than changing traffic behaviour incidentally.
 4. **[CJ-003](#cj-003-vehicle-damage-model) Vehicle damage model**, which builds on the same physics.
 5. **[CJ-012](#cj-012-audio-overhaul) Audio overhaul** — positional sound, sirens, horns and effects.
-6. **[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture** — awaiting playtest: the game draws the player in two layers from the accepted 3D renders, walks at 1.5 m/s and raises the weapon only to aim; criteria 1–8 are met ([CJ-011 player art](../assets/art/cj011/README.md#measurements)).
+6. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
 7. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
 
 CJ-010 (pedestrians) and CJ-013 (full screen) still await user playtest acceptance.
@@ -40,7 +40,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-002](#cj-002-vehicle-handling-model) | Vehicle handling model | High | In progress |
 | [CJ-003](#cj-003-vehicle-damage-model) | Vehicle damage model | High | Open |
 | [CJ-012](#cj-012-audio-overhaul) | Audio overhaul | High | Open |
-| [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Awaiting playtest |
+| [CJ-011](#cj-011-relaxed-player-posture) | Relaxed player posture | High | Done |
 | [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) | Pedestrian blocking and contact realism | High | Specification agreed |
 | [CJ-018](#cj-018-police-driving-and-reactions) | Police driving and reactions | High | Open |
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
@@ -170,7 +170,7 @@ Remaining: the playtest.
 ### CJ-011 Relaxed player posture
 
 - **Priority:** High
-- **Status:** Awaiting playtest
+- **Status:** Done (2026-10-11)
 
 **Problem.** The player always looks as if in action. Unarmed, the character holds its fists up as if about to fight; armed, it constantly aims. In GTA the character walked normally and only raised the weapon to aim or fire.
 
@@ -218,7 +218,9 @@ The player has no jog: the walk shows below 4 m/s and the run from 4 m/s. The wa
 
 **Progress (2026-10-11).** The user accepted the shotgun, knife, flashlight and fist holds, the reloads (four frames each, the shotgun shell by shell), the punches at head height, the stab at the belly, the flashlight strike, the jogging strafes and the long guns carried across the body when strafing and with the upper body when backpedalling. Next: the atlases and the game's two-layer player.
 
-**In the game (2026-10-11).** The player is drawn from the legs atlas and the weapon set's upper-body atlas ([player.cfg](../assets/data/player.cfg)); the Survivor sprites remain the fallback and are no longer loaded. The new `player` scenario drives every weapon through every gait and action. Criteria 6–8 are met: drawn as wide as before (`SCALE 1.12`), the weapon raised in 0.12 s and lowered 0.97 s after the last shot, walk 1.50 m/s and run 6.50 m/s, the pedestrian metrics of `brawl` unchanged, FPS medians −2.5 % and −2.8 %, video memory about 15 MB less ([measurements](../assets/art/cj011/README.md#measurements)). Next: the user's playtest.
+**In the game (2026-10-11).** The player is drawn from the legs atlas and the weapon set's upper-body atlas ([player.cfg](../assets/data/player.cfg)); the Survivor sprites remain the fallback and are no longer loaded. The new `player` scenario drives every weapon through every gait and action. Criteria 6–8 are met: drawn as wide as before (`SCALE 1.12`), the weapon raised in 0.12 s and lowered 0.97 s after the last shot, walk 1.50 m/s and run 6.50 m/s, the pedestrian metrics of `brawl` unchanged, FPS medians −2.5 % and −2.8 %, video memory about 15 MB less ([measurements](../assets/art/cj011/README.md#measurements)).
+
+**Playtest (2026-10-11).** The user played with every weapon (`--scenario armed`, by day and at night) and asked for one change: the flashlight's beam must move with the lamp. It now starts at the drawn lens and points as the lamp does in every frame (`LAMP` records measured on the renders). The user accepted the player; CJ-011 is done (criterion 9).
 
 ### CJ-018 Police driving and reactions
 

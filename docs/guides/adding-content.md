@@ -213,6 +213,7 @@ GAIT  <gait> <first> <count> dist <metres per cycle>
 GAIT  <gait> <first> <count> cadence <steps/s> <at m/s>
 SET   <set> <file>
 UPPER <set> <state> <first> <count>
+LAMP  <set> <frame> <right> <ahead> <height> <yaw> <pitch>
 ```
 
 | Record | Meaning |
@@ -223,6 +224,7 @@ UPPER <set> <state> <first> <count>
 | `LEGS` | The legs layer's atlas |
 | `GAIT` | Where a gait's legs are in it, and how they play: by the distance moved (`dist`, a cycle of two steps per that many metres) or by cadence (`cadence`, steps per second at a speed, scaled with the speed between 0.6 and 1.3 times). Gaits: `stand`, `walk`, `run`, `strafel`, `strafer`, `back`, `jogl`, `jogr` |
 | `SET` | The upper-body atlas of a weapon set (the `anim set` of `weapons.cfg`) |
+| `LAMP` | A flashlight's lens in one upper-body frame of a set: metres from the frame centre at life size (right, ahead, above the ground) and the beam's direction (degrees right of the facing, below the horizontal); the beam starts there, so it moves with the drawn lamp. Written by `make_player.py --lamp` |
 | `UPPER` | Where a set's frames are: a gait (the weapon lowered, in step with the legs; as many frames as the gait's legs) or `aim`, `fire` (two: the recoil, the recovery), `reload` (four), `melee` (two: the fists' two punches, or a wind-up and the blow) |
 
 Every gait must be present in the legs and in every set, or the game draws the Survivor sprites. At load, every frame is cut to its visible part and packed. To change the player, see the [CJ-011 player art](../../assets/art/cj011/README.md).
