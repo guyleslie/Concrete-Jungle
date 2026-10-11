@@ -239,7 +239,7 @@ void Game::DrawTitle() {
         const char* p = "Press ENTER to start";
         DrawUITextShadow(p, W * 0.5f - MeasureUIText(p, 40 * ui) * 0.5f, H * 0.62f, 40 * ui, WHITE);
     }
-    const char* c = "Assets: Unlucky Studio, ambientCG, FabinhoSC (CC0) - Survivor by Riley Gombart (CC-BY 3.0) - Rajdhani (OFL)";
+    const char* c = "Assets: Unlucky Studio, ambientCG, FabinhoSC, MakeHuman, Quaternius (CC0) - Mixamo - Rajdhani (OFL)";
     DrawUIText(c, W * 0.5f - MeasureUIText(c, 18 * ui, true) * 0.5f, H - 40 * ui, 18 * ui, ColorA(WHITE, 0.5f), true);
 }
 

@@ -1,4 +1,4 @@
-"""CJ-004: compare rendered civilians with the player and the current civilians at game scale.
+"""CJ-004: compare rendered civilians with the player at game scale.
 
     python tools/cj004/compare_scale.py <out.png> <label=render.png> [<label=render.png> ...]
 
@@ -12,6 +12,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 sys.path.insert(0, os.path.dirname(__file__))
 from stylize import stylize
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "cj011"))
+from player_frame import player_stand
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CHAR_SCALE = 1.35
@@ -32,16 +34,9 @@ def scaled(im, metres_per_px):
 
 
 tiles = []
-# The player: Survivor unarmed idle, frames face +X; 0.062 world px per source px at 16 px/m.
-player = Image.open(os.path.join(ROOT, "assets/survivor/unarmed/idle/survivor-idle_unarmed_0.png")).convert("RGBA")
-tiles.append(("player", scaled(alpha_crop(player).rotate(90, expand=True), 0.062 / 16)))
-# Current procedural civilian: atlas frame 8 (idle), 96 px = 1.4 m, faces up.
-atlas = Image.open(os.path.join(ROOT, "build/art-sources/reference/ped-atlas-0.png")).convert("RGBA")
-tiles.append(("current civilian", scaled(alpha_crop(atlas.crop((8 * 96, 0, 9 * 96, 96))), 1.4 / 96)))
-# The v4 generated idle has no scale of its own: shown at the current civilian's width.
-v4 = alpha_crop(Image.open(os.path.join(ROOT, "assets/art/cj004/civilian-idle-master-v4.png")).convert("RGBA")).rotate(90, expand=True)
-cur_w = tiles[-1][1].width
-tiles.append(("v4 (width matched)", v4.resize((cur_w, round(v4.height * cur_w / v4.width)), Image.LANCZOS)))
+# The player: its standing frame, drawn at its own scale on top of CHAR_SCALE (player.cfg SCALE).
+stand, mpp = player_stand("unarmed")
+tiles.append(("player", scaled(alpha_crop(stand), mpp * 1.12)))
 for arg in sys.argv[2:]:
     label, path = arg.split("=", 1)
     raw = label.endswith("(raw)")

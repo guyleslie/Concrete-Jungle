@@ -28,9 +28,7 @@ struct PlayerState {
     int     vehicle = -1;
     // on foot
     Vector2 pos{}, vel{};
-    float   aim = 0;               // body / aim direction
-    float   feetAngle = 0;         // legs follow the movement direction
-    float   bodyAnim = 0, feetAnim = 0;
+    float   aim = 0;               // body / aim direction (both layers face it)
     BodyAnim bodyState = BodyAnim::Idle;
     float   actionTimer = 0;       // shoot / melee / reload animation time left
     float   health = 100, armor = 0;
@@ -42,9 +40,8 @@ struct PlayerState {
     float   enterTimer = 0;  int enterTarget = -1;
     float   hurtFlash = 0;
     bool    running = false;
-    int     feetMode = 0;          // FeetAnim: idle / walk / run / strafe left / strafe right
     bool    aiming = false;
-    // the 3D player (CJ-011)
+    // the drawn layers (CJ-011)
     int     gait = 0;              // PlayerGait
     float   legPhase = 0;          // cycles of the legs' gait (a cycle is two steps)
     float   raise = 0;             // 0 the weapon lowered .. 1 raised to aim

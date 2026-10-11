@@ -1,5 +1,5 @@
 """CJ-011: recolour male_casualsuit05 (jacket over a striped shirt, jeans) into the player's
-clothes: an olive green jacket, a dark shirt and dark trousers, like the Survivor player.
+clothes: an olive green jacket, a dark shirt and dark trousers, like the old Survivor player.
 
     python tools/cj011/player_texture.py <male_casualsuit05_diffuse.png> <out.png>
 

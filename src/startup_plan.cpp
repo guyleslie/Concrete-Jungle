@@ -82,9 +82,9 @@ std::map<std::string, double> WorkUnits(startup::Reporter* loading) {
     std::map<std::string, double> units;
     auto vehicles = Metadata("assets/data/vehicles.cfg", "Reading vehicle definitions", loading);
     auto civilians = Metadata("assets/data/civilians.cfg", "Reading civilian definitions", loading);
-    auto characters = Metadata("assets/data/characters.cfg", "Reading character definitions", loading);
+    auto player = Metadata("assets/data/player.cfg", "Reading the player's layers", loading);
     auto foliage = Metadata("assets/data/foliage.cfg", "Reading foliage definitions", loading);
-    double sprites = 0, animationFrames = 0;
+    double sprites = 0;
     size_t visited = 0;
     auto lastPulse = std::chrono::steady_clock::now();
     for (const DataRecord& r : vehicles) {
@@ -95,17 +95,10 @@ std::map<std::string, double> WorkUnits(startup::Reporter* loading) {
         else if (r.Is("BIKE")) sprites += 1;
         DiscoveryBatch(loading, ++visited, lastPulse);
     }
-    for (const DataRecord& r : characters) {
-        if (r.Is("ANIM")) animationFrames += std::max(0, r.I(3));
-        else if (r.Is("FEET")) animationFrames += std::max(0, r.I(2));
-        DiscoveryBatch(loading, ++visited, lastPulse);
-    }
     units["assets.materials"] = ImageWork("assets/textures", "Inspecting ground textures", loading);
     units["assets.vehicles"] = ImageWork("assets/vehicles", "Inspecting vehicle textures", loading) + std::max(1.0, sprites);
     units["assets.civilians"] = ImageWork("assets/characters/civilians", "Inspecting civilian animations", loading) + civilians.size();
-    // Declared frame counts cover the animation work without revisiting hundreds
-    // of PNG entries, including pictures that the content definitions never use.
-    units["assets.animations"] = std::max(1.0, animationFrames);
+    units["assets.animations"] = ImageWork("assets/characters/player", "Inspecting the player's layers", loading) + player.size();
     units["assets.foliage"] = ImageWork("assets/foliage", "Inspecting foliage textures", loading) + foliage.size();
     units["assets.effects"] = 1;
     units["assets.fonts"] = 2;
@@ -175,7 +168,7 @@ std::vector<startup::TaskSpec> DiscoverStartupPlan(startup::Reporter* loading) {
             { "assets.materials", "Ground materials", "Loading ground materials...", "Roads, pavements and facades", 150 },
             { "assets.vehicles", "Vehicles", "Loading vehicle textures...", "Cars, vans and motorbikes", 300, true, { "assets.materials" } },
             { "assets.civilians", "Civilians", "Loading civilian animations...", "Walking, running and actions", 1500, true, { "assets.vehicles" } },
-            { "assets.animations", "Character animations", "Loading character animations...", "Player, feet and equipment", 5500, true, { "assets.civilians" } },
+            { "assets.animations", "Character animations", "Loading character animations...", "Player layers and equipment", 5500, true, { "assets.civilians" } },
             { "assets.foliage", "Foliage", "Preparing foliage...", "Trees and bushes", 250, true, { "assets.animations" } },
             { "assets.effects", "City objects and effects", "Preparing city objects...", "Street furniture and effects", 200, true, { "assets.foliage" } },
             { "assets.fonts", "Interface fonts", "Preparing the interface...", "Game fonts", 30, false, { "assets.effects" } },

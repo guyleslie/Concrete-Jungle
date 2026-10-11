@@ -6,7 +6,7 @@ One row per look (all atlases in assets/characters/civilians/ by default): idle,
 its start and half way, a jog and a run frame, right punch, raised fist and lying, drawn as the
 game draws them on foot at 1080p (19 m of world on 1080 px) times --scale, on the sidewalk
 texture. The frame layout, size and the standing civilians' SCALE come from civilians.cfg. The
-first row shows the player and the procedural civilian for comparison.
+first row shows the player for comparison.
 """
 import argparse, glob, os, sys
 from PIL import Image, ImageDraw
@@ -50,18 +50,12 @@ def put(img, col, row, size):
     canvas.alpha_composite(img, (cx - size // 2, cy - size // 2))
 
 
-# reference row: the player (Survivor unarmed idle, 0.062 world px per source px, faces +X) and
-# the current procedural civilian (96 px = 1.4 m frames, faces up)
-player = Image.open(os.path.join(ROOT, "assets/survivor/unarmed/idle/survivor-idle_unarmed_0.png")).convert("RGBA").rotate(90, expand=True)
-k = 0.062 / 16 * CHAR_SCALE * px_per_m
-canvas.alpha_composite(player.resize((round(player.width * k), round(player.height * k)), Image.BILINEAR),
-                       (label_w + cell // 2 - round(player.width * k) // 2, cell // 2 - round(player.height * k) // 2))
-old = os.path.join(ROOT, "build/art-sources/reference/ped-atlas-0.png")
-if os.path.exists(old):
-    o = Image.open(old).convert("RGBA")
-    for col, idx in ((1, 8), (2, 0), (3, 2)):
-        put(o.crop((idx * 96, 0, idx * 96 + 96, 96)), col, 0, round(1.4 * CHAR_SCALE * px_per_m))
-d.text((4, 4), "player | current", fill=(255, 255, 255, 255))
+# reference row: the player standing (player.cfg), at its drawn size
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "cj011"))
+from player_frame import player_stand
+stand, mpp = player_stand("unarmed")
+put(stand, 0, 0, round(stand.width * mpp * CHAR_SCALE * 1.12 * px_per_m))
+d.text((4, 4), "player", fill=(255, 255, 255, 255))
 for col, (name, *_x) in enumerate(COLUMNS):
     d.text((label_w + col * cell + 4, 4 + cell), name, fill=(255, 255, 255, 255))
 

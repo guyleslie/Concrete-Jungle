@@ -3,16 +3,16 @@
 //
 //  What gets loaded is described by the text files in assets/data/:
 //    vehicles.cfg    CLASS (handling), SPRITE / BIKE (image files), GEN (procedural vehicles)
-//    characters.cfg  ANIM / FEET / SCALE lines for animated character sprite sets
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
 //    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / WALK / CIVILIAN: pedestrian atlases
 //    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER / LAMP: the player's layers
 //  Adding content = drop the image files in assets/ and add a line. Built-in defaults
-//  are used when a file is missing, and every image has a procedural fallback.
+//  are used when a file is missing, and every image has a procedural fallback, except
+//  the people: the player's and the civilians' atlases are required (ADR-0009).
 //
 //  Sources: ambientCG (CC0) textures, Unlucky Studio (CC0) vehicles, FabinhoSC (CC0)
-//  foliage, Riley Gombart (CC-BY 3.0) Survivor, Rajdhani (OFL). See CREDITS.md.
+//  foliage, MakeHuman, Quaternius and Mixamo for the people, Rajdhani (OFL). See CREDITS.md.
 // =====================================================================================
 #pragma once
 #include "raylib.h"
@@ -72,25 +72,7 @@ struct VehicleSprite {
     bool      spawnable = true;
 };
 
-// One animation packed into an atlas. Frames face +X (east); 'pivot' = body centre.
-struct SpriteAnim {
-    Texture2D atlas{};
-    int     frames = 0, cols = 1;
-    Vector2 frameSize{ 0, 0 };
-    Vector2 pivot{ 0, 0 };
-    Rectangle Frame(int i) const {
-        i = frames ? ((i % frames) + frames) % frames : 0;
-        return { (i % cols) * frameSize.x, (i / cols) * frameSize.y, frameSize.x, frameSize.y };
-    }
-};
-
 enum class BodyAnim : int { Idle = 0, Move, Shoot, Reload, Melee, COUNT };
-enum class FeetAnim : int { Idle = 0, Walk, Run, StrafeLeft, StrafeRight, COUNT };
-
-struct CharacterSet {             // e.g. "handgun", "rifle" ... from characters.cfg
-    std::string name;
-    SpriteAnim  anim[(int)BodyAnim::COUNT];
-};
 
 enum class WeaponKind : int { Melee, Semi, Auto };
 struct WeaponDef {
@@ -113,20 +95,15 @@ struct Assets {
     std::vector<std::vector<int>> byClass;       // skins per vehicle class
 
     // --- characters ---
-    std::vector<CivilianAtlas> peds;             // civilian looks (civilians.cfg, else spritegen::PedAtlas)
-    int                       pedFramePx = spritegen::PED_FRAME;        // square atlas frame (px)
+    std::vector<CivilianAtlas> peds;             // civilian looks (civilians.cfg)
+    int                       pedFramePx = 144;                         // square atlas frame (px)
     float                     pedFrameM = 1.4f;                         // metres a frame covers at life size
     float                     pedDrawScale = 1.0f;                      // standing civilians, on top of CHAR_SCALE
     float                     pedSway = 0.05f;                          // body turn with the steps (rad)
     PedFrames                 pedAnim[(int)spritegen::PedAnim::COUNT];  // atlas layout
     PedGait                   pedJog, pedRun;                           // used when the atlas has those frames
     const PedFrames& PedAnimFrames(spritegen::PedAnim a) const { return pedAnim[(int)a]; }
-    Texture2D                 playerUnarmed{};   // Survivor-look atlas without weapon
-    std::vector<CharacterSet> charSets;
-    SpriteAnim                feet[(int)FeetAnim::COUNT];
-    float                     charScale = 0.062f;    // world px per source px
-    // the 3D player (player.cfg); when missing, the Survivor sets above are drawn
-    bool                      player3D = false;
+    // the player (player.cfg): a legs layer and an upper-body layer per weapon set
     int                       playerFramePx = 144;
     float                     playerFrameM = 2.1f, playerDrawScale = 1.0f;
     FrameAtlas                playerLegs;
@@ -157,7 +134,6 @@ struct Assets {
     int  RandomSkin(VClass c) const;                  // random skin of a class (-1 if none)
     int  RandomTrafficSkin() const;                   // weighted by class traffic weight
     int  RandomSkinWithFlag(uint32_t flag) const;     // e.g. VF_POLICE
-    const CharacterSet* FindSet(const std::string& name) const;
     int  FindWeapon(const std::string& name) const;
 };
 

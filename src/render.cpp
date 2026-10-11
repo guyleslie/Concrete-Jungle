@@ -31,24 +31,6 @@ void DrawFlatSprite(Texture2D tex, Rectangle src, Vector2 pos, float h, float wi
     rlSetTexture(0);
 }
 
-void DrawFlatSpriteX(Texture2D tex, Rectangle src, Vector2 pos, float h, float scale, Vector2 pivot, float angle, Color tint) {
-    if (!tex.id) return;
-    Vector2 r = RightOf(angle), f = Forward(angle);
-    float u0 = src.x / tex.width, v0 = src.y / tex.height;
-    float u1 = (src.x + src.width) / tex.width, v1 = (src.y + src.height) / tex.height;
-    auto corner = [&](float x, float y) { return pos + f * ((x - pivot.x) * scale) + r * ((y - pivot.y) * scale); };
-    float W = fabsf(src.width), H = fabsf(src.height);
-    rlSetTexture(tex.id);
-    rlBegin(RL_QUADS);
-    C(tint); rlNormal3f(0, 1, 0);
-    rlTexCoord2f(u0, v0); V(corner(0, 0), h);
-    rlTexCoord2f(u0, v1); V(corner(0, H), h);
-    rlTexCoord2f(u1, v1); V(corner(W, H), h);
-    rlTexCoord2f(u1, v0); V(corner(W, 0), h);
-    rlEnd();
-    rlSetTexture(0);
-}
-
 void DrawGroundTex(Texture2D tex, Rectangle a, float h, float worldPerTex, Color tint, Vector2 o) {
     float u0 = a.x / worldPerTex + o.x, v0 = a.y / worldPerTex + o.y;
     float u1 = (a.x + a.width) / worldPerTex + o.x, v1 = (a.y + a.height) / worldPerTex + o.y;

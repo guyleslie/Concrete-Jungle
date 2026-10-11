@@ -1,11 +1,11 @@
-"""CJ-011: the 3D player's poses next to today's Survivor player, at game scale, and their widths.
+"""CJ-011: the player's renders next to the shipped player, at game scale, and their widths.
 
     python tools/cj011/compare_player.py <render dir> <out.png> <pose> [<pose> ...]
 
 Drawn as tools/cj004/compare_scale.py draws people: the on-foot camera at 1080p, doubled,
 people CHAR_SCALE times life size, on the sidewalk texture; the renders are stylized to the
 144 px atlas frame first. Prints each pose's width across the facing direction (alpha >= 0.1)
-in metres against the Survivor player's 0.65 m (acceptance criterion 6: within 10 %).
+in metres against the old Survivor player's 0.65 m (acceptance criterion 6: within 10 %).
 """
 import os, sys
 import numpy as np
@@ -42,10 +42,11 @@ def width_m(render):
 
 src, out, poses = sys.argv[1], sys.argv[2], sys.argv[3:]
 tiles = []
-for label, path in (("Survivor pistol", "assets/survivor/handgun/idle/survivor-idle_handgun_0.png"),
-                    ("Survivor rifle", "assets/survivor/rifle/idle/survivor-idle_rifle_0.png")):
-    im = Image.open(os.path.join(ROOT, path)).convert("RGBA")
-    tiles.append((label, scaled(alpha_crop(im).rotate(90, expand=True), 0.062 / 16)))
+sys.path.insert(0, os.path.dirname(__file__))
+from player_frame import player_stand
+for label, set_name in (("shipped, pistol", "handgun"), ("shipped, rifle", "rifle")):
+    im, mpp = player_stand(set_name)
+    tiles.append((label, scaled(alpha_crop(im), mpp)))
 for pose in poses:
     render = Image.open(os.path.join(src, pose + ".png"))
     w = width_m(render)

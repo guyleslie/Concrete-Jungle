@@ -1,6 +1,6 @@
 """CJ-004: reduce a 1.4 m render to a 96 px atlas frame in the game's sprite style.
 
-The player and the procedural civilians have a dark contour and firm colours; a raw render
+The game's sprites have a dark contour and firm colours; a raw render
 reads grey on the sidewalk. Steps: Lanczos reduction, contrast and saturation, light
 sharpening, then a dark contour one atlas pixel wide behind the sprite.
 """

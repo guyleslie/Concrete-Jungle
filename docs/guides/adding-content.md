@@ -1,13 +1,13 @@
 # Adding content
 
-Vehicles, characters, weapons, foliage and sounds are data-driven: you add them by dropping files into `assets/` and adding a line to a data file, without changing code (see [ADR-0002](../adr/0002-data-driven-content.md)).
+Vehicles, people, weapons, foliage and sounds are data-driven: you add them by dropping files into `assets/` and adding a line to a data file, without changing code (see [ADR-0002](../adr/0002-data-driven-content.md)).
 
 ## Contents
 
 - [Data file format](#data-file-format)
 - [Vehicles](#vehicles)
 - [Traffic behaviour](#traffic-behaviour)
-- [Characters](#characters)
+- [Player](#player)
 - [Civilians](#civilians)
 - [Weapons](#weapons)
 - [Foliage](#foliage)
@@ -182,24 +182,6 @@ See [Driver incidents](../design/traffic.md#driver-incidents). For a playtest, a
 | `exit_wait` | 0.5–15 s | Time to wait for a safe side to get out before driving on |
 | `pair_memory` | 0–600 s | One incident per pair of cars within this time |
 
-## Characters
-
-File: `assets/data/characters.cfg`. Frames go in `assets/<folder>/<prefix><n>.png` with *n* = 0, 1, 2…, **facing right** (+X).
-
-```
-SCALE <world px per source px>
-ANIM  <set> <state> <frames> <pivot x> <pivot y> <folder> <file prefix>
-FEET  <anim> <frames> <folder> <file prefix>
-```
-
-| Record | Meaning |
-|---|---|
-| `SCALE` | Size of a source pixel in the world (the Survivor frames use 0.062) |
-| `ANIM` | Upper-body animation of a set; `state` is `idle`, `move`, `shoot`, `reload` or `melee`; the pivot is the body centre in source pixels |
-| `FEET` | Leg animation drawn under the body; `anim` is `idle`, `walk`, `run`, `strafe_left` or `strafe_right` |
-
-A weapon chooses which set the player's body uses. These Survivor sprites are only drawn when `player.cfg` is missing or incomplete; with it, they are not loaded.
-
 ## Player
 
 File: `assets/data/player.cfg`, written by [make_player.py](../../tools/cj011/make_player.py) with the atlases in `assets/characters/player/`: grids of square frames, the person **facing up**, every layer pivoted on the frame centre.
@@ -227,7 +209,7 @@ LAMP  <set> <frame> <right> <ahead> <height> <yaw> <pitch>
 | `LAMP` | A flashlight's lens in one upper-body frame of a set: metres from the frame centre at life size (right, ahead, above the ground) and the beam's direction (degrees right of the facing, below the horizontal); the beam starts there, so it moves with the drawn lamp. Written by `make_player.py --lamp` |
 | `UPPER` | Where a set's frames are: a gait (the weapon lowered, in step with the legs; as many frames as the gait's legs) or `aim`, `fire` (two: the recoil, the recovery), `reload` (four), `melee` (two: the fists' two punches, or a wind-up and the blow) |
 
-Every gait must be present in the legs and in every set, or the game draws the Survivor sprites. At load, every frame is cut to its visible part and packed. To change the player, see the [CJ-011 player art](../../assets/art/cj011/README.md).
+Every gait must be present in the legs and in every set, and every weapon's set must have an atlas; otherwise loading fails ([ADR-0009](../adr/0009-required-character-atlases.md)). At load, every frame is cut to its visible part and packed. To change the player, see the [CJ-011 player art](../../assets/art/cj011/README.md).
 
 ## Civilians
 
@@ -253,7 +235,7 @@ CIVILIAN <file> [walk cycle m]
 | `WALK` | Walk cycle (two steps) for `CIVILIAN` lines that give none |
 | `CIVILIAN` | One look and its walk cycle: the look's stride, so that a planted foot stays put |
 
-The walk advances with the distance walked; the jog and run play by cadence, because their feet touch the ground for a frame at most. Every atlas needs the same frame size and count. The lying frame covers `FRAME` × `CHAR_SCALE` metres, so that the body shows at real size. At load, every frame is cut to its visible part and packed, so the transparent margins of the frames cost no video memory. Without a loadable `CIVILIAN` line the game draws 28 procedural looks.
+The walk advances with the distance walked; the jog and run play by cadence, because their feet touch the ground for a frame at most. Every atlas needs the same frame size and count. The lying frame covers `FRAME` × `CHAR_SCALE` metres, so that the body shows at real size. At load, every frame is cut to its visible part and packed, so the transparent margins of the frames cost no video memory. At least one loadable `CIVILIAN` line is required; without one, loading fails ([ADR-0009](../adr/0009-required-character-atlases.md)).
 
 The shipped looks are rendered from 3D models: to change or add one, edit [looks.json](../../tools/cj004/looks.json) and run `python tools/cj004/make_civilians.py` (see the [civilian 3D pipeline](../../assets/art/cj004/README.md#civilian-3d-pipeline)).
 
@@ -268,7 +250,7 @@ WEAPON <name> <anim set> <damage> <shots/s> <spread deg> <pellets> <range m>
 
 | Field | Meaning |
 |---|---|
-| anim set | A set from `player.cfg` (and `characters.cfg`) |
+| anim set | A set from `player.cfg` |
 | spread, pellets | Random cone per shot; pellets > 1 makes a shotgun |
 | clip, start ammo, reload | Magazine size; reference ammunition (a pickup gives half of it; a gun with 0 never appears as a pickup); reload time |
 | mode | `melee`, `semi` (one shot per click) or `auto` (hold to fire) |

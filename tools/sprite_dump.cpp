@@ -23,8 +23,6 @@ int main(int argc, char** argv) {
     save(Motorbike({ 120, 200, 220, 255 }, true, { 200, 60, 80, 255 }, { 240, 240, 240, 255 }, BikeStyle::Scooter), "bike_scooter");
     save(Motorbike({ 30, 90, 200, 255 }, false, {}, {}), "bike_empty");
     save(TrainCar({ 30, 110, 200, 255 }), "train");
-    save(PedAtlas(PlayerLook()), "ped_player");
-    for (int i = 0; i < 4; i++) { snprintf(nm, sizeof nm, "ped_%d", i); save(PedAtlas(RandomPedLook(i + 1)), nm); }
     for (int i = 0; i < 5; i++) { snprintf(nm, sizeof nm, "tree_%d", i); save(Tree(i, 256, 7), nm); }
     for (int i = 0; i < (int)Prop::COUNT; i++) { snprintf(nm, sizeof nm, "prop_%02d", i); save(MakeProp((Prop)i), nm); }
     return 0;

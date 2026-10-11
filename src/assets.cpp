@@ -464,40 +464,6 @@ BIKE Chopper   chopper-empty.png   chopper-ridden.png
 BIKE Scooter   scooter-empty.png   scooter-ridden.png
 )";
 
-static const char* DEFAULT_CHARACTERS = R"(
-SCALE 0.062
-# unarmed set = knife frames with the blade removed (tools/make_unarmed.py)
-ANIM unarmed idle   20 117.9 110.3 survivor/unarmed/idle        survivor-idle_unarmed_
-ANIM unarmed move   20 117.9 109.3 survivor/unarmed/move        survivor-move_unarmed_
-ANIM unarmed melee  15 114.9 110.3 survivor/unarmed/meleeattack survivor-meleeattack_unarmed_
-ANIM flashlight idle   20 103.7 102.2 survivor/flashlight/idle        survivor-idle_flashlight_
-ANIM flashlight move   20 103.7 110.3 survivor/flashlight/move        survivor-move_flashlight_
-ANIM flashlight melee  15 109.7 126.2 survivor/flashlight/meleeattack survivor-meleeattack_flashlight_
-ANIM handgun idle   20 107.7 120.4 survivor/handgun/idle        survivor-idle_handgun_
-ANIM handgun move   20 112.7 119.4 survivor/handgun/move        survivor-move_handgun_
-ANIM handgun shoot   3 109.7 119.4 survivor/handgun/shoot       survivor-shoot_handgun_
-ANIM handgun reload 15 111.7 119.4 survivor/handgun/reload      survivor-reload_handgun_
-ANIM handgun melee  15 114.7 124.4 survivor/handgun/meleeattack survivor-meleeattack_handgun_
-ANIM knife idle     20 117.9 110.3 survivor/knife/idle        survivor-idle_knife_
-ANIM knife move     20 117.9 109.3 survivor/knife/move        survivor-move_knife_
-ANIM knife melee    15 114.9 110.3 survivor/knife/meleeattack survivor-meleeattack_knife_
-ANIM rifle idle     20 104.7 118.3 survivor/rifle/idle        survivor-idle_rifle_
-ANIM rifle move     20 104.7 117.3 survivor/rifle/move        survivor-move_rifle_
-ANIM rifle shoot     3 103.7 117.3 survivor/rifle/shoot       survivor-shoot_rifle_
-ANIM rifle reload   20 110.7 119.3 survivor/rifle/reload      survivor-reload_rifle_
-ANIM rifle melee    15 124.7 199.3 survivor/rifle/meleeattack survivor-meleeattack_rifle_
-ANIM shotgun idle   20 104.8 118.4 survivor/shotgun/idle        survivor-idle_shotgun_
-ANIM shotgun move   20 104.8 117.4 survivor/shotgun/move        survivor-move_shotgun_
-ANIM shotgun shoot   3 103.8 117.4 survivor/shotgun/shoot       survivor-shoot_shotgun_
-ANIM shotgun reload 20 110.8 119.4 survivor/shotgun/reload      survivor-reload_shotgun_
-ANIM shotgun melee  15 124.8 199.4 survivor/shotgun/meleeattack survivor-meleeattack_shotgun_
-FEET idle  1 survivor/feet/idle survivor-idle_
-FEET walk 20 survivor/feet/walk survivor-walk_
-FEET run  20 survivor/feet/run  survivor-run_
-FEET strafe_left  20 survivor/feet/strafe_left  survivor-strafe_left_
-FEET strafe_right 20 survivor/feet/strafe_right survivor-strafe_right_
-)";
-
 static const char* DEFAULT_WEAPONS = R"(
 WEAPON Fists      unarmed     12  2.5  0  1  1.2  0   0    0    melee punch
 WEAPON Knife      knife       40  2.0  0  1  1.4  0   0    0    melee knife
@@ -867,7 +833,7 @@ static void LoadCivilians(Assets& A) {
     size_t bytes = 0, uniform = 0;
     char path[256];
     const auto records = AssetData("assets/data/civilians.cfg", DEFAULT_CIVILIANS);
-    AssetPlan({ { "records", (double)std::max<size_t>(1, records.size()), false }, { "fallback", 28, false }, { "validation", 1 } });
+    AssetPlan({ { "records", (double)std::max<size_t>(1, records.size()), false }, { "validation", 1 } });
     int64_t completed = 0;
     AssetCount(0, (int64_t)records.size(), "records processed");
     for (const DataRecord& r : records) {
@@ -921,26 +887,6 @@ static void LoadCivilians(Assets& A) {
         for (int i = 0; i < (int)PedAnim::COUNT; i++) A.pedAnim[i] = layout[i];
         A.pedJog = jog;
         A.pedRun = run;
-        AssetDone("fallback", startup::Outcome::Skipped);
-    } else {                    // procedural fallback: 28 looks in the 96 px / 1.4 m format, no jog or run
-        assetFallback = true;
-        AssetPulse("Generating civilian fallback atlases");
-        using namespace spritegen;
-        A.pedAnim[(int)PedAnim::Walk] = { 0, PED_WALK_FRAMES };
-        A.pedAnim[(int)PedAnim::Idle] = { PED_FRAME_IDLE, 1 };
-        A.pedAnim[(int)PedAnim::Lying] = { PED_FRAME_DOWN, 1 };
-        A.pedAnim[(int)PedAnim::Punch] = { PED_FRAME_PUNCH, 2 };
-        A.pedAnim[(int)PedAnim::Fist] = { PED_FRAME_FIST, 2 };
-        for (int i = 0; i < 28; i++) {
-            Image img = AssetProcedural("Civilian fallback atlas", [i] { return PedAtlas(RandomPedLook(1000 + i * 7)); });
-            uniform += (size_t)img.width * img.height * 4;
-            CivilianAtlas a;
-            bytes += PackCivilian(a, img, PED_FRAME);
-            A.peds.push_back(a);
-            AssetCount(i + 1, 28, "atlases prepared");
-            AssetFraction("fallback", (i + 1) / 28.0);
-        }
-        AssetDone("fallback", startup::Outcome::ReadyWithFallback);
     }
     AssetValidate(!A.peds.empty(), "No usable civilian atlases are available");
     for (const CivilianAtlas& atlas : A.peds) AssetValidate(IsTextureValid(atlas.tex), "A civilian atlas is unavailable");
@@ -1004,8 +950,7 @@ static int PlayerActByName(const std::string& s) {
     return -1;
 }
 
-// Loads player.cfg; leaves A.player3D false (the Survivor sets are drawn) when it is missing or
-// incomplete.
+// Loads player.cfg and its atlases; the player cannot be drawn without them (ADR-0009).
 static void LoadPlayer(Assets& A) {
     const auto records = AssetData("assets/data/player.cfg", "");
     int framePx = 0, cols = 16;
@@ -1062,12 +1007,7 @@ static void LoadPlayer(Assets& A) {
     for (const PlayerSet& s : A.playerSets)
         for (int g = 0; g < (int)PlayerGait::COUNT; g++)
             if (s.gait[g].count <= 0 || s.gait[g].first + s.gait[g].count > (int)s.atlas.src.size()) ok = false;
-    if (!ok || A.playerSets.empty()) {
-        if (!records.empty()) TraceLog(LOG_WARNING, "PLAYER: player.cfg is incomplete - drawing the Survivor sprites");
-        assetFallback = assetFallback || !records.empty();
-        return;
-    }
-    A.player3D = true;
+    AssetValidate(ok && !A.playerSets.empty(), "The player's atlases (player.cfg) are missing or incomplete");
     A.playerFramePx = framePx;
     A.playerFrameM = frameM;
     A.playerDrawScale = scale;
@@ -1081,96 +1021,13 @@ const PlayerSet* Assets::FindPlayerSet(const std::string& name) const {
 }
 
 // -------------------------------------------------------------------------------------
-//  Character animation sets (characters.cfg) and weapons (weapons.cfg)
+//  The player (player.cfg) and weapons (weapons.cfg)
 // -------------------------------------------------------------------------------------
-static SpriteAnim LoadAnim(const std::string& dir, const std::string& prefix, int frames, Vector2 pivot, bool centrePivot, const char* child) {
-    SpriteAnim a;
-    std::vector<Image> imgs;
-    AssetImageListGuard imageGuard(imgs);
-    char path[512];
-    for (int i = 0; i < frames; i++) {
-        snprintf(path, sizeof(path), "assets/%s/%s%d.png", dir.c_str(), prefix.c_str(), i);
-        Image img;
-        if (!TryLoadImage(path, img)) break;
-        imgs.push_back(img);
-        AssetCount(i + 1, frames, "frames decoded");
-        AssetFraction(child, (i + 1) / (2.0 * std::max(0, frames) + 1));
-        AssetPulse();
-    }
-    if (imgs.empty()) return a;
-    // frames within one animation share a size; downscale 50% (still ~3x the on-screen size)
-    int fw = imgs[0].width / 2, fh = imgs[0].height / 2;
-    a.frames = (int)imgs.size();
-    a.cols = std::min(a.frames, 5);
-    int rows = (a.frames + a.cols - 1) / a.cols;
-    Image atlas = GenImageColor(fw * a.cols, fh * rows, BLANK);
-    AssetImageGuard atlasGuard(atlas);
-    for (int i = 0; i < a.frames; i++) {
-        { startup::AtomicSpan span(assetReporter, "resize", "Animation frame resize"); ImageResize(&imgs[i], fw, fh); }
-        { startup::AtomicSpan span(assetReporter, "image", "Animation frame packing");
-          ImageDraw(&atlas, imgs[i], { 0, 0, (float)fw, (float)fh },
-                    { (float)((i % a.cols) * fw), (float)((i / a.cols) * fh), (float)fw, (float)fh }, WHITE); }
-        FreeAssetImage(imgs[i]);
-        AssetCount(i + 1, a.frames, "frames packed");
-        AssetFraction(child, (a.frames + i + 1) / (2.0 * std::max(0, frames) + 1));
-        AssetPulse();
-    }
-    a.frameSize = { (float)fw, (float)fh };
-    a.pivot = centrePivot ? Vector2{ fw * 0.5f, fh * 0.5f } : Vector2{ pivot.x * 0.5f, pivot.y * 0.5f };
-    atlasGuard.Release();
-    a.atlas = MakeTexture(atlas, false, true);
-    return a;
-}
-
-static int StateIndex(const std::string& s) {
-    if (s == "idle") return (int)BodyAnim::Idle;
-    if (s == "move") return (int)BodyAnim::Move;
-    if (s == "shoot") return (int)BodyAnim::Shoot;
-    if (s == "reload") return (int)BodyAnim::Reload;
-    if (s == "melee") return (int)BodyAnim::Melee;
-    return -1;
-}
-
 static void LoadCharacters(Assets& A) {
-    const auto records = AssetData("assets/data/characters.cfg", DEFAULT_CHARACTERS);
-    std::vector<startup::ChildSpec> children{ { "player", 1 }, { "player3d", 1, false }, { "weapons", 1, false }, { "fallback_weapon", 1, false }, { "validation", 1 } };
-    for (size_t i = 0; i < records.size(); i++) {
-        const DataRecord& r = records[i];
-        int frames = r.Is("ANIM") ? r.I(3) : r.Is("FEET") ? r.I(2) : 0;
-        children.push_back({ "record" + std::to_string(i), 2.0 * std::max(0, frames) + 1, false });
-    }
-    AssetPlan(children);
-    AssetValidate(IsTextureValid(A.playerUnarmed), "The player texture is unavailable");
-    AssetDone("player");
+    AssetPlan({ { "player", 7 }, { "weapons", 1, false }, { "fallback_weapon", 1, false }, { "validation", 1 } });
     LoadPlayer(A);
-    AssetDone("player3d", A.player3D ? startup::Outcome::Ready : startup::Outcome::Skipped);
+    AssetDone("player");
     int64_t completed = 0;
-    AssetCount(0, (int64_t)records.size(), "records processed");
-    for (size_t i = 0; i < records.size(); i++) {
-        const DataRecord& r = records[i];
-        AssetChildStep step("record" + std::to_string(i), completed, (int64_t)records.size());
-        if (A.player3D && (r.Is("ANIM") || r.Is("FEET"))) { step.outcome = startup::Outcome::Skipped; continue; }   // not needed
-        if (r.Is("SCALE")) A.charScale = r.F(1, A.charScale) * 2.0f;          // atlases are stored at 50%
-        else if (r.Is("ANIM") && r.size() >= 8) {
-            int st = StateIndex(r[2]);
-            if (st < 0) { assetFallback = true; step.outcome = startup::Outcome::Skipped; TraceLog(LOG_WARNING, "characters.cfg:%d unknown state '%s'", r.line, r[2].c_str()); continue; }
-            CharacterSet* set = nullptr;
-            for (auto& s : A.charSets) if (s.name == r[1]) set = &s;
-            if (!set) { A.charSets.push_back({}); set = &A.charSets.back(); set->name = r[1]; }
-            AssetPulse((r[1] + " / " + r[2]).c_str());
-            set->anim[st] = LoadAnim(r[6], r[7], r.I(3), { r.F(4), r.F(5) }, false, step.child.c_str());
-            if (!set->anim[st].frames) { assetFallback = true; step.outcome = startup::Outcome::Skipped; }
-            else if (set->anim[st].frames < r.I(3)) step.outcome = startup::Outcome::ReadyWithFallback;
-        } else if (r.Is("FEET") && r.size() >= 5) {
-            int k = r[1] == "idle" ? 0 : r[1] == "walk" ? 1 : r[1] == "run" ? 2 : r[1] == "strafe_left" ? 3 : r[1] == "strafe_right" ? 4 : -1;
-            if (k >= 0) {
-                AssetPulse((std::string("Feet / ") + r[1]).c_str());
-                A.feet[k] = LoadAnim(r[3], r[4], r.I(2), {}, true, step.child.c_str());
-                if (!A.feet[k].frames) { assetFallback = true; step.outcome = startup::Outcome::Skipped; }
-                else if (A.feet[k].frames < r.I(2)) step.outcome = startup::Outcome::ReadyWithFallback;
-            } else { assetFallback = true; step.outcome = startup::Outcome::Skipped; }
-        }
-    }
     const auto weapons = AssetData("assets/data/weapons.cfg", DEFAULT_WEAPONS);
     completed = 0;
     AssetPulse("Weapon definitions");
@@ -1197,13 +1054,11 @@ static void LoadCharacters(Assets& A) {
         AssetDone("fallback_weapon", startup::Outcome::ReadyWithFallback);
     } else AssetDone("fallback_weapon", startup::Outcome::Skipped);
     AssetValidate(!A.weapons.empty(), "No usable weapon definitions are available");
+    for (const WeaponDef& w : A.weapons)
+        AssetValidate(A.FindPlayerSet(w.animSet) != nullptr, "A weapon's set has no player atlas in player.cfg");
     AssetDone("validation");
 }
 
-const CharacterSet* Assets::FindSet(const std::string& name) const {
-    for (auto& s : charSets) if (s.name == name) return &s;
-    return nullptr;
-}
 int Assets::FindWeapon(const std::string& name) const {
     for (size_t i = 0; i < weapons.size(); i++) if (weapons[i].name == name) return (int)i;
     return -1;
@@ -1275,11 +1130,10 @@ bool Assets::Load(startup::Reporter* reporter) {
         AssetFinish("Vehicle definitions resolved with optional omissions or fallback content");
         AssetBegin("assets.civilians", "Civilian looks and animation atlases");
         LoadCivilians(*this);
-        AssetFinish("Civilian definitions resolved with optional omissions or fallback atlases");
-        AssetBegin("assets.animations", "Player actions and weapon definitions");
-        playerUnarmed = MakeTexture(AssetProcedural("Unarmed player atlas", [] { return PedAtlas(PlayerLook()); }), false, true);
+        AssetFinish("Civilian definitions resolved with optional omissions");
+        AssetBegin("assets.animations", "Player layers and weapon definitions");
         LoadCharacters(*this);
-        AssetFinish("Character definitions resolved with optional omissions or built-in defaults");
+        AssetFinish("Weapon definitions resolved with built-in defaults");
 
         // ---- foliage ----
         AssetBegin("assets.foliage", "Trees and bushes");
@@ -1391,9 +1245,9 @@ bool Assets::Load(startup::Reporter* reporter) {
         AssetValidate(IsShaderValid(blur) && locBlurDir >= 0, "The bloom shader is unavailable");
         AssetDone("blur"); AssetCount(2, 2, "shaders prepared"); AssetFinish(nullptr);
 
-        TraceLog(LOG_INFO, "ASSETS: %d vehicle classes, %d vehicle skins, %d pedestrians, %d trees, %d bushes, %d anim sets, %d weapons",
+        TraceLog(LOG_INFO, "ASSETS: %d vehicle classes, %d vehicle skins, %d pedestrians, %d trees, %d bushes, %d player sets, %d weapons",
                  (int)VehicleClasses().size(), (int)vehicles.size(), (int)peds.size(), (int)trees.size(), (int)bushes.size(),
-                 (int)charSets.size(), (int)weapons.size());
+                 (int)playerSets.size(), (int)weapons.size());
         return true;
     } catch (const AssetInterrupted&) { return false; }
 }
@@ -1403,7 +1257,7 @@ void Assets::Unload() {
     // owner as it is released so cleanup remains safe if the caller invokes it twice.
     auto releaseTexture = [](Texture2D& texture) { if (texture.id) UnloadTexture(texture); texture = {}; };
     Texture2D* all[] = { &asphalt, &sidewalk, &concrete, &gravel, &grass, &plaza, &cobble, &water,
-                        &facade[0], &facade[1], &facadeLit[0], &facadeLit[1], &trainCar, &playerUnarmed,
+                        &facade[0], &facade[1], &facadeLit[0], &facadeLit[1], &trainCar,
                         &lightRadial, &lightCone, &softCircle, &spark, &ring, &blood, &flare };
     for (Texture2D* texture : all) releaseTexture(*texture);
     for (auto& v : vehicles) releaseTexture(v.tex);
@@ -1411,9 +1265,9 @@ void Assets::Unload() {
     for (auto& texture : trees) releaseTexture(texture);
     for (auto& texture : bushes) releaseTexture(texture);
     for (auto& texture : props) releaseTexture(texture);
-    for (auto& set : charSets) for (auto& animation : set.anim) releaseTexture(animation.atlas);
-    for (auto& animation : feet) { releaseTexture(animation.atlas); animation = {}; }
-    vehicles.clear(); byClass.clear(); peds.clear(); trees.clear(); bushes.clear(); charSets.clear(); weapons.clear();
+    releaseTexture(playerLegs.tex);
+    for (auto& set : playerSets) releaseTexture(set.atlas.tex);
+    vehicles.clear(); byClass.clear(); peds.clear(); trees.clear(); bushes.clear(); playerSets.clear(); weapons.clear();
     const unsigned int defaultFontId = GetFontDefault().texture.id;
     if (fontSemi.texture.id && fontSemi.texture.id != defaultFontId && fontSemi.texture.id != font.texture.id) UnloadFont(fontSemi);
     if (font.texture.id && font.texture.id != defaultFontId) UnloadFont(font);

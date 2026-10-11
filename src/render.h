@@ -30,9 +30,6 @@ inline Vector3 W3(Vector2 p, float h) { return { p.x, h, p.y }; }
 // origin: (0.5,0.5) = centre; (0.5,1.0) = middle of the rear edge, etc.
 void DrawFlatSprite(Texture2D tex, Rectangle src, Vector2 pos, float h, float width, float length,
                     float angle, Color tint, Vector2 origin = { 0.5f, 0.5f });
-// Flat sprite whose texture +X points along Forward(angle) (Survivor frames face east).
-// 'pivot' in source pixels, 'scale' world px per source px.
-void DrawFlatSpriteX(Texture2D tex, Rectangle src, Vector2 pos, float h, float scale, Vector2 pivot, float angle, Color tint);
 // Axis aligned textured ground quad; texture repeats every 'worldPerTex' px (world-anchored UVs).
 void DrawGroundTex(Texture2D tex, Rectangle area, float h, float worldPerTex, Color tint, Vector2 uvOffset = { 0, 0 });
 // Untextured primitives on a horizontal plane.

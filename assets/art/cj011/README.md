@@ -28,7 +28,7 @@ The Universal Animation Library and its second volume contain no strafe or backp
 
 ## Look
 
-The player keeps the Survivor's look, so that it stays recognisable and stands out from the civilians: a 1.80 m man in a dark baseball cap, an olive green jacket over a dark shirt, dark trousers and dark ankle boots, with a camouflage backpack.
+The player keeps the old Survivor player's look, so that it stays recognisable and stands out from the civilians: a 1.80 m man in a dark baseball cap, an olive green jacket over a dark shirt, dark trousers and dark ankle boots, with a camouflage backpack.
 
 ![The player's poses from above and from the side](player-poses.png)
 
@@ -119,7 +119,7 @@ Each reload has four frames that together show the whole operation; the weapon i
 | [render_player.py](../../../tools/cj011/render_player.py) | Poses (`<weapon>_low`, `_aim`, `_fire0`/`1`, `_reload0`–`3`, `knife_stab0`/`1`, `flashlight_strike0`/`1`), clip frames (`clip:<weapon>:<action>:<frame>`, the weapon following the clip's right hand) and gait jobs (`gait:<name>:<action>:<frames>`, the weapons in `CJ_WEAPONS`): renders (`CJ_SIDE=1` adds side, front and back views), layers, leg masks and the hold measurements in `measure.json`; `CJ_MEASURE_ONLY=1` measures without rendering |
 | [check_layers.py](../../../tools/cj011/check_layers.py) | The layers against the whole render, and the holes at ±90° between them |
 | [make_player.py](../../../tools/cj011/make_player.py) | Renders every atlas frame and writes the atlases and `player.cfg` (see [Atlases](#atlases)) |
-| [compare_player.py](../../../tools/cj011/compare_player.py), [gait_preview.py](../../../tools/cj011/gait_preview.py) | The poses next to the Survivor at game scale with their widths; an animated preview of the gaits at game scale |
+| [compare_player.py](../../../tools/cj011/compare_player.py), [gait_preview.py](../../../tools/cj011/gait_preview.py), [player_frame.py](../../../tools/cj011/player_frame.py) | The renders next to the shipped player at game scale with their widths; an animated preview of the gaits at game scale; the shipped player's standing frame for the comparison tools |
 
 The steps, from the project root, with Blender 5.2 (`BL`) and the paths of the [civilian pipeline](../cj004/README.md#setting-up):
 
@@ -146,7 +146,7 @@ The other Mixamo files are retargeted like the first; the punches come from the 
 
 `make_player.py --lamp` measures the flashlight's lens and direction in every frame of its set, without rendering (the same poses), and the packing writes them as `LAMP` records, so that the game starts the beam at the drawn lamp.
 
-Every frame is stylized as the civilians' ([stylize.py](../../../tools/cj004/stylize.py)); the upper body's dark contour is left out where it lies over the legs of the same frame, so that no seam shows at the waist. The action frames are rendered standing and pivoted on the standing pelvis, and drawn over whatever the legs are doing. The game cuts every frame to its visible part at load: 17.3 MB packed before mipmaps, against the Survivor sprites' 29.0 MB, which are no longer loaded.
+Every frame is stylized as the civilians' ([stylize.py](../../../tools/cj004/stylize.py)); the upper body's dark contour is left out where it lies over the legs of the same frame, so that no seam shows at the waist. The action frames are rendered standing and pivoted on the standing pelvis, and drawn over whatever the legs are doing. The game cuts every frame to its visible part at load: 17.3 MB packed before mipmaps, against the old Survivor sprites' 29.0 MB, which were removed on 2026-10-11 ([ADR-0009](../../../docs/adr/0009-required-character-atlases.md)).
 
 ## Measurements
 
@@ -163,7 +163,7 @@ Against the [acceptance criteria](../../../docs/backlog.md#cj-011-relaxed-player
 | 7. In the game: raised within 0.2 s, lowered 0.8 s after the last shot; walk 1.5 m/s, run 6.5 m/s | `player` scenario: raised in 0.12 s; lowered 0.97 s after the last shot (0.8 s, then half the 0.25 s lowering); walk 1.50 m/s, run 6.50 m/s; the expected gait in 87–100 % of the moving frames |
 | 8. Pedestrian metrics unchanged; FPS within ±3 %; video memory at most 15 MB more | `brawl` pedestrian lines identical to the build before; FPS medians of four alternating uncapped runs −2.5 % (`foot`, 295 → 287) and −2.8 % (`civilians`, 312 → 303); video memory about 15 MB less (17.3 MB of atlases instead of 29.0 MB of Survivor sprites, before mipmaps) |
 
-![The poses next to the Survivor player at game scale](player-game-scale.png)
+![The poses next to the old Survivor player at game scale (2026-10-10)](player-game-scale.png)
 
 ## Open items
 

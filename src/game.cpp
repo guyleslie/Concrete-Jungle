@@ -126,7 +126,7 @@ void Game::DebugScenario(const char* name) {
             int w = gAssets.FindWeapon(pilotOnly);
             if (w >= 0 && gAssets.weapons[w].light) dn.hour = 22.5f;   // a flashlight shows at night
         }
-        TraceLog(LOG_INFO, "PLAYER: %s, walk %.1f m/s, run %.1f m/s", gAssets.player3D ? "3D layers" : "Survivor sprites", PLAYER_WALK, PLAYER_RUN);
+        TraceLog(LOG_INFO, "PLAYER: walk %.1f m/s, run %.1f m/s", PLAYER_WALK, PLAYER_RUN);
     }
     if (n == "night" || n == "nightdrive") dn.hour = 22.5f;
     if (n == "day") dn.hour = 13.0f;
@@ -805,7 +805,7 @@ bool Game::NewGame(startup::Reporter* loading) {
             !loading->ChildProgress("pedestrians", (double)(i + 1) / std::max(1, PEDESTRIANS)))) return false;
     }
     if (loading && (!loading->ChildDone("pedestrians") || !phase("Preparing player equipment"))) return false;
-    player.aim = player.feetAngle = 0;
+    player.aim = 0;
     size_t nw = gAssets.weapons.size();
     player.clip.assign(nw, 0); player.ammo.assign(nw, 0); player.owned.assign(nw, 0);
     int fists = std::max(0, gAssets.FindWeapon("Fists"));
@@ -1143,26 +1143,6 @@ void Game::UpdatePlayerOnFoot(float dt) {
         P.aim += WrapAngle(AngleOf(P.vel) - P.aim) * Damp(12, dt);
     }
     P.aiming = aiming;
-    // Legs and torso are separate layers: the torso always faces the aim, the legs
-    // walk/run towards the movement direction, strafe sideways or backpedal.
-    bool haveStrafe = gAssets.feet[(int)FeetAnim::StrafeLeft].frames > 0 && gAssets.feet[(int)FeetAnim::StrafeRight].frames > 0;
-    if (spd > 8) {
-        float mv = AngleOf(P.vel);
-        float diff = WrapAngle(mv - P.aim), ad = fabsf(diff);
-        float feetTarget = mv, dir = 1.0f, cycleM = P.running ? 2.6f : 1.5f;   // metres per 20-frame cycle
-        if (ad < 0.75f) P.feetMode = P.running ? (int)FeetAnim::Run : (int)FeetAnim::Walk;
-        else if (ad < 2.25f && haveStrafe && P.aiming) {
-            P.feetMode = diff > 0 ? (int)FeetAnim::StrafeRight : (int)FeetAnim::StrafeLeft;
-            feetTarget = P.aim; cycleM = 1.4f;
-        } else if (P.aiming) { P.feetMode = (int)FeetAnim::Walk; feetTarget = mv + PI; dir = -1.0f; cycleM = 1.3f; }   // backpedal
-        else P.feetMode = P.running ? (int)FeetAnim::Run : (int)FeetAnim::Walk;
-        P.feetAngle += WrapAngle(feetTarget - P.feetAngle) * Damp(14, dt);
-        P.feetAnim += dir * spd * dt * (20.0f / (cycleM * M));
-    } else {
-        P.feetMode = (int)FeetAnim::Idle;
-        P.feetAngle += WrapAngle(P.aim - P.feetAngle) * Damp(8, dt);
-    }
-
     P.pos = P.pos + P.vel * dt;
     // collisions: buildings, furniture, vehicles
     static std::vector<int> ids;
@@ -1193,13 +1173,10 @@ void Game::UpdatePlayerOnFoot(float dt) {
     P.pos.x = Clampf(P.pos.x, 8, WORLD_W - 8);
     P.pos.y = Clampf(P.pos.y, 8, WORLD_H - 8);
 
-    // torso animation: synced with the legs while moving, slow breathing idle otherwise
-    if (spd > 8) P.bodyAnim = fabsf(P.feetAnim); else P.bodyAnim += dt * 12.0f;
-
-    // The 3D player's layers face the aim; the legs walk, run, strafe or backpedal along the
+    // The player's layers face the aim; the legs walk, run, strafe or backpedal along the
     // motion (from 0.3 m/s): ahead within 45 degrees, sideways within 135, else backwards.
     // Walks advance with the distance at their stride, runs and jogs by cadence.
-    if (gAssets.player3D) {
+    {
         float spdM = spd / M;
         PlayerGait g = PlayerGait::Stand;
         if (spdM > 0.3f) {
@@ -1400,7 +1377,7 @@ void Game::ExitVehicle() {
     player.vehicle = -1;
     player.pos = p;
     player.vel = v.vel * 0.4f;
-    player.aim = player.feetAngle = v.angle;
+    player.aim = v.angle;
     audio.Play(Sfx::Door, p, 0.8f);
     if (speed > 250) { DamagePlayer((speed - 250) * 0.06f, v.vel); Toast_("Ouch! Jumped out at speed.", { 255, 180, 120, 255 }); }
 }
@@ -1593,7 +1570,7 @@ void Game::ThrowRider(int idx, float severity) {
         player.inVehicle = false;
         player.vehicle = -1;
         player.pos = p;
-        player.aim = player.feetAngle = AngleOf(dir);
+        player.aim = AngleOf(dir);
         player.vel = dir * std::min(260.0f, severity * 0.5f);
         DamagePlayer(std::min(60.0f, (severity - DV_BIKE_THROW) * 0.08f + 5), dir);
         Toast_("Thrown off the bike!", { 255, 180, 120, 255 });
@@ -1981,50 +1958,21 @@ static int PlayerUpperFrame(const PlayerState& P, const PlayerSet& s, const Weap
 
 void Game::DrawPlayerSprite(bool shadowPass, Vector2 sv) const {
     if (player.inVehicle) return;
-    const WeaponDef& W = gAssets.weapons[player.weapon];
-    const CharacterSet* set = gAssets.FindSet(W.animSet);
-    float s = gAssets.charScale * CHAR_SCALE;
     if (shadowPass) {
         const Texture2D& t = gAssets.softCircle;
         DrawFlatSprite(t, { 0, 0, (float)t.width, (float)t.height }, player.pos + sv * 14.0f, 0, 0.9f * M * CHAR_SCALE, 0.9f * M * CHAR_SCALE, 0, ColorA(BLACK, 0.85f));
         return;
     }
-    Color tint3 = player.hurtFlash > 0 ? LerpColor(WHITE, { 255, 120, 120, 255 }, player.hurtFlash) : WHITE;
-    if (gAssets.player3D) {
-        if (const PlayerSet* ps = gAssets.FindPlayerSet(W.animSet)) {
-            // both layers face the aim: the legs' clips walk, strafe or backpedal by themselves
-            const PlayerGaitDef& d = gAssets.playerGait[player.gait];
-            int count = std::max(1, d.frames.count);
-            int index = std::min(count - 1, (int)(player.legPhase * count));
-            DrawPlayerFrame(gAssets.playerLegs, d.frames.first + index, player.pos, player.aim, H_PED - 6, tint3);
-            DrawPlayerFrame(ps->atlas, PlayerUpperFrame(player, *ps, W, index, count), player.pos, player.aim, H_PED, tint3);
-            return;
-        }
-    }
-    // legs first (they follow the movement direction), then the upper body (aim)
-    float spd = Len(player.vel);
-    const SpriteAnim& feet = gAssets.feet[spd < 8 ? (int)FeetAnim::Idle : player.feetMode];
-    if (feet.frames) DrawFlatSpriteX(feet.atlas, feet.Frame((int)player.feetAnim), player.pos, H_PED - 6, s * 0.95f, feet.pivot, player.feetAngle, WHITE);
+    const WeaponDef& W = gAssets.weapons[player.weapon];
+    const PlayerSet* ps = gAssets.FindPlayerSet(W.animSet);          // validated at load
+    if (!ps) return;
     Color tint = player.hurtFlash > 0 ? LerpColor(WHITE, { 255, 120, 120, 255 }, player.hurtFlash) : WHITE;
-    if (set) {
-        const SpriteAnim* a = &set->anim[(int)player.bodyState];
-        if (a->frames == 0) a = &set->anim[(int)BodyAnim::Idle];
-        if (a->frames) {
-            int frame;
-            if (player.bodyState == BodyAnim::Shoot || player.bodyState == BodyAnim::Melee || player.bodyState == BodyAnim::Reload) {
-                float dur = player.bodyState == BodyAnim::Reload ? W.reloadTime : player.bodyState == BodyAnim::Melee ? 0.45f : 0.12f;
-                frame = (int)((1.0f - player.actionTimer / dur) * a->frames);
-                frame = std::clamp(frame, 0, a->frames - 1);
-            } else frame = (int)player.bodyAnim;
-            DrawFlatSpriteX(a->atlas, a->Frame(frame), player.pos, H_PED, s, a->pivot, player.aim, tint);
-            return;
-        }
-    }
-    // fallback: procedural look-alike
-    const Texture2D& t = gAssets.playerUnarmed;
-    const float F = (float)spritegen::PED_FRAME;
-    int fr = spd < 4 ? spritegen::PED_FRAME_IDLE : (int)player.feetAnim % spritegen::PED_WALK_FRAMES;
-    DrawFlatSprite(t, { fr * F, 0, F, F }, player.pos, H_PED, 1.0f * M * CHAR_SCALE, 1.0f * M * CHAR_SCALE, player.aim, tint);
+    // both layers face the aim: the legs' clips walk, strafe or backpedal by themselves
+    const PlayerGaitDef& d = gAssets.playerGait[player.gait];
+    int count = std::max(1, d.frames.count);
+    int index = std::min(count - 1, (int)(player.legPhase * count));
+    DrawPlayerFrame(gAssets.playerLegs, d.frames.first + index, player.pos, player.aim, H_PED - 6, tint);
+    DrawPlayerFrame(ps->atlas, PlayerUpperFrame(player, *ps, W, index, count), player.pos, player.aim, H_PED, tint);
 }
 
 void Game::DrawWorld() {
@@ -2090,14 +2038,14 @@ void Game::DrawWorld() {
             // the ground and fades out.
             // the lens as the drawn upper-body frame holds it (LAMP in player.cfg)
             PlayerLamp L = { true, 0.0f, 0.4f, 0.9f, 0.0f, 0.0f };
-            const PlayerSet* ps = gAssets.player3D ? gAssets.FindPlayerSet(W.animSet) : nullptr;
+            const PlayerSet* ps = gAssets.FindPlayerSet(W.animSet);
             if (ps) {
                 const PlayerGaitDef& d = gAssets.playerGait[player.gait];
                 int count = std::max(1, d.frames.count);
                 int frame = PlayerUpperFrame(player, *ps, W, std::min(count - 1, (int)(player.legPhase * count)), count);
                 if (frame < (int)ps->lamp.size() && ps->lamp[frame].set) L = ps->lamp[frame];
             }
-            float size = gAssets.player3D ? CHAR_SCALE * gAssets.playerDrawScale : CHAR_SCALE;   // as the player is drawn
+            float size = CHAR_SCALE * gAssets.playerDrawScale;                                 // as the player is drawn
             float a = player.aim + L.yaw * DEG2RAD;
             Vector2 apex = player.pos + Forward(player.aim) * (L.ahead * size * M) + RightOf(player.aim) * (L.right * size * M);
             float reach = 18.0f, glow = 1.3f;

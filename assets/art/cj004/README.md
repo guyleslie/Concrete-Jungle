@@ -43,11 +43,7 @@ The exporter compiles without warnings, and its check passes on the files in `as
 
 ## Rejected civilian experiments
 
-[civilian-relaxed-sheet.png](civilian-relaxed-sheet.png) is a rejected 22-pose experiment, not an integration candidate or master reference. Defects include head/body proportions, anatomy, repeated or unclear gait phases and limbs crossing cell boundaries. Do not extract it into a runtime atlas.
-
-Earlier idle attempts projected arms and legs forward. [V3](civilian-idle-master-v3.png) hid the legs but was rejected for enormous rounded shoulder/upper-arm blobs. Preserve failed experiments; do not animate them.
-
-[V4 idle master](civilian-idle-master-v4.png), based on the [revised upright pose guide](civilian-upright-pose-guide-v2.png), was the last generated candidate. It was not reviewed further: image generation could not deliver a consistent, correctly projected walk cycle, so the [revised prompts](civilian-prompts-v2.md) are superseded by the 3D pipeline below.
+The generated civilian sheets, idle masters (v3, v4), pose guides and their prompts were rejected: image generation could not deliver consistent anatomy or a correctly projected walk cycle, so the civilians are rendered from 3D models instead (below). The files were removed on 2026-10-11 ([ADR-0009](../../../docs/adr/0009-required-character-atlases.md)) and remain in the Git history.
 
 ## Civilian 3D pipeline
 
@@ -76,7 +72,7 @@ Civilians are built from 3D human models, animated, and rendered straight from a
 | [render_civilian.py](../../../tools/cj004/render_civilian.py) | Renders frames straight from above: orthographic, 1.4 m × 1.4 m per frame (the atlas frame before `CHAR_SCALE`), 384 px, facing the top of the image, sun from the upper left. Also writes a mask of the legs and shoes. The `idle` pose is built in the script: upright, arms hanging, feet under the hips |
 | [measure_gait.py](../../../tools/cj004/measure_gait.py) | Stride (how far the foot that carries the weight travels per cycle), the walk frames that split it evenly, foot slip with the frames advanced as the game plays them, thigh swing, toe reach, the spread from the front toe to the back foot, and the upper body's hand travel, arm width, lean and shoulder turn |
 | [measure_frames.py](../../../tools/cj004/measure_frames.py) | Visible legs and shoes, how far the legs show beyond the body ahead and behind, width and length of the silhouette, body centre drift and the silhouette change between frames, including the wrap-around of a cycle |
-| [stylize.py](../../../tools/cj004/stylize.py) | Reduces a render to the 96 px atlas frame with more contrast and saturation and a dark contour, like the player and the procedural civilians |
+| [stylize.py](../../../tools/cj004/stylize.py) | Reduces a render to the 96 px atlas frame with more contrast and saturation and a dark contour, like the game's other sprites |
 | [make_civilians.py](../../../tools/cj004/make_civilians.py) | Runs the steps for every look in [looks.json](../../../tools/cj004/looks.json), writes the atlases and checks them (see [Full set](#full-set-2026-10-08)) |
 | [compare_scale.py](../../../tools/cj004/compare_scale.py), [walk_preview.py](../../../tools/cj004/walk_preview.py), [atlas_preview.py](../../../tools/cj004/atlas_preview.py), [preview_frames.py](../../../tools/cj004/preview_frames.py), [debug_side.py](../../../tools/cj004/debug_side.py) | Comparison of renders at game scale on the sidewalk; looks walking, jogging and running as the game plays them (animated); the finished atlases frame by frame; a contact sheet with the visible legs marked; side views of a retarget next to the library mannequin. The two atlas previews read the frame layout, the strides and the cadences from [civilians.cfg](../../data/civilians.cfg) through [civilians_cfg.py](../../../tools/cj004/civilians_cfg.py) |
 
@@ -121,7 +117,7 @@ What the full set changed in the pipeline:
 
 Results: every look meets the per-look criteria: idle legs and shoes at most 4 % of the silhouette (0.3–3.9 %), walk and run cycles closed, pelvis cycle mean at the frame centre. Width is a property of the set (agreed with the user): drawn with `SCALE 1.12`, the average man is 0.60 m wide standing (−7 % of the player) and 0.70 m walking (+7 %); women keep their real proportions (0.51 and 0.60 m).
 
-![The player, the procedural civilian and the 28 looks standing, walking, jogging and running, at game scale](civilian-3d-set.png)
+![The old player, the old procedural civilian and the 28 looks standing, walking, jogging and running, at game scale (2026-10-09)](civilian-3d-set.png)
 
 ### Gaits (CJ-029)
 
@@ -168,6 +164,6 @@ Before the revision (the set of 2026-10-08), the legs showed 0.00–0.05 m ahead
 
 ## Provenance
 
-[prompts.json](prompts.json) preserves the exact built-in image generation/edit prompts and the user's subsequent corrections. The motorbikes were generated without an external image input. The Survivor player by Riley Gombart (CC-BY 3.0) was a civilian camera/style reference, and this project's procedural civilian preview was an earlier pose reference. Keep the existing [Survivor attribution](../../../CREDITS.md#required-attribution). No third-party CC0 pack licence is claimed for the generated artwork.
+[prompts.json](prompts.json) preserves the exact built-in image generation/edit prompts and the user's subsequent corrections. The motorbikes were generated without an external image input. The old Survivor player by Riley Gombart (CC-BY 3.0) was a camera/style reference for the rejected generated civilians, and this project's old procedural civilian preview was a pose reference; neither is part of the game any more. No third-party CC0 pack licence is claimed for the generated artwork.
 
 Some fully transparent source pixels retain coloured RGB. They can look like glows in previews that ignore alpha; inspect a proper composite rather than removing valid transparency.

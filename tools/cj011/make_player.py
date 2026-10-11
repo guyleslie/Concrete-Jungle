@@ -12,7 +12,7 @@ Without it, the frames on disk are packed. Packing stylizes every frame to the 1
 frame as the civilians' (stylize.py); the upper body's dark contour is left out where it lies
 over the legs of the same frame, so that no seam shows at the waist. It writes
 assets/characters/player/legs.png and one atlas per weapon set (<set>.png, the names of
-characters.cfg), each a grid of COLS frames, and assets/data/player.cfg, which declares them.
+weapons.cfg), each a grid of COLS frames, and assets/data/player.cfg, which declares them.
 """
 import argparse, json, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -54,7 +54,7 @@ GAITS = {
     "jogl": ("Jog_Strafe_Left", lambda: even(1, 21), ("cadence", 2.9, 6.5)),
     "jogr": ("Jog_Strafe_Right", lambda: even(1, 22), ("cadence", 2.9, 6.5)),
 }
-# render key -> the weapon set of characters.cfg / weapons.cfg
+# render key -> the weapon set of weapons.cfg
 WEAPONS = {"none": "unarmed", "knife": "knife", "flashlight": "flashlight", "pistol": "handgun",
            "rifle": "rifle", "shotgun": "shotgun"}
 POSE_KEY = {"none": "unarmed"}          # the standing poses call the unarmed player "unarmed"

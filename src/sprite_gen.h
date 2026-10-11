@@ -5,9 +5,9 @@
 //  is rasterised with analytic coverage and shaded with a bevel/specular model. This
 //  yields smooth, glossy, high-resolution sprites in the same style as the Unlucky
 //  Studio vehicles, for everything the asset packs don't cover (street furniture, the
-//  metro train, the unarmed player's look), and fallbacks (cars, buses, trucks,
-//  motorbikes, civilians, trees) used when an image file is missing or a GEN line asks
-//  for them.
+//  metro train), and fallbacks (cars, buses, trucks, motorbikes, trees) used when an
+//  image file is missing or a GEN line asks for them. People have no procedural
+//  fallback: their rendered atlases are required (ADR-0009).
 //
 //  All generators take real-world proportions (16 world px == 1 m) into account; the
 //  canvas resolution is ~3x the on-screen size so mipmapping keeps them crisp.
@@ -28,21 +28,8 @@ Image FireTruck();
 Image GarbageTruck(Color body);
 Image TrainCar(Color stripe);        // 18 m metro carriage, canvas 100 x 600
 
-struct PedLook {
-    Color skin, hair, shirt, pants, shoes, cap, bag;
-    int   hairStyle;   // 0 short, 1 long, 2 bald, 3 cap
-    bool  backpack;
-    float build;       // shoulder width multiplier (0.85 .. 1.1)
-};
-PedLook RandomPedLook(uint32_t seed);
-constexpr int PED_FRAME = 96;          // square frame size in the procedural atlas (1.4 m)
-constexpr int PED_WALK_FRAMES = 8;     // frames 0..7 walk, 8 idle, 9 knocked down, 10/11 punch, 12/13 raised fist
-constexpr int PED_FRAME_IDLE = 8, PED_FRAME_DOWN = 9, PED_FRAME_PUNCH = 10, PED_FRAME_FIST = 12;
-constexpr int PED_ATLAS_FRAMES = 14;
 // The animations of a pedestrian atlas; image atlases declare where each one is (civilians.cfg ANIM).
 enum class PedAnim : uint8_t { Walk, Idle, Lying, Punch, Fist, Jog, Run, COUNT };
-PedLook PlayerLook();                  // matches the Survivor sprite (unarmed player)
-Image PedAtlas(const PedLook& look);
 
 Image Tree(int variant, int size, uint32_t seed);   // variant 0..4
 enum class Prop {

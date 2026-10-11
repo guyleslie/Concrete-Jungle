@@ -120,4 +120,4 @@ tools/    helper scripts: derived art, sprite export, documentation check, relea
 
 ## Credits and licensing
 
-The project's own code is licensed under the [MIT licence](LICENSE). Third-party assets keep their own licences, listed in [CREDITS.md](CREDITS.md). The "Survivor" character by Riley Gombart is licensed under CC-BY 3.0 and is credited on the title screen.
+The project's own code is licensed under the [MIT licence](LICENSE). Third-party assets keep their own licences, listed in [CREDITS.md](CREDITS.md).
