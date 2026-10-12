@@ -23,7 +23,7 @@ g++ %CXXFLAGS% -Wall -Wno-missing-braces -Isrc -I"%RAYLIB_DIR%\raylib\src" ^
     src\lighting.cpp src\city_map.cpp src\vehicle.cpp src\vehicle_types.cpp src\traffic.cpp src\traffic_turns.cpp src\traffic_recovery.cpp src\physics.cpp ^
     src\pedestrian.cpp src\particles.cpp src\audio.cpp src\datafile.cpp src\vehicle_tests.cpp src\traffic_tests.cpp src\traffic_clearance_tests.cpp ^
     src\traffic_conflict_tests.cpp src\traffic_incidents.cpp src\traffic_incident_tests.cpp src\traffic_turn_tests.cpp ^
-    src\impact.cpp src\person_hit_tests.cpp ^
+    src\impact.cpp src\person_hit_tests.cpp src\radio.cpp src\radio_tests.cpp ^
     -o ConcreteJungle.exe -L"%RAYLIB_DIR%\raylib\src" -lraylib -lopengl32 -lgdi32 -lwinmm -static -mwindows
 if errorlevel 1 (
     echo.
