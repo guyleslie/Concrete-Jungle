@@ -1,6 +1,6 @@
 # ADR-0011: A contact between a vehicle and a person is one impact
 
-- **Status:** Accepted
+- **Status:** Accepted; throws shortened for play by [ADR-0012](0012-shorter-throws-for-play.md)
 - **Date:** 2026-10-11
 
 ## Context

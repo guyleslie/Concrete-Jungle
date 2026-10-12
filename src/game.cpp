@@ -1164,7 +1164,9 @@ void Game::UpdatePlayerDown(float dt) {
         P.getUpT -= dt;
         if (P.getUpT <= 0) { P.getUpT = 0; P.fallT = -1; P.vel = { 0, 0 }; }
     } else if (!P.body.Airborne() && Len2(P.vel) < 1.0f && (P.lieT -= dt) <= 0) {
-        P.getUpT = gAssets.playerDown.getUpS;
+        Vector2 out;
+        if (!UnderVehicle(P.pos, &out)) P.getUpT = gAssets.playerDown.getUpS;
+        else P.pos = P.pos + out * (CRAWL_SPEED * dt);
     }
 }
 
@@ -1631,6 +1633,18 @@ void Game::ThrowRider(int idx, float severity) {
     }
 }
 
+// Someone lying under a vehicle's bumper does not get up into it: under a moving vehicle they
+// wait, from under a standing one they crawl out towards its nearer end (CRAWL_SPEED).
+
+bool Game::UnderVehicle(Vector2 p, Vector2* out) const {
+    for (const Vehicle& v : vehicles) {
+        if (!v.active || Len2(v.pos - p) > v.length * v.length || !PointInOBB(v.Box(), p, 0)) continue;
+        *out = v.Speed() > 1.0f ? V2(0, 0) : v.Fwd() * (Dot(p - v.pos, v.Fwd()) >= 0 ? 1.0f : -1.0f);
+        return true;
+    }
+    return false;
+}
+
 // A body lying under this vehicle since its last contact step: driven over once per pass.
 static bool StillUnder(PersonBody& b, const Vehicle& v, float time) {
     if (b.underSerial != v.serial || time - b.underT > 0.25f) return false;
@@ -1662,7 +1676,8 @@ void Game::VehiclePedCollisions() {
             Vector2 n; float depth;
             if (!CircleOBB(p.pos, PED_RADIUS, v.Box(), n, depth)) continue;
             bool lying = p.state == PedState::Down || p.state == PedState::Dead;
-            if (lying && StillUnder(p.body, v, time)) continue;
+            Vector2 wn; float wd;                                // someone lying is driven over by the wheels,
+            if (lying && (!CircleOBB(p.pos, PED_RADIUS, v.Wheels(), wn, wd) || StillUnder(p.body, v, time))) continue;   // not the bumper above them
             PersonHit h = VehicleMeetsPerson(v, n, depth, p.vel, p.body, lying);
             v.vel = v.vel + h.vehicleDv;
             switch (h.kind) {
@@ -1695,7 +1710,8 @@ void Game::VehiclePedCollisions() {
         PlayerState& P = player;
         Vector2 n; float depth;
         if (P.inVehicle || Len2(P.pos - v.pos) > r * r || !CircleOBB(P.pos, PLAYER_RADIUS, v.Box(), n, depth)) continue;
-        if (P.Down() && StillUnder(P.body, v, time)) continue;
+        Vector2 wn; float wd;
+        if (P.Down() && (!CircleOBB(P.pos, PLAYER_RADIUS, v.Wheels(), wn, wd) || StillUnder(P.body, v, time))) continue;
         PersonHit h = VehicleMeetsPerson(v, n, depth, P.vel, P.body, P.Down());
         v.vel = v.vel + h.vehicleDv;
         switch (h.kind) {

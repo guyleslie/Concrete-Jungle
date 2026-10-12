@@ -529,7 +529,9 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
         } else {
             if (still) p.timer -= dt;                                // the time down counts from coming to rest
             if (p.health <= 0) { p.state = PedState::Dead; p.deadTime = 0; }
-            else if (p.timer <= 0) {                                 // back on their feet
+            else if (Vector2 out; p.timer <= 0 && g.UnderVehicle(p.pos, &out)) {
+                p.pos = p.pos + out * (CRAWL_SPEED * dt);           // out from under a vehicle first
+            } else if (p.timer <= 0) {                               // back on their feet
                 StartFlee(p, p.threat, 4.0f, false);
                 if (p.courage >= 0.85f && Dist(p.pos, g.player.pos) < 6 * M) ProvokePed(p, g);   // the tough ones come back for more
             }

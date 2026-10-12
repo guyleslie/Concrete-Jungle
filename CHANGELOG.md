@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Vehicles hitting people, by published measurements ([design](docs/design/impacts.md), CJ-035): a bump staggers a person, who steps back and aside; a harder hit knocks them down or throws them as far as real collisions do (Happer, Searle), by the vehicle's front, and hurts them as real collisions do (Tefft: about one in five hit at 50 km/h dies); momentum is conserved, so a scooter loses a fifth of its speed and a bus hardly any; bodies fly over a car that keeps on at about 80 km/h; vehicles drive over people lying on the road, who die. One model for the player and civilians, and for riders thrown off motorbikes; every value is in `assets/data/impacts.cfg`, and every vehicle class declares its front edge (`FRONT`).
+- Throws are an eighth as far as in real collisions, for play: about 5 m at 80 km/h, at most 0.4 m high ([ADR-0012](docs/adr/0012-shorter-throws-for-play.md)); the injuries stay real. A car that does not brake passes under the body; a bus or a truck drives over the person it hit at speed. Only the wheels drive over someone lying, and someone under a vehicle waits for it or crawls out before getting up (CJ-035 playtest).
 - The player falls, lies and gets up after being knocked down, without control meanwhile, drawn from the 3D player at real size on the ground; a player who dies on foot falls the same way (CJ-035).
 - No fallback content ([ADR-0010](docs/adr/0010-no-fallback-content.md), CJ-034): every data file in `assets/data/` and every file it names is required. A missing or unreadable file, or a record naming an unknown vehicle class or colour, stops loading with a message naming it (exit code 2) instead of being replaced. The start shows a plain dark frame until the loading screen's art and fonts are loaded, instead of its old text in raylib's pixel font.
 
@@ -30,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - [ADR-0010](docs/adr/0010-no-fallback-content.md) No fallback content.
 - [ADR-0011](docs/adr/0011-vehicle-person-impact.md) A contact between a vehicle and a person is one impact.
+- [ADR-0012](docs/adr/0012-shorter-throws-for-play.md) Throws shortened for play.
 - The person-hit scenes (`--scenario person-hits`, CJ-035): vehicles and people, one or many, set up by a scene file in `tests/`, checked for every vehicle class against the published measurements ([testing](docs/testing.md#person-hit-scenes)).
 - Backlog item [CJ-038](docs/backlog.md#cj-038-pedestrian-attention-and-evasion): people driven at in a crowd nearly all get away; not everyone notices a car, or can escape, in real life.
 - Backlog items from the code review and the playtest of 2026-10-11: [CJ-035](docs/backlog.md#cj-035-vehicles-hitting-people) vehicles hitting people, [CJ-036](docs/backlog.md#cj-036-dead-code-and-simplification) dead code and simplification, and [CJ-037](docs/backlog.md#cj-037-audio-randomness-apart-from-gameplay) audio randomness apart from gameplay.

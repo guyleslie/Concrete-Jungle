@@ -42,6 +42,7 @@ constexpr float SEARLE_MU = 0.7f;                         // a body sliding on a
 constexpr float CAR_FRONT = 1.0f * M;                     // Happer's cars: a front edge below this
 constexpr float TEFFT_V50 = 67.6f, TEFFT_SLOPE = 0.078f;  // Tefft 2011, deaths over impact speed (km/h)
 constexpr float FALL_KMH = 25.0f;                         // a speed change below this is a fall, above a throw
+constexpr float PLAY_SHARE = 0.125f;                      // the share of Happer's throw kept for play (ADR-0012)
 
 enum class Kind { Standing, Aware, Lying, Dead, Player };
 const char* KindName(Kind k) {
@@ -184,6 +185,7 @@ struct Person {
     int hitCar = -1, hitFrame = -1;
     Vector2 impactPos{};
     float impactKmh = 0, launch = 0, momentumRatio = NAN;
+    bool runOver = false;                           // driven over after the impact: no free throw to measure
     float maxZ = 0, airT = 0, runoverLoss = 0;
     float airLying = 0, groundDist = 0, groundTurn = 0;  // s drawn lying in the air; px slid and rad turned on the road
     Vector2 prevPos{};
@@ -343,12 +345,14 @@ struct PersonHitTests::State {
         }
     }
 
-    // The vehicle (index into cars) whose box a person is in, and how deep; -1 if none.
-    int Touching(Game& g, const Person& p, float* deepest) const {
+    // The vehicle (index into cars) whose box a person is in, and how deep; -1 if none. With
+    // 'wheels', someone lying counts only between the axles: a bumper may pass above them.
+    int Touching(Game& g, const Person& p, float* deepest, bool wheels = false) const {
         int best = -1; float most = 0;
         for (size_t c = 0; c < cars.size(); c++) {
+            const Vehicle& v = g.vehicles[cars[c].idx];
             Vector2 n; float depth;
-            if (CircleOBB(Pos(g, p), Radius(p), g.vehicles[cars[c].idx].Box(), n, depth) && depth > most) { most = depth; best = (int)c; }
+            if (CircleOBB(Pos(g, p), Radius(p), wheels ? v.Wheels() : v.Box(), n, depth) && depth > most) { most = depth; best = (int)c; }
         }
         if (deepest) *deepest = most;
         return best;
@@ -361,7 +365,8 @@ struct PersonHitTests::State {
             Person& p = people[k];
             prePos[k] = Pos(g, p); preVel[k] = Vel(g, p); preVz[k] = Body(g, p).vz;
             bool living = Alive(g, p) && !Body(g, p).Airborne();
-            int c = Touching(g, p, nullptr);
+            int c = Touching(g, p, nullptr, OnGround(g, p));       // someone lying: only under the wheels
+            if (c >= 0 && p.hit && OnGround(g, p) && !Body(g, p).Airborne()) p.runOver = true;
             if (c >= 0) cars[c].touched = true;
             if (c >= 0 && living) {
                 if (!p.touching) {                     // a new contact
@@ -405,7 +410,7 @@ struct PersonHitTests::State {
             }
             // passing through: a living person inside a vehicle's box after the contacts
             float depth = 0;
-            bool inside = Alive(g, p) && !Body(g, p).Airborne() && Touching(g, p, &depth) >= 0 && depth > 3.0f;
+            bool inside = Alive(g, p) && !Body(g, p).Airborne() && Touching(g, p, &depth, OnGround(g, p)) >= 0 && depth > 3.0f;
             p.overlapRun = inside ? p.overlapRun + 1 : 0;
             p.maxOverlapRun = std::max(p.maxOverlapRun, p.overlapRun);
         }
@@ -458,9 +463,9 @@ struct PersonHitTests::State {
                      run.name.c_str(), id, KindName(p.kind), (int)p.hit, p.impactKmh, p.launch / KMH, throwM,
                      p.maxZ / M, p.airT, p.restT, (int)p.fell, (int)p.died, p.upT, health);
             TraceLog(LOG_INFO, "PERSONHIT contact run=%s person=%d moved_m=%.3f contact_s=%.3f carried_m=%.3f overlap_frames=%d "
-                     "momentum_ratio=%.3f runover_loss_kmh=%.3f",
+                     "momentum_ratio=%.3f runover_loss_kmh=%.3f run_over=%d",
                      run.name.c_str(), id, Dist(end, p.start) / M, p.maxTouchT, p.maxCarried / M, p.maxOverlapRun,
-                     p.momentumRatio, p.runoverLoss);
+                     p.momentumRatio, p.runoverLoss, (int)p.runOver);
             // always: no pushing (CJ-035 criterion 6), no passing through (criterion 7)
             if (p.kind != Kind::Dead) {
                 Check("contact_s", id, p.maxTouchT, 0, 0.1f);
@@ -480,14 +485,14 @@ struct PersonHitTests::State {
                     Check("recovered_s", id, p.firstTouch >= 0 ? p.lastTouch - p.firstTouch : NAN, 0, 1.0f);
                 } else if (c == "falls") {
                     Check("fell", id, (float)(p.fell || p.died), 1, 1);
-                } else if (c == "throw") {
+                } else if (c == "throw" && !p.runOver) {
                     float s0 = p.launch * p.launch / (2 * SEARLE_MU * GRAVITY) / M;
                     Check("throw_searle_m", id, throwM, s0, s0 * (1 + SEARLE_MU * SEARLE_MU));
                     if (spec && !spec->twoWheeler()) {
                         bool car = spec->front < CAR_FRONT;
                         float tol = car ? 9.0f : 10.5f;
                         Check(car ? "throw_happer_car_m" : "throw_happer_truck_m", id, throwM,
-                              Happer(p.impactKmh - tol, car), Happer(p.impactKmh + tol, car));
+                              PLAY_SHARE * Happer(p.impactKmh - tol, car), PLAY_SHARE * Happer(p.impactKmh + tol, car));
                     }
                 } else if (c == "momentum") {
                     Check("momentum_ratio", id, p.momentumRatio, 0.9f, 1.1f);
@@ -502,7 +507,7 @@ struct PersonHitTests::State {
                 } else if (c == "getup") {
                     if (p.died) Check("died_instead", id, 1, 1, 1);
                     else {
-                        bool thrown = p.launch / KMH >= FALL_KMH;
+                        bool thrown = p.launch / KMH / sqrtf(PLAY_SHARE) >= FALL_KMH;   // the real collision's launch
                         Check(thrown ? "getup_after_throw_s" : "getup_after_fall_s", id,
                               p.upT >= 0 && p.restT >= 0 ? p.upT - p.restT : NAN, thrown ? 4.0f : 2.5f, thrown ? 5.0f : 3.5f);
                     }

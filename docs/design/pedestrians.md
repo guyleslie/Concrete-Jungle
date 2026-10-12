@@ -119,8 +119,8 @@ People are drawn in one of three gaits by their speed: a walk, a jog from 2.0 m/
 | Event | Effect |
 |---|---|
 | Bumped by a vehicle | They stagger, turn and step back and aside, faster than the vehicle comes on; another contact within 0.8 s knocks them down ([Vehicles hitting people](impacts.md)) |
-| Hit by a vehicle | Thrown as far and hurt as badly as published measurements give for the speed and the vehicle's front: about one in five hit at 50 km/h dies. Hit and run: traffic drivers panic 60 % of the time. |
-| A vehicle driving over someone lying | The living die; the body moves 0.2 m back under the vehicle, which drives on. Blood splatter and a blood decal; once per pass. |
+| Hit by a vehicle | Hurt as badly as published measurements give for the speed and the vehicle's front, about one in five hit at 50 km/h dying, and thrown an eighth as far as in real collisions, for play: 5 m at 80 km/h ([ADR-0012](../adr/0012-shorter-throws-for-play.md)). Hit and run: traffic drivers panic 60 % of the time. |
+| A vehicle driving over someone lying | When its wheels reach them, the living die; the body moves 0.2 m back under the vehicle, which drives on. Blood splatter and a blood decal; once per pass. |
 | Weapons | See [Gameplay](gameplay.md); heavy hits knock people down |
 | Death | A small blood splash where it happened; a blood pool (1.9 m, 90 s) where the body comes to rest. The body fades out between 24 and 27 s after death; the blood fades during its last 10 s. |
 

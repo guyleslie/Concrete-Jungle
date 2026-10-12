@@ -21,6 +21,7 @@ struct Data {
     float friction = 0;                          // a body on the road, sliding or landing
     float tumble = 0;                            // rad a body sliding on the road turns per px
     Front wrap, projection;                      // a front edge below / at or above the centre of mass
+    float throwShare = 1;                        // the share of the real launch speed kept for play (ADR-0012)
     float injury50 = 0, injurySlope = 0;         // px/s of speed change at which half die; per px/s
     float throwSpeed = 0, fallMin = 0, fallMax = 0, throwMin = 0, throwMax = 0;   // px/s; s
     float shove = 0, jolt = 0;                   // px a body driven over moves; px/s the vehicle loses
@@ -55,6 +56,7 @@ bool LoadImpacts(const std::vector<DataRecord>& records, std::string& error) {
         { "GROUND",     { { &D.friction, 0.1f, 1.5f, 1 }, { &D.tumble, 0, 360, DEG2RAD / M } } },
         { "WRAP",       { { &D.wrap.angle, 0, 60, DEG2RAD }, { &D.wrap.factor, 0.1f, 1, 1 } } },
         { "PROJECTION", { { &D.projection.angle, 0, 60, DEG2RAD }, { &D.projection.factor, 0.1f, 1, 1 } } },
+        { "THROW",      { { &D.throwShare, 0.01f, 1, 1 } } },
         { "INJURY",     { { &D.injury50, 10, 300, KMH }, { &D.injurySlope, 0.001f, 1, 1 / KMH } } },
         { "DOWN",       { { &D.throwSpeed, 1, 100, KMH }, { &D.fallMin, 0, 30, 1 }, { &D.fallMax, 0, 30, 1 },
                           { &D.throwMin, 0, 30, 1 }, { &D.throwMax, 0, 30, 1 } } },
@@ -89,6 +91,7 @@ bool LoadImpacts(const std::vector<DataRecord>& records, std::string& error) {
         error = "impacts.cfg: a range of BALANCE or DOWN ends below where it starts";
         return false;
     }
+    D.throwShare = sqrtf(D.throwShare);            // a share of the distance is its square root of the speed
     return true;
 }
 
@@ -124,11 +127,13 @@ PersonHit VehicleMeetsPerson(const Vehicle& v, Vector2 n, float depth, Vector2 p
         h.vehicleDv = n * (-dv * D.personKg / mv);
         return h;
     }
+    // The launch speed of a real collision gives the injury and the time on the ground; the body
+    // flies off at the share of it kept for play (THROW, ADR-0012).
     const Front& f = FrontOf(v);
-    float s = f.factor * dv, across = s * cosf(f.angle);   // the launch speed and its part over the road
+    float s = f.factor * dv, launch = D.throwShare * s, across = launch * cosf(f.angle);
     h.kind = HitKind::Launch;
     h.vel = personVel + n * across;
-    h.vz = s * sinf(f.angle);
+    h.vz = launch * sinf(f.angle);
     h.speedChange = s;
     h.damage = Injury(s);
     h.vehicleDv = n * (-across * D.personKg / mv);         // the vertical part goes into the road
@@ -139,8 +144,8 @@ PersonHit ThrownOff(Vector2 velocity) {
     PersonHit h;
     float s = Len(velocity);
     h.kind = HitKind::Launch;
-    h.vel = velocity * cosf(D.wrap.angle);                 // over the handlebars as over a bonnet
-    h.vz = s * sinf(D.wrap.angle);
+    h.vel = velocity * (D.throwShare * cosf(D.wrap.angle));   // over the handlebars as over a bonnet
+    h.vz = D.throwShare * s * sinf(D.wrap.angle);
     h.speedChange = s;
     return h;
 }

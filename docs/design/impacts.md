@@ -1,6 +1,6 @@
 # Vehicles hitting people
 
-How a vehicle meets a person, the player or a civilian: one impact per contact, never a push; throws, injuries and run-overs from published measurements; and the body that falls, lies and gets up. The model is [CJ-035](../backlog.md#cj-035-vehicles-hitting-people) ([ADR-0011](../adr/0011-vehicle-person-impact.md)); it lives in `src/impact.*`, and every value is in [`assets/data/impacts.cfg`](../../assets/data/impacts.cfg).
+How a vehicle meets a person, the player or a civilian: one impact per contact, never a push; injuries and run-overs from published measurements, throws an eighth as far as real ones for play; and the body that falls, lies and gets up. The model is [CJ-035](../backlog.md#cj-035-vehicles-hitting-people) ([ADR-0011](../adr/0011-vehicle-person-impact.md), [ADR-0012](../adr/0012-shorter-throws-for-play.md)); it lives in `src/impact.*`, and every value is in [`assets/data/impacts.cfg`](../../assets/data/impacts.cfg).
 
 ## Contents
 
@@ -22,7 +22,7 @@ A person's legs cannot keep up with a vehicle. In real life a contact lasts a fr
 | Standing | Moving towards them, a speed change below their balance limit | **Bump:** they stagger and step out of the way, unhurt; another contact within the stagger time (0.8 s) knocks them down |
 | Standing | A larger speed change, or while staggering | **Launch:** they fall or are thrown, and hurt ([below](#the-launch)) |
 | In the air | Any | No contact: the body is above the vehicle and is drawn over it |
-| Lying, alive or dead | Moving | **Run-over:** the vehicle drives over them once per pass; the living die, the body moves 0.2 m back under it, the vehicle loses 1 km/h (a jolt; the camera shakes in the player's vehicle) |
+| Lying, alive or dead | Moving, its wheels reaching them | **Run-over:** the vehicle drives over them once per pass; the living die, the body moves 0.2 m back under it, the vehicle loses 1 km/h (a jolt; the camera shakes in the player's vehicle). A bumper reaching over someone lying does nothing: the wheels are 0.32 lengths either side of the centre |
 
 Momentum is conserved. The person takes at most the share *m*<sub>v</sub> / (*m*<sub>v</sub> + *m*<sub>p</sub>) of the closing speed along the contact normal (*m*<sub>p</sub> = 75 kg), and the vehicle loses what the person gains over the road: a 1.1 t taxi 6 % of the speed, a 0.3 t scooter 20 %, a 4.5 t bus under 2 %. The impulse acts along the contact normal, so a corner throws a person to the side of the vehicle's path.
 
@@ -30,16 +30,24 @@ A bumped civilian turns and steps back and aside at once, faster than the vehicl
 
 ## The launch
 
-A launched person flies as in Searle's model. The launch speed is the person's speed change times the **impact factor** of the vehicle's front, the share of the speed the body keeps; the launch angle is the front's too:
+A launched person flies as in Searle's model. The real launch speed is the person's speed change times the **impact factor** of the vehicle's front, the share of the speed the body keeps; the launch angle is the front's too:
 
 | Front | When | Launch angle | Impact factor |
 |---|---|---|---|
 | Wrap | The front edge (`FRONT` in `vehicles.cfg`) below the person's centre of mass (1.0 m): cars, motorbikes | 25° | 0.94 |
 | Projection | The front edge at or above it: vans, ambulances, buses, trucks | 10° | 1.0 |
 
-`MoveBody` then flies the body in a parabola, takes the friction of the landing off its speed over the road (μ times its vertical speed, μ = 0.7) and slides it to rest at μg. The values put the throw distance of a braking vehicle inside Happer's band and Searle's corridor at every speed from 15 to 100 km/h, for every class but the two-wheelers, for which no regression exists ([measurements](#measurements)).
+With these values the throw distance of a braking vehicle falls inside Happer's band and Searle's corridor at every speed from 15 to 100 km/h, for every class but the two-wheelers, for which no regression exists ([measurements](#measurements)): about 40 m at 80 km/h. The user found that too far for the game, so the body leaves at the square root of the share `THROW` (0.125) of the real launch speed and travels an eighth as far ([ADR-0012](../adr/0012-shorter-throws-for-play.md)); the injury and the time on the ground still follow the real launch. `MoveBody` then flies the body in a parabola, takes the friction of the landing off its speed over the road (μ times its vertical speed, μ = 0.7) and slides it to rest at μg.
 
-The outcomes of a vehicle that does not brake follow from the same model, as in real life: at lower speeds the body lands in front of it and is driven over; from about 80 km/h it flies over a car (a roof vault) and lands behind it; a bus or a truck drives over the person it hit at any speed. A speed change below 25 km/h is a fall, above it a throw.
+| Taxi | In the air | Highest | Then along the road | Throw |
+|---|---|---|---|---|
+| 30 km/h | 0.2 s, 0.5 m | 0.06 m | 0.2 m | 0.7 m |
+| 50 km/h | 0.4 s, 1.5 m | 0.2 m | 0.5 m | 2.0 m |
+| 80 km/h | 0.6 s, 3.7 m | 0.4 m | 1.3 m | 5.0 m |
+| 100 km/h | 0.7 s, 5.8 m | 0.7 m | 2.0 m | 7.9 m |
+| 150 km/h | 1.1 s, 13.1 m | 1.5 m | 4.6 m | 17.7 m |
+
+The body leaves slower than the vehicle that hit it. A braking car stops before it lands, in front of the car. A car that does not brake passes under it from about 30 km/h, as in a roof vault, and leaves it lying behind; at lower speeds the body lands under the car and is driven over. A bus or a truck, whose flat front cannot let the body pass over it, drives over the person it hit at higher speeds even while braking. A speed change below 25 km/h is a fall, above it a throw.
 
 ## Injury
 
@@ -51,7 +59,7 @@ Reaching 100 points, death, then has exactly the logistic probability 1 / (1 + e
 
 ## On the ground
 
-People on the ground move by `MoveBody`: in the air, landing, sliding. Everyone knocked down falls as the clip `Hit_Knockback` does (thrown back off the feet onto the back), and the fall plays over the whole flight, at least 0.5 s: nobody is drawn lying in the air. On the road the body bounces and rolls rather than gliding in one pose, turning 40° per metre it slides, either way, until it comes to rest lying, the fall's last pose: on its back, the head away from the vehicle. At 80 km/h that is about 1.7 s in the air over 29 m, then 10 m along the road; the ground phase is as long as Searle's model and the staged tests give it, a quarter of the throw (Becker and Reade). A civilian knocked down lies 1.2–2.0 s after coming to rest from a fall and 2.7–3.5 s from a throw, then gets up and runs off; a dead body stays where it came to rest, with its blood pool.
+People on the ground move by `MoveBody`: in the air, landing, sliding. Everyone knocked down falls as the clip `Hit_Knockback` does (thrown back off the feet onto the back), and the fall plays over the whole flight, at least 0.5 s: nobody is drawn lying in the air. On the road the body bounces and rolls rather than gliding in one pose, turning 40° per metre it slides, either way, until it comes to rest lying, the fall's last pose: on its back, the head away from the vehicle. A civilian knocked down lies 1.2–2.0 s after coming to rest from a fall and 2.7–3.5 s from a throw, then gets up and runs off; a dead body stays where it came to rest, with its blood pool. Someone lying with a vehicle above them does not get up into it: under a moving vehicle they wait, from under a standing one they crawl out towards its nearer end at 0.5 m/s, then get up.
 
 The civilians' falling and lying frames are rendered from every look ([CJ-004 pipeline](../../assets/art/cj004/README.md#full-set-2026-10-08)). The player falls, lies and gets up without control (`Game::UpdatePlayerDown`), drawn from frames rendered from the 3D player ([CJ-011 pipeline](../../assets/art/cj011/README.md#on-the-ground)): eight frames of the Universal Animation Library clip `Hit_Knockback` (thrown back off the feet onto the back, at least 0.5 s), its last frame lying, and twelve frames of `LayToIdle` (getting up, 1.4 s). Each frame is centred on the pelvis, the body's position in the game. The player is drawn from the standing look, larger than life, to real size lying, as the civilians are, and back while getting up; the weapon is not drawn on the ground. The lying times plus getting up give control back 2.6–3.4 s after a fall comes to rest and 4.1–4.9 s after a throw. A player who dies of any cause on foot falls the same way and lies there until the respawn.
 
@@ -70,6 +78,7 @@ The civilians' falling and lying frames are rendered from every look ([CJ-004 pi
 | `BALANCE` | 1.0–1.6 m/s, stagger 0.8 s |
 | `GROUND` | Friction 0.7; a sliding body turns 40° per metre |
 | `WRAP`, `PROJECTION` | 25°, 0.94; 10°, 1.0 |
+| `THROW` | 0.125 of a real throw |
 | `INJURY` | Δ*v*<sub>50</sub> 59.5 km/h, slope 0.089 per km/h |
 | `DOWN` | A fall below 25 km/h; lying 1.2–2.0 s after a fall, 2.7–3.5 s after a throw |
 | `RUNOVER` | A body moves 0.2 m; the vehicle loses 1 km/h |
@@ -88,4 +97,4 @@ The published data behind the values:
 | [Tefft (2011), AAA Foundation](https://aaafoundation.org/impact-speed-pedestrians-risk-severe-injury-death/) | Death: 10, 25, 50, 75 and 90 % at 37, 51, 68, 80 and 93 km/h; severe injury at 26, 37, 50, 63 and 74 km/h |
 | Run-over studies ([pedestrian deaths](https://tandf.figshare.com/articles/journal_contribution/Injury_patterns_in_motor_vehicle_collision-pediatric_pedestrian_deaths/21235749), [French national data](https://trid.trb.org/View/1488036)) | Being driven over happens mostly below 30 km/h, with severe head injuries; about half the people hit by trucks are driven over |
 
-The [person-hit scenes](../testing.md#person-hit-scenes) measure the model against them for every vehicle class; the results before and after CJ-035 are in [Testing](../testing.md#person-hit-scenes).
+The game keeps an eighth of the measured throw distances ([ADR-0012](../adr/0012-shorter-throws-for-play.md)) and the measured injuries. The [person-hit scenes](../testing.md#person-hit-scenes) measure the model against them for every vehicle class; the results before and after CJ-035 are in [Testing](../testing.md#person-hit-scenes).

@@ -117,6 +117,7 @@ BALANCE    <min m/s> <max m/s> <stagger s>
 GROUND     <friction> <tumble deg per m>
 WRAP       <launch deg> <impact factor>
 PROJECTION <launch deg> <impact factor>
+THROW      <share>
 INJURY     <km/h> <per km/h>
 DOWN       <km/h> <fall min s> <max s> <throw min s> <max s>
 RUNOVER    <shove m> <jolt km/h>
@@ -128,6 +129,7 @@ RUNOVER    <shove m> <jolt km/h>
 | `BALANCE` | The speed change a civilian withstands on their feet, drawn between the two values (the player has the mean), and how long a stagger lasts; another contact meanwhile knocks them down |
 | `GROUND` | The friction of a body sliding on the road, and of its landing; how far it turns per metre as it bounces and rolls along, so that it tumbles to rest instead of gliding |
 | `WRAP`, `PROJECTION` | The launch angle and the impact factor (the share of the speed the body keeps) for the two kinds of front |
+| `THROW` | The share of a real collision's throw distance a body travels, for play: 1 is real, 0.125 an eighth ([ADR-0012](../adr/0012-shorter-throws-for-play.md)); the injury and the time on the ground still follow the real collision |
 | `INJURY` | The speed change at which half the people die, and the slope of the logistic curve |
 | `DOWN` | The speed change that separates a fall from a throw, and the time on the ground after coming to rest for each |
 | `RUNOVER` | How far a body driven over moves, and how much speed the vehicle loses |

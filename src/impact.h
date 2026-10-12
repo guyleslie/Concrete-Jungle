@@ -12,8 +12,10 @@
 //      body keeps.
 //    - MoveBody flies a launched body, takes the friction impulse off on landing and slides
 //      it to rest, tumbling as it goes. A body in the air touches no vehicle.
-//    - A vehicle drives over anyone lying on the road: the living die, the body moves a
-//      little, the vehicle jolts.
+//    - Throws are THROW (an eighth) as far as real ones, for play; the injury stays real
+//      (ADR-0012).
+//    - A vehicle drives over anyone lying on the road with its wheels: the living die, the
+//      body moves a little, the vehicle jolts.
 //  The injury follows the person's speed change on a logistic curve fitted to Tefft (2011).
 //  Every value is in assets/data/impacts.cfg; the measurements behind them and the criteria
 //  are in docs/backlog.md#cj-035-vehicles-hitting-people.

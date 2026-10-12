@@ -312,11 +312,11 @@ Every person of every scene is checked for no pushing and no passing through; th
 
 | Check | Criterion | Measured |
 |---|---|---|
-| (always) | 6, 7 | `contact_s`: the longest contact of a standing person with a vehicle, at most 0.1 s; `carried_m`: how far a vehicle carried a living person in one contact, at most 0.3 m; `overlap_frames`: consecutive frames a living person on the ground stayed more than 3 px inside a vehicle after the contact step, at most 2 |
+| (always) | 6, 7 | `contact_s`: the longest contact of a standing person with a vehicle, at most 0.1 s; `carried_m`: how far a vehicle carried a living person in one contact, at most 0.3 m; `overlap_frames`: consecutive frames a living person on the ground stayed more than 3 px inside a vehicle after the contact step, at most 2. For someone lying, the vehicle counts only between its axles: a bumper may pass over them |
 | (always, people who fell) | Playtest of 2026-10-12 | `lying_in_air_s`: time drawn lying while still in the air, 0; `tumble_deg_per_m`: for a body sliding more than 1 m along the road, how far it turned per metre, at least 20° |
 | `bump` | 1 | Touched, on their feet, unhurt, no contact later than 1 s after the first |
 | `falls` | 2 | On the ground at some time |
-| `throw` | 3 | The distance from the point of impact to the point of rest, within Searle's corridor for the launch speed measured right after the contact step (μ = 0.7) and, but for two-wheelers, within Happer's band for the impact speed: the car regression ±9 km/h for a front edge below 1 m, the light-truck regression ±10.5 km/h otherwise |
+| `throw` | 3 | The distance from the point of impact to the point of rest, within Searle's corridor for the launch speed measured right after the contact step (μ = 0.7) and, but for two-wheelers, within an eighth of Happer's band for the impact speed ([ADR-0012](adr/0012-shorter-throws-for-play.md)): the car regression ±9 km/h for a front edge below 1 m, the light-truck regression ±10.5 km/h otherwise. Not measured for someone driven over after the impact, whose throw ends under the vehicle |
 | `momentum` | 4 | The vehicle's momentum change in the contact step over the person's (75 kg), 0.9–1.1 |
 | `runover` | 8 | A person lying alive is dead; moved at most 0.3 m; the vehicles over them lost at most 2 km/h in contact steps; a vehicle got past |
 | `body` | 9 | A body moved at most 0.3 m; at most 1 km/h lost; a vehicle got past |
@@ -341,6 +341,8 @@ Every person of every scene is checked for no pushing and no passing through; th
 | 10 Player | Never fell | Fell in every run at 10 km/h and more; controlled again 2.7–3.4 s after a fall came to rest and 4.1–4.9 s after a throw; 4 of 17 died at 50 km/h |
 
 **Playtest fix (2026-10-12).** The user saw people hit at speed lie down and die at once, then fly and slide about 10 m. A frame series of a taxi at 80 km/h showed the lying frame from the moment of impact, through 1.7 s and 29 m in the air, then 10.5 m along the road in 1.8 s without turning. With the fall frames played over the flight and the tumbling on the road, the scene file (2,170 checks, the two new ones added) passes in full: nobody is drawn lying in the air, and sliding bodies turn 33–79° per metre. The throws are unchanged. In `rampage` 77 % escaped, and the pedestrian CPU time was 0.39 ms (`day` 0.43 ms) at 75 FPS.
+
+**Shorter throws (2026-10-12).** The user found the real throws, about 40 m at 80 km/h, too far for the game and chose an eighth ([ADR-0012](adr/0012-shorter-throws-for-play.md)). The first run with `THROW 0.125` found two flaws: a person thrown only centimetres at 10 km/h was run over by the bumper of the car braking behind them (10 of 17 died), and someone lying under a bumper got up into the vehicle and was pushed out of it. Run-overs now need the wheels, and people under a vehicle wait or crawl out. All 2,077 checks pass: a braking taxi at 80 km/h threw the body 5.0 m (0.58 s in the air, 0.43 m high), 0.06–0.08 m at 10 km/h with nobody dead, 6.0–8.3 m at 100 km/h; buses and trucks at 100 km/h drove over the person they hit. `rampage` 79 % escaped; pedestrian CPU 0.39 ms (`day` 0.44 ms).
 
 Vehicles that kept on without braking drove over the person they hit at 30 km/h (17 of 17 died) and mostly at 60 km/h (14 of 17); at 90 km/h a taxi passed under the body (the `vault-art` scene).
 

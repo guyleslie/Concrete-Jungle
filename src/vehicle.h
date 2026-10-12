@@ -133,6 +133,9 @@ struct Vehicle {
 
     const VehicleSpec& S() const { return Spec(cls); }
     OBB  Box(float grow = 0) const { return MakeOBB(pos, angle, width * 0.5f + grow, length * 0.5f + grow); }
+    // The body between the axles, 0.32 lengths either side of the centre (traffic.h): where the
+    // wheels go; a bumper reaches beyond it.
+    OBB  Wheels() const { return MakeOBB(pos, angle, width * 0.5f, length * 0.32f); }
     Vector2 Fwd() const { return Forward(angle); }
     float Speed() const { return Len(vel); }
     bool Drivable() const { return active && !wrecked && !burning; }

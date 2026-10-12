@@ -24,6 +24,7 @@ namespace startup { class Reporter; }
 enum class GameState { Title, Playing, Paused, Wasted, Busted };
 
 constexpr float PLAYER_RADIUS = 0.35f * cfg::M * cfg::CHAR_SCALE;   // the player's body on the ground
+constexpr float CRAWL_SPEED = 0.5f * cfg::M;                         // out from under a standing vehicle
 
 struct PlayerState {
     bool    inVehicle = false;
@@ -189,6 +190,9 @@ public:
     int     Stars() const { return (int)ceilf(heat - 0.001f); }
     Rectangle ViewRect(float margin = 0) const { return cam.VisibleGround(margin); }
     bool    OnScreen(Vector2 p, float margin = 0) const;
+    // Someone lying at p has a vehicle above them; 'out' is the way to crawl out from under a
+    // standing one (zero under a moving one, which passes or drives over them).
+    bool    UnderVehicle(Vector2 p, Vector2* out) const;
 
     // ---- events ----
     void DamageVehicle(int idx, float dmg, bool byPlayer, Vector2 at);
