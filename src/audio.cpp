@@ -426,7 +426,10 @@ void AudioSystem::PlayUI(Sfx s, float volume, float pitch) {
 }
 
 void AudioSystem::SetEngine(bool on, float rpm, float throttle, bool large) {
-    engineTarget = on ? 0.25f + 0.35f * throttle : 0.0f;
+    // The engine is heard from inside the cabin, 10 dB below the level it had before the
+    // radio, so that music plays above it as in a real car (CJ-040).
+    const float CABIN = 0.316f;
+    engineTarget = on ? (0.25f + 0.35f * throttle) * CABIN : 0.0f;
     enginePitch = 0.55f + rpm * 1.25f;
     bigMix = large ? 1.0f : 0.0f;
 }

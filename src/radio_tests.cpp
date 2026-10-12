@@ -57,21 +57,6 @@ int FindClip(const RadioStationDef& st, const std::string& file) {
     return -1;
 }
 
-// A WAV file: 16-bit PCM to listen to, or 32-bit float to measure.
-void WriteWav(const std::string& path, const std::vector<float>& data, int channels, int rate, bool pcm16) {
-    FILE* f = fopen(path.c_str(), "wb");
-    if (!f) { TraceLog(LOG_ERROR, "RADIOTEST cannot write %s", path.c_str()); return; }
-    uint32_t bytes = (uint32_t)data.size() * (pcm16 ? 2 : 4);
-    uint16_t format = pcm16 ? 1 : 3, ch = (uint16_t)channels, bits = pcm16 ? 16 : 32, align = (uint16_t)(channels * bits / 8);
-    uint32_t r = (uint32_t)rate, byteRate = r * align, fmtSize = 16, riff = 36 + bytes;
-    fwrite("RIFF", 1, 4, f); fwrite(&riff, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
-    fwrite(&fmtSize, 4, 1, f); fwrite(&format, 2, 1, f); fwrite(&ch, 2, 1, f); fwrite(&r, 4, 1, f);
-    fwrite(&byteRate, 4, 1, f); fwrite(&align, 2, 1, f); fwrite(&bits, 2, 1, f);
-    fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
-    if (pcm16) for (float v : data) { int16_t s = (int16_t)lrintf(Clampf(v, -1, 1) * 32767); fwrite(&s, 2, 1, f); }
-    else fwrite(data.data(), 4, data.size(), f);
-    fclose(f);
-}
 } // namespace
 
 struct RadioTests::State {
@@ -296,8 +281,8 @@ struct RadioTests::State {
         std::vector<float> mix;
         mix.reserve(capture.size() / 3 * 2);
         for (size_t i = 0; i + 2 < capture.size(); i += 3) { mix.push_back(capture[i]); mix.push_back(capture[i + 1]); }
-        WriteWav(base + ".wav", mix, 2, (int)rate, true);
-        WriteWav(base + "_data.wav", capture, 3, (int)rate, false);
+        WriteRadioWav(base + ".wav", mix, 2, (int)rate, true);
+        WriteRadioWav(base + "_data.wav", capture, 3, (int)rate, false);
         const RadioConfig& C = RadioData();
         if (s.kind == Kind::Pass) {
             SaveFileText((base + ".csv").c_str(), (char*)("frame,t,d_m,dx_m,level_db,target_gain,gain,delay_s,cabin\n" + csv).c_str());

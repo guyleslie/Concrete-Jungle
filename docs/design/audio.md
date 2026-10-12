@@ -19,7 +19,7 @@ Source: `src/audio.h`, `src/audio.cpp`.
 | Voices | shout1 ("hey!"), shout2 ("oi!"), shout3 ("hah!") | A formant voice: see [Shouts](#shouts) |
 | Loops | engine, engine_diesel, siren, skid, ambience | Seamless buffers (a whole number of cycles), streamed so their pitch and volume can change every frame |
 
-The engine loop follows the player's vehicle: its pitch tracks a simulated rev counter and throttle, and large vehicles blend in the diesel loop. The siren loop follows the nearest active siren; the skid loop follows the player's tyre slip.
+The engine loop follows the player's vehicle: its pitch tracks a simulated rev counter and throttle, and large vehicles blend in the diesel loop. It is heard from inside the cabin, 10 dB below its level before the car radio, so the radio plays above it as in a real car ([Radio](radio.md#the-players-radio)). The siren loop follows the nearest active siren; the skid loop follows the player's tyre slip.
 
 ## Shouts
 

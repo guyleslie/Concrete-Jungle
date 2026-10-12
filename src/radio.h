@@ -55,6 +55,9 @@ struct RadioConfig {
 bool LoadRadio(const std::vector<DataRecord>& records, std::string& error);
 const RadioConfig& RadioData();
 
+// A WAV file of interleaved frames: 16-bit PCM to listen to, or 32-bit float to measure.
+void WriteRadioWav(const std::string& path, const std::vector<float>& data, int channels, int rate, bool pcm16);
+
 // One station's programme: which clip comes next. A clip follows a song with the
 // station's talk share and never another clip; a song or clip played recently is not
 // chosen again until the station's gaps have passed.
@@ -135,7 +138,9 @@ private:
     std::vector<Transition> transitions;
     // statistics for LogSummary
     double cpuMain = 0; int64_t frames = 0; int items = 0, maxVoices = 0;
-    double voiceSeconds = 0;
+    double voiceSeconds = 0, playerHeard = 0;
+    std::string mixPath;                 // CJ_RADIO_MIX: record the final mix of the whole run here
+    std::vector<float> mix;
 
     void Start(int s);
     void Play(int s, int item, float offset);

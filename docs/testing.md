@@ -366,6 +366,8 @@ The tool runs `--scenario radio` (about 4 minutes, log in `build/shots/radio.log
 | `PASS` | A taxi with its radio on drives past the player on foot or sitting in a car with its radio off, at a speed and a side distance, from beyond hearing to beyond hearing | By `run_cj040.py`, from the final mix against the station's own signal delayed by the travel time; see below |
 | `INCAR` | The player in a car tuned to the station, which joins a song 6 s before its end, then plays a talk clip and the next song | By the fixture: each change of clip leaves at most 50 ms of silence, counted in device frames; by `run_cj040.py`: the talk clip's loudness in the mix |
 
+To record what the player hears in any run, set `CJ_RADIO_MIX=<file.wav>`: the whole final mix (left, right, and the first station's own signal, 32-bit float) is written when the game closes. The cabin balance of the radio against the engine was measured this way in `drive`.
+
 The fixture writes `build/radio/<scene>.wav` (the mix, to listen to), `<scene>_data.wav` (float: the mix left and right, and the station's own signal) and, for a passing car, `<scene>.csv` (per frame: distance, the radio's level, its gain, travel time and the second body). The recording is taken before the master volume; the pan law of raylib's mixer (0.6875 per channel in the centre) is taken out.
 
 | Check (`run_cj040.py`) | Criterion |

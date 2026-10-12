@@ -33,7 +33,9 @@ A clip's end is counted in device frames on the audio thread, and the next clip 
 
 When the player gets into a car the radio tunes in to, in order: the player's own last choice in that car; the station the car's radio was on (a traffic car's draw); otherwise a station drawn for the car. A motorbike has no radio. Its name shows at the top centre of the screen for 3 s, as in GTA 2. In a car, **Q** or the mouse wheel steps through the stations and then *Radio off*, as they step through weapons on foot; the car remembers the choice.
 
-The radio fades in over about 0.4 s and stops when the player gets out, like a radio switched off with the engine; it also stops in a car that is burning or wrecked. The player's radio plays at the `INCAR` volume, as it is, in stereo.
+The radio fades in over about 0.4 s and stops when the player gets out, like a radio switched off with the engine; it also stops in a car that is burning or wrecked. The player's radio plays at the `INCAR` volume (1.0), as it is, in stereo.
+
+In a real car the music plays some 8–10 dB above the engine and road noise in the cabin (about 65–70 dBA at speed). At first the radio played 10 dB below the game's engine sound and could hardly be heard; the user chose the real balance (2026-10-12): the radio at full volume and the engine, heard from the cabin, 10 dB quieter than before ([Audio](audio.md#sound-types)). In steady driving the radio now plays at −21.7 LUFS against −27.7 LUFS of engine and city ambience, 6 dB above them. Other sounds outside are not muffled in the cabin yet ([CJ-012](../backlog.md#cj-012-audio-overhaul)).
 
 ## Radios in traffic
 

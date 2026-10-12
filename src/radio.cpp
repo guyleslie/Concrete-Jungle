@@ -219,6 +219,21 @@ void MixTap(void* buffer, unsigned int frames) {
 // -------------------------------------------------------------------------------------
 const RadioConfig& RadioData() { return C; }
 
+void WriteRadioWav(const std::string& path, const std::vector<float>& data, int channels, int rate, bool pcm16) {
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) { TraceLog(LOG_ERROR, "RADIO: cannot write %s", path.c_str()); return; }
+    uint32_t bytes = (uint32_t)data.size() * (pcm16 ? 2 : 4);
+    uint16_t format = pcm16 ? 1 : 3, ch = (uint16_t)channels, bits = pcm16 ? 16 : 32, align = (uint16_t)(channels * bits / 8);
+    uint32_t r = (uint32_t)rate, byteRate = r * align, fmtSize = 16, riff = 36 + bytes;
+    fwrite("RIFF", 1, 4, f); fwrite(&riff, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
+    fwrite(&fmtSize, 4, 1, f); fwrite(&format, 2, 1, f); fwrite(&ch, 2, 1, f); fwrite(&r, 4, 1, f);
+    fwrite(&byteRate, 4, 1, f); fwrite(&align, 2, 1, f); fwrite(&bits, 2, 1, f);
+    fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
+    if (pcm16) for (float v : data) { int16_t s = (int16_t)lrintf(Clampf(v, -1, 1) * 32767); fwrite(&s, 2, 1, f); }
+    else fwrite(data.data(), 4, data.size(), f);
+    fclose(f);
+}
+
 bool LoadRadio(const std::vector<DataRecord>& records, std::string& error) {
     C = RadioConfig{};
     auto fail = [&](const DataRecord& r, const std::string& what) {
@@ -358,12 +373,19 @@ bool RadioSystem::Init(bool audioReady) {
             UnloadMusicStream(m);
         }
     AttachAudioMixedProcessor(MixTap);
+    // Everything the player hears, recorded for a listening or a measurement of any run.
+    if (const char* path = getenv("CJ_RADIO_MIX")) { mixPath = path; StartCapture(0); }
     return true;
 }
 
 void RadioSystem::Unload() {
     if (!ok) return;
     StopCapture();
+    if (!mixPath.empty()) {
+        DrainCapture(mix);
+        WriteRadioWav(mixPath, mix, 3, (int)gRate.load(), false);
+        TraceLog(LOG_INFO, "RADIO: the mix of the run (left, right, the first station) is in %s", mixPath.c_str());
+    }
     for (int s = 0; s < (int)stations.size(); s++) {
         Station& st = stations[s];
         if (st.item < 0) continue;
@@ -466,6 +488,7 @@ void RadioSystem::Entered(const Vehicle& v) {
     playerStation = t != tuned.end() ? t->second : own >= 0 ? own : (int)(Hash(v.serial, 4) % (uint32_t)C.stations.size());
     banner = playerStation >= 0 ? C.stations[playerStation].name : "Radio off";
     bannerTime = BANNER_S;
+    TraceLog(LOG_INFO, "RADIO: the player gets into a %s, the radio tunes in to %s", v.S().name.c_str(), banner.c_str());
 }
 
 // The stations in order, then off.
@@ -527,8 +550,10 @@ void RadioSystem::Update(Game& g, float dt) {
         if (target == 0 && st.dry < 1e-4f) st.dry = 0;
         if (target > 0 && target - st.dry < 1e-4f) st.dry = target;
         d.dry.store(st.dry);
+        if (st.dry > 0) playerHeard += dt;
     }
     if (running) Voices(g, dt);
+    if (!mixPath.empty()) DrainCapture(mix);
     cpuMain += GetTime() - t0;
     frames++;
 }
@@ -662,7 +687,7 @@ void RadioSystem::LogSummary() const {
     double f = (double)std::max<int64_t>(1, frames);
     double mixed = gMixFrames.load() / std::max(1.0f, gRate.load());
     TraceLog(LOG_INFO, "RADIO: stations %d, clips started %d, device %.0f Hz | main thread %.4f ms per frame | audio thread %.3f %% of a core | "
-             "voices at once max %d, voice-seconds %.1f | dropped capture frames %lld",
+             "voices at once max %d, voice-seconds %.1f | the player's radio %.1f s | dropped capture frames %lld",
              (int)stations.size(), items, gRate.load(), cpuMain * 1000.0 / f, mixed > 0 ? gDspNanos.load() / 1e9 / mixed * 100.0 : 0.0,
-             maxVoices, voiceSeconds, (long long)gCap.dropped.load());
+             maxVoices, voiceSeconds, playerHeard, (long long)gCap.dropped.load());
 }
