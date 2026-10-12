@@ -4,7 +4,7 @@ A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C+
 
 > **Status:** early development. The game is playable end to end; the vehicle handling and damage models are being reworked. See the [backlog](docs/backlog.md).
 
-![A junction at dusk: traffic at the lights, street lamps, lit windows and long building shadows](docs/images/drive-dusk.png)
+![A junction at dusk: a school bus crossing, traffic at the lights, people on the sidewalks, street lamps and lit windows](docs/images/drive-dusk.png)
 
 ## Features
 
