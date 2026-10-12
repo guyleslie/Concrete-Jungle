@@ -10,7 +10,8 @@
 //    - the impact: the speed of the vehicle, the person's launch speed, the momentum
 //      each body gained or lost in the contact step;
 //    - flight, rest (the throw distance from the point of impact), falling, death,
-//      getting up, and the speed vehicles lose driving over people.
+//      getting up, and the speed vehicles lose driving over people;
+//    - how it looks: never lying in the air, tumbling rather than gliding along the road.
 //  The named checks compare them with the published measurements of the CJ-035
 //  specification (docs/backlog.md#cj-035-vehicles-hitting-people); EXPECT gives a
 //  scene-wide share a range. INJURY records sweep the injury function on its own.
@@ -184,6 +185,9 @@ struct Person {
     Vector2 impactPos{};
     float impactKmh = 0, launch = 0, momentumRatio = NAN;
     float maxZ = 0, airT = 0, runoverLoss = 0;
+    float airLying = 0, groundDist = 0, groundTurn = 0;  // s drawn lying in the air; px slid and rad turned on the road
+    Vector2 prevPos{};
+    float prevAngle = NAN;
     bool fell = false, died = false;
     float restT = -1, upT = -1;
     Vector2 restPos{};
@@ -231,6 +235,11 @@ struct PersonHitTests::State {
         return s == PedState::Down || s == PedState::Dead;
     }
     float Radius(const Person& p) const { return p.ped < 0 ? PLAYER_RADIUS : PED_RADIUS; }
+    float Angle(Game& g, const Person& p) const { return p.ped < 0 ? g.player.aim : g.peds[p.ped].angle; }
+    bool FallOver(Game& g, const Person& p) const {          // on the ground, the fall's frames played
+        if (p.ped < 0) return g.player.fallT >= g.player.fallDur;
+        return g.peds[p.ped].fallT >= g.peds[p.ped].fallDur;
+    }
 
     void Check(const char* name, int person, float value, float lo, float hi) {
         bool pass = std::isfinite(value) && value >= lo - 1e-4f && value <= hi + 1e-4f;
@@ -407,6 +416,13 @@ struct PersonHitTests::State {
         for (Person& p : people) {
             const PersonBody& b = Body(g, p);
             if (b.Airborne()) { p.airT += DT; p.maxZ = std::max(p.maxZ, b.z); }
+            if (b.Airborne() && OnGround(g, p) && FallOver(g, p)) p.airLying += DT;
+            float angle = Angle(g, p);
+            if (p.fell && !b.Airborne() && Len(Vel(g, p)) > 0.5f * M && std::isfinite(p.prevAngle)) {
+                p.groundDist += Dist(Pos(g, p), p.prevPos);
+                p.groundTurn += fabsf(WrapAngle(angle - p.prevAngle));
+            }
+            p.prevPos = Pos(g, p); p.prevAngle = angle;
             if (OnGround(g, p) && p.kind != Kind::Lying && p.kind != Kind::Dead) p.fell = true;
             if (!Alive(g, p) && p.kind != Kind::Dead) p.died = true;
             bool still = !b.Airborne() && Len(Vel(g, p)) < REST_SPEED;
@@ -451,6 +467,10 @@ struct PersonHitTests::State {
                 Check("carried_m", id, p.maxCarried / M, 0, 0.3f);
                 Check("overlap_frames", id, (float)p.maxOverlapRun, 0, 2);
             }
+            // how it looks: never lying in the air; tumbling, not gliding, along the road
+            if (p.fell) Check("lying_in_air_s", id, p.airLying, 0, 0);
+            if (p.fell && p.groundDist > 1.0f * M)
+                Check("tumble_deg_per_m", id, p.groundTurn * RAD2DEG / (p.groundDist / M), 20, 1000);
             const VehicleSpec* spec = p.hitCar >= 0 ? &g.vehicles[cars[p.hitCar].idx].S() : nullptr;
             for (const std::string& c : s.checks) {
                 if (c == "bump") {

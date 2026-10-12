@@ -134,7 +134,7 @@ A uniform grid with one cell per tile (`PedGrid`) answers "who is near this poin
 
 ## Appearance
 
-The 28 looks are atlases rendered from 3D models: men and women of three age groups, 1.55–1.86 m tall, in ordinary clothes ([pipeline](../../assets/art/cj004/README.md#civilian-3d-pipeline)). Each atlas holds the walk, idle, lying, two punches, two raised-fist positions and a run cycle, seen straight from above. A standing civilian is drawn `CHAR_SCALE` times life size and then the `SCALE` of [civilians.cfg](../guides/adding-content.md#civilians) larger again (1.12), so that an average man reads as large as the player; men and women keep their real proportions to each other. A body on the ground shows at real size. The atlases are required ([ADR-0009](../adr/0009-required-character-atlases.md)).
+The 28 looks are atlases rendered from 3D models: men and women of three age groups, 1.55–1.86 m tall, in ordinary clothes ([pipeline](../../assets/art/cj004/README.md#civilian-3d-pipeline)). Each atlas holds the walk, idle, two punches, two raised-fist positions, a jog and a run cycle, a fall (thrown back off the feet onto the back, [CJ-035](impacts.md#on-the-ground)) and its last pose lying, seen straight from above. A standing civilian is drawn `CHAR_SCALE` times life size and then the `SCALE` of [civilians.cfg](../guides/adding-content.md#civilians) larger again (1.12), so that an average man reads as large as the player; men and women keep their real proportions to each other. A body on the ground shows at real size. The atlases are required ([ADR-0009](../adr/0009-required-character-atlases.md)).
 
 ## Tuning reference
 

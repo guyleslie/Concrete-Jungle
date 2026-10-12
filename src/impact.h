@@ -11,7 +11,7 @@
 //      forward; each has a launch angle and an impact factor, the share of the speed the
 //      body keeps.
 //    - MoveBody flies a launched body, takes the friction impulse off on landing and slides
-//      it to rest. A body in the air touches no vehicle.
+//      it to rest, tumbling as it goes. A body in the air touches no vehicle.
 //    - A vehicle drives over anyone lying on the road: the living die, the body moves a
 //      little, the vehicle jolts.
 //  The injury follows the person's speed change on a logistic curve fitted to Tefft (2011).
@@ -33,6 +33,7 @@ struct PersonBody {
     float    z = 0, vz = 0;          // px above the road and px/s upwards: a body in the air
     float    stagger = 0;            // s left of a stagger: another contact knocks them down
     float    balance = 0;            // px/s of speed change they withstand on their feet
+    float    roll = 1;               // which way the body tumbles on the ground: +1 or -1
     uint32_t underSerial = 0;        // the vehicle last over them (driven over once per pass),
     float    underT = -1;            // and when it was
     bool Airborne() const { return z > 0 || vz > 0; }
@@ -55,7 +56,9 @@ struct PersonHit {
 PersonHit VehicleMeetsPerson(const Vehicle& v, Vector2 n, float depth, Vector2 personVel, const PersonBody& b, bool lying);
 PersonHit ThrownOff(Vector2 velocity);                 // a rider coming off a motorbike at this velocity
 float PersonImpactDamage(const Vehicle& v, float closing);   // the injury of a launch at this closing speed
-void  MoveBody(Vector2& pos, Vector2& vel, PersonBody& b, float dt);   // flight, landing, sliding to rest
+// Flight, landing, sliding to rest; returns how far the body turned tumbling on the ground (rad).
+float MoveBody(Vector2& pos, Vector2& vel, PersonBody& b, float dt);
+float AirTime(const PersonBody& b);                     // s until a body in the air lands
 void  Stagger(PersonBody& b);                           // bumped: staggering for a while
 void  Steady(PersonBody& b, float dt);                  // on their feet: the stagger wears off
 float SlideSpeed(float px);                             // the speed at which a body slides this far

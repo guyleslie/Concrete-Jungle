@@ -14,11 +14,12 @@ Universal Animation Library unpacked under build/art-sources/ual/):
   1. build_civilian.py    -> build/art-sources/civilians/<id>/civilian.blend
   2. tune_gait.py         -> tune.json: per gait, the hip swing and upright that show as much
                              leg ahead of the body as behind it (gaits.py lists the candidates)
-  3. retarget_ual.py      -> civilian-anim.blend (gaits on every frame, poses on the frames used)
+  3. retarget_ual.py      -> civilian-anim.blend (gaits on every frame, poses on the frames used;
+                             the fall from the second library, UAL2_POSES)
   4. measure_gait.py      -> frames.json: the walk frames that split its stride evenly
   5. render_civilian.py   -> frames and leg masks, 2.1 m per frame
   6. measure_gait.py      -> stride, foot slip, toe reach and leg spread per gait
-  7. stylize.py           -> assets/characters/civilians/<id>.png, 38 frames of 144 px
+  7. stylize.py           -> assets/characters/civilians/<id>.png, 46 frames of 144 px
   8. measure_frames.py    -> build/art-sources/civilians/report.json and a summary table
 and the CIVILIAN lines of assets/data/civilians.cfg get each look's measured walk stride.
 The atlas layout is ATLAS_LAYOUT below; civilians.cfg declares the same in its ANIM records.
@@ -36,15 +37,20 @@ from gaits import GAITS, request
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BLENDER = r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
 UAL = os.path.join(ROOT, "build", "art-sources", "ual", "Universal Animation Library[Standard]", "Unreal-Godot", "UAL1_Standard.glb")
+UAL2 = os.path.join(ROOT, "build", "art-sources", "ual2", "Universal Animation Library 2[Standard]", "Unreal-Godot", "UAL2_Standard.glb")
 WORK = os.path.join(ROOT, "build", "art-sources", "civilians")
 OUT = os.path.join(ROOT, "assets", "characters", "civilians")
 CFG = os.path.join(ROOT, "assets", "data", "civilians.cfg")
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 
-POSES_FRAMES = {"punch": ("Punch_Cross", [7]), "jab": ("Punch_Jab", [5]), "lying": ("Death01", [57])}
-# Atlas layout: (name, render stem, frame count) in order; the game reads it from civilians.cfg.
-ATLAS_LAYOUT = [("walk", GAITS["walk"]["action"], 16), ("idle", "idle", 1), ("lying", "Death01", 1),
-                ("punch", None, 2), ("fist", "fist", 2), ("jog", GAITS["jog"]["action"], 8), ("run", GAITS["run"]["action"], 8)]
+POSES_FRAMES = {"punch": ("Punch_Cross", [7]), "jab": ("Punch_Jab", [5])}
+# CJ-035: knocked down, thrown back off the feet onto the back (the player's clip); its last
+# frame is the body lying, so that a fall ends where lying begins.
+UAL2_POSES = {"fall": ("Hit_Knockback", [3, 5, 7, 9, 11, 13, 15, 17, 24])}
+# Atlas layout: (name, render stem, the stem's frames) in order; the game reads it from civilians.cfg.
+ATLAS_LAYOUT = [("walk", GAITS["walk"]["action"], range(16)), ("idle", "idle", [0]), ("lying", "Hit_Knockback", [8]),
+                ("punch", None, None), ("fist", "fist", [0, 1]), ("jog", GAITS["jog"]["action"], range(8)),
+                ("run", GAITS["run"]["action"], range(8)), ("fall", "Hit_Knockback", range(8))]
 PLAYER_WIDTH_M = 0.65
 LEGS_LIMIT = 0.04
 DRAW_SCALE = 1.12       # civilians.cfg SCALE: the average man within 10 % of the player's width
@@ -103,6 +109,8 @@ def make(look):
                 *[request(k, tune[k]["best"]["swing_c"], tune[k]["best"]["upright"]).replace(
                     g["action"], "%s=+%s" % (g["action"], flist(g["frames"])), 1) for k, g in GAITS.items()],
                 *["%s=%s" % (action, flist(frames)) for action, frames in POSES_FRAMES.values()], log=log)
+        blender(anim, "--python", os.path.join(TOOLS, "retarget_ual.py"), "--", UAL2, anim,
+                *["%s=%s" % (action, flist(frames)) for action, frames in UAL2_POSES.values()], log=log)
         # the walk's atlas frames split its stride evenly, so the planted foot stays put
         walk = GAITS["walk"]
         locked_json = os.path.join(d, "walk-frames.json")
@@ -113,13 +121,13 @@ def make(look):
         os.remove(locked_json)
         json.dump(frames, open(frames_json, "w"), indent=1)
     frames = json.load(open(frames_json))
-    jobs = {"idle": "idle", "fist": "fist:0,1", "lying": "%s:%s:lying" % (POSES_FRAMES["lying"][0], flist(POSES_FRAMES["lying"][1])),
+    jobs = {"idle": "idle", "fist": "fist:0,1", "fall": "%s:%s:fall" % (UAL2_POSES["fall"][0], flist(UAL2_POSES["fall"][1])),
             "punch": "%s:%s" % (POSES_FRAMES["punch"][0], flist(POSES_FRAMES["punch"][1])),
             "jab": "%s:%s" % (POSES_FRAMES["jab"][0], flist(POSES_FRAMES["jab"][1]))}
     for name, g in GAITS.items():
         jobs[name] = "%s:%s" % (g["action"], flist(frames[name]))
     # idle first: it chooses the stance that the raised-fist pose then shares
-    order_jobs = ["idle", "fist", "walk", "lying", "punch", "jab", "jog", "run"]
+    order_jobs = ["idle", "fist", "walk", "fall", "punch", "jab", "jog", "run"]
     blender(anim, "--python", os.path.join(TOOLS, "render_civilian.py"), "--", renders,
             *[jobs[k] for k in order_jobs if not POSES or k in POSES], log=log)
     gait_json = os.path.join(d, "gait.json")
@@ -127,9 +135,9 @@ def make(look):
         blender(anim, "--python", os.path.join(TOOLS, "measure_gait.py"), "--", gait_json, *gait_jobs(frames), log=log)
 
     names = []
-    for name, stem, count in ATLAS_LAYOUT:
+    for name, stem, indices in ATLAS_LAYOUT:
         names += [POSES_FRAMES["punch"][0] + "_00", POSES_FRAMES["jab"][0] + "_00"] if name == "punch" else \
-                 ["%s_%02d" % (stem, i) for i in range(count)]
+                 ["%s_%02d" % (stem, i) for i in indices]
     atlas = Image.new("RGBA", (ATLAS * len(names), ATLAS))
     for i, stem in enumerate(names):
         atlas.paste(stylize(Image.open(os.path.join(renders, stem + ".png")), ATLAS), (i * ATLAS, 0))

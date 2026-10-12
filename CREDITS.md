@@ -21,7 +21,7 @@ All third-party assets are free for commercial use; none requires attribution. T
 | Rajdhani | User interface font | Indian Type Foundry | SIL OFL 1.1 | [Google Fonts](https://fonts.google.com/specimen/Rajdhani) |
 | MakeHuman asset packs: system assets, shirts01, pants01, shoes01, hair01, skins01 | Civilian bodies, clothes, hair and skins | MakeHuman community | CC0 | [MakeHuman](https://static.makehumancommunity.org/assets/assetpacks.html) |
 | Universal Animation Library (Standard) | Civilian walk, run, punches and fall | Quaternius | CC0 | [Quaternius](https://quaternius.com/packs/universalanimationlibrary.html) |
-| Universal Animation Library 2 (Standard) | The player knocked down and getting up (`Hit_Knockback`, `LayToIdle`) | Quaternius | CC0 | [itch.io](https://quaternius.itch.io/universal-animation-library-2) |
+| Universal Animation Library 2 (Standard) | The player and the civilians knocked down, the player getting up (`Hit_Knockback`, `LayToIdle`) | Quaternius | CC0 | [itch.io](https://quaternius.itch.io/universal-animation-library-2) |
 | Ultimate Gun Pack | Player weapon models in the CJ-011 renders (pistol, carbine, pump shotgun, combat knife) | Quaternius | CC0 | [OpenGameArt](https://opengameart.org/content/low-poly-guns-pack) |
 | Mixamo animations: Walk Strafe Left and Right, Jog Strafe Left and Right, Walking Backwards, Reloading 2 handed gun, Stabbing | Player strafes, backpedal, rifle charging and stab in the CJ-011 renders | Adobe | Mixamo terms: free to use in projects; the animation files are not redistributed (they stay in the ignored `build/art-sources/`) | [Mixamo](https://www.mixamo.com/) |
 
@@ -30,7 +30,7 @@ All third-party assets are free for commercial use; none requires attribution. T
 | Content | Derived from | How | Licence |
 |---|---|---|---|
 | Limo, bus, box truck, fire truck, garbage truck | Unlucky Studio sprites | Stretched, combined and repainted at start-up (`DERIVE` / `COMPOSE` in `assets/data/vehicles.cfg`) | CC0, as the source |
-| Civilian atlases (`assets/characters/civilians/`) | MakeHuman models animated with the Universal Animation Library | Built in Blender with the MPFB add-on (GPL-3.0, a tool only) and rendered from above by `tools/cj004/make_civilians.py` | CC0, as the sources |
+| Civilian atlases (`assets/characters/civilians/`) | MakeHuman models animated with the Universal Animation Libraries 1 and 2 | Built in Blender with the MPFB add-on (GPL-3.0, a tool only) and rendered from above by `tools/cj004/make_civilians.py` | CC0, as the sources |
 | Player atlases (`assets/characters/player/`) and CJ-011 previews (`assets/art/cj011/`) | MakeHuman models, the Ultimate Gun Pack, the Universal Animation Libraries 1 and 2 and Mixamo animations | Built and rendered in Blender by `tools/cj011/`; the backpack and the cap are modelled by script | CC0 sources; the Mixamo motion under Adobe's terms |
 
 ## Generated content

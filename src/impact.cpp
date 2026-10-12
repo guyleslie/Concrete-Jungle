@@ -19,6 +19,7 @@ struct Data {
     float personKg = 0, centre = 0;              // kg; px: the centre of mass above the road
     float balanceMin = 0, balanceMax = 0, staggerS = 0;   // px/s; s
     float friction = 0;                          // a body on the road, sliding or landing
+    float tumble = 0;                            // rad a body sliding on the road turns per px
     Front wrap, projection;                      // a front edge below / at or above the centre of mass
     float injury50 = 0, injurySlope = 0;         // px/s of speed change at which half die; per px/s
     float throwSpeed = 0, fallMin = 0, fallMax = 0, throwMin = 0, throwMax = 0;   // px/s; s
@@ -51,7 +52,7 @@ bool LoadImpacts(const std::vector<DataRecord>& records, std::string& error) {
     const Record table[] = {
         { "PERSON",     { { &D.personKg, 20, 200, 1 }, { &D.centre, 0.3f, 1.5f, M } } },
         { "BALANCE",    { { &D.balanceMin, 0.1f, 5, M }, { &D.balanceMax, 0.1f, 5, M }, { &D.staggerS, 0, 5, 1 } } },
-        { "GROUND",     { { &D.friction, 0.1f, 1.5f, 1 } } },
+        { "GROUND",     { { &D.friction, 0.1f, 1.5f, 1 }, { &D.tumble, 0, 360, DEG2RAD / M } } },
         { "WRAP",       { { &D.wrap.angle, 0, 60, DEG2RAD }, { &D.wrap.factor, 0.1f, 1, 1 } } },
         { "PROJECTION", { { &D.projection.angle, 0, 60, DEG2RAD }, { &D.projection.factor, 0.1f, 1, 1 } } },
         { "INJURY",     { { &D.injury50, 10, 300, KMH }, { &D.injurySlope, 0.001f, 1, 1 / KMH } } },
@@ -151,7 +152,7 @@ float PersonImpactDamage(const Vehicle& v, float closing) {
 // -------------------------------------------------------------------------------------
 //  A body on the move
 // -------------------------------------------------------------------------------------
-void MoveBody(Vector2& pos, Vector2& vel, PersonBody& b, float dt) {
+float MoveBody(Vector2& pos, Vector2& vel, PersonBody& b, float dt) {
     float t = dt;
     if (b.Airborne()) {
         // the flight up to the landing, if it comes within this step
@@ -165,15 +166,22 @@ void MoveBody(Vector2& pos, Vector2& vel, PersonBody& b, float dt) {
             vel = s > loss ? vel * ((s - loss) / s) : Vector2{ 0, 0 };
             b.z = 0; b.vz = 0;
             t = dt - fly;
-        } else return;
+        } else return 0;
     }
-    float s = Len(vel);                                     // sliding at the friction's deceleration
-    if (s <= 0) return;
-    float a = D.friction * GRAVITY, slide = std::min(t, s / a);
+    // sliding at the friction's deceleration; a body bouncing and rolling along the road turns as
+    // it goes, rather than gliding in one pose
+    float s = Len(vel);
+    if (s <= 0) return 0;
+    float a = D.friction * GRAVITY, slide = std::min(t, s / a), dist = s * slide - 0.5f * a * slide * slide;
     Vector2 dir = vel / s;
-    pos = pos + dir * (s * slide - 0.5f * a * slide * slide);
+    pos = pos + dir * dist;
     s -= a * slide;
     vel = s > 1e-3f ? dir * s : Vector2{ 0, 0 };
+    return b.roll * D.tumble * dist;
+}
+
+float AirTime(const PersonBody& b) {
+    return b.Airborne() ? (b.vz + sqrtf(b.vz * b.vz + 2.0f * GRAVITY * std::max(0.0f, b.z))) / GRAVITY : 0.0f;
 }
 
 void Stagger(PersonBody& b) { b.stagger = D.staggerS; }

@@ -53,7 +53,7 @@ Civilians are built from 3D human models, animated, and rendered straight from a
 |---|---|---|
 | Body, clothes, hair, skins | [MakeHuman](https://static.makehumancommunity.org/assets/assetpacks.html) asset packs: system assets, shirts01, pants01, shoes01, hair01, skins01, eyebrows01 | CC0 |
 | Character tool | [MPFB 2.0.17](https://extensions.blender.org/add-ons/mpfb/), the MakeHuman add-on for Blender | GPL-3.0 (a tool; its output is not covered) |
-| Animations | [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html) by Quaternius, Standard | CC0 |
+| Animations | [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html) by Quaternius, Standard; the fall from the [second library](https://quaternius.itch.io/universal-animation-library-2) (CJ-035) | CC0 |
 
 ### Setting up
 
@@ -144,7 +144,9 @@ The retarget modifiers of [retarget_ual.py](../../../tools/cj004/retarget_ual.py
 
 [measure_gait.py](../../../tools/cj004/measure_gait.py) treats the heel and the ball as contact points of their own, because a planted foot rolls from one to the other. A point is on the ground while it moves backwards relative to the body within 3 cm of its lowest, and the weight is on the lowest such point of the front foot. The stride is that point's travel over the cycle. The measure of 2026-10-08 followed only the flat foot and overstated the stride (civilian-01: 1.03 m against 0.92 m), so the feet slid a few centimetres a step. [measure_frames.py](../../../tools/cj004/measure_frames.py) measures how far the legs show beyond the body from the leg mask alone, because the colour render's softer edge makes the rim of a leg count as body. Since CJ-004 the right hand's fingers had stayed spread in every animated frame: the raised-fist pose turns them to Euler rotations, which an action's quaternion keys do not move. The render script now resets them.
 
-The atlas is 38 frames: walk 0–15, idle 16, lying 17, punches 18–19, fist 20–21, jog 22–29, run 30–37, declared by the `ANIM` records of [civilians.cfg](../../data/civilians.cfg).
+The atlas is 46 frames: walk 0–15, idle 16, lying 17, punches 18–19, fist 20–21, jog 22–29, run 30–37, fall 38–45, declared by the `ANIM` records of [civilians.cfg](../../data/civilians.cfg).
+
+**Falling (CJ-035, 2026-10-12).** A person hit by a vehicle showed the lying frame from the moment of impact and glided along the road in it ([CJ-035 playtest](../../../docs/backlog.md#cj-035-vehicles-hitting-people)). Every look now falls as the player does: eight frames of `Hit_Knockback` from the second Universal Animation Library (frames 3–17, every second: thrown back off the feet, the legs swinging up, onto the back), retargeted by [retarget_ual.py](../../../tools/cj004/retarget_ual.py) with `UAL2_POSES`. The lying frame is that clip's frame 24, so that the fall ends where lying begins; it replaces the last frame of `Death01`, which lay head up with the arms raised and would have turned the body over on landing. The falling and lying frames are rendered with the `fall` flag of [render_civilian.py](../../../tools/cj004/render_civilian.py): over 2.1 m × `CHAR_SCALE`, like a lying frame, so that a body on the ground draws at real size, and each centred on its own pelvis. `make_civilians.py --poses fall` renders them for every look in about 12 minutes; the other 37 frames of every atlas stayed byte for byte as they were.
 
 Results for the 28 looks (2026-10-09):
 

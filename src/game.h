@@ -51,10 +51,11 @@ struct PlayerState {
     int     melees = 0;            // blows struck: the fists alternate
     float   reloadTotal = 0;       // shell-by-shell reload: its length (s),
     int     reloadShells = 0, reloadLoaded = 0;   // the shells it loads and has loaded
-    // what vehicles meet (CJ-035); fallT: s since the player fell, -1 on their feet; lieT: s left
-    // lying once at rest; getUpT: s left of getting up
+    // what vehicles meet (CJ-035); fallT: s since the player fell, -1 on their feet; fallDur: how
+    // long the fall plays (until the body lands); lieT: s left lying once at rest; getUpT: s left
+    // of getting up
     PersonBody body;
-    float   fallT = -1, lieT = 0, getUpT = 0;
+    float   fallT = -1, fallDur = 0, lieT = 0, getUpT = 0;
     bool    Down() const { return fallT >= 0; }
 };
 

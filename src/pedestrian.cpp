@@ -221,6 +221,9 @@ void KnockDownPed(Pedestrian& p, Vector2 vel, float vz, float down) {
     p.state = PedState::Down;
     p.vel = vel;
     p.body.vz = vz; p.body.stagger = 0;
+    p.body.roll = GRng().Chance(0.5f) ? 1.0f : -1.0f;
+    p.fallT = 0;
+    p.fallDur = std::max(gAssets.pedFallS, AirTime(p.body));   // falling until they land
     p.timer = down;
     p.alarm = -1; p.alarmVehicle = -1;
     float il = Len(vel);
@@ -228,7 +231,6 @@ void KnockDownPed(Pedestrian& p, Vector2 vel, float vz, float down) {
         p.angle = AngleOf(vel * -1.0f);
         p.threat = p.pos - vel / il * 20.0f;                        // where the blow came from
     }
-    p.spin = GRng().Range(-1.0f, 1.0f) * std::min(il, 260.0f) * 0.03f;   // tumbling
 }
 
 static void StartDodge(Pedestrian& p, const Game& g, const Danger& d);
@@ -515,9 +517,8 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
 
     // ---- on the ground ----
     if (p.state == PedState::Down || p.state == PedState::Dead) {
-        MoveBody(p.pos, p.vel, p.body, dt);                         // flying, landing, sliding
-        p.angle = WrapAngle(p.angle + p.spin * dt);
-        p.spin *= expf(-3.0f * dt);
+        p.angle = WrapAngle(p.angle + MoveBody(p.pos, p.vel, p.body, dt));   // flying, landing, tumbling
+        p.fallT += dt;
         bool still = !p.body.Airborne() && Len2(p.vel) < 1.0f;
         if (p.state == PedState::Dead) {
             p.deadTime += dt;
@@ -529,7 +530,6 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
             if (still) p.timer -= dt;                                // the time down counts from coming to rest
             if (p.health <= 0) { p.state = PedState::Dead; p.deadTime = 0; }
             else if (p.timer <= 0) {                                 // back on their feet
-                p.spin = 0;
                 StartFlee(p, p.threat, 4.0f, false);
                 if (p.courage >= 0.85f && Dist(p.pos, g.player.pos) < 6 * M) ProvokePed(p, g);   // the tough ones come back for more
             }
@@ -829,7 +829,11 @@ spritegen::PedAnim PedDrawPose(const Pedestrian& p, int* index) {
     using spritegen::PedAnim;
     int i = 0;
     PedAnim a;
-    if (p.state == PedState::Down || p.state == PedState::Dead) a = PedAnim::Lying;
+    if (p.state == PedState::Down || p.state == PedState::Dead) {
+        // falling until they land, then lying (the fall's last pose)
+        a = p.fallT < p.fallDur ? PedAnim::Fall : PedAnim::Lying;
+        if (a == PedAnim::Fall) i = (int)(p.fallT / p.fallDur * gAssets.PedAnimFrames(a).count);
+    }
     else if ((p.state == PedState::Fight || p.state == PedState::Confront) && p.punchT > 0) {
         a = PedAnim::Punch;
         i = p.punchT > 0.12f ? 0 : 1;
@@ -859,13 +863,16 @@ void DrawPed(const Pedestrian& p) {
     bool lying = p.state == PedState::Down || p.state == PedState::Dead;
     int frame = PedDrawFrame(p);
     // A frame covers pedFrameM at life size; standing people are drawn CHAR_SCALE (and the
-    // civilians' SCALE) times larger, and the lying frame is made CHAR_SCALE times wider so that
-    // the body shows at real size. Only the frame's visible part is drawn, at its offset.
-    float k = gAssets.pedFrameM * M * CHAR_SCALE * (lying ? PED_LYING : gAssets.pedDrawScale) / gAssets.pedFramePx;
+    // civilians' SCALE) times larger, and the lying and falling frames are made CHAR_SCALE times
+    // wider so that the body shows at real size. A fall shrinks from the standing look to real
+    // size lying. Only the frame's visible part is drawn, at its offset.
+    float low = lying && p.fallT < p.fallDur ? p.fallT / p.fallDur : 1.0f;      // 0 standing .. 1 lying
+    float size = lying ? PED_LYING * Lerpf(CHAR_SCALE * gAssets.pedDrawScale, 1.0f, low) : gAssets.pedDrawScale;
+    float k = gAssets.pedFrameM * M * CHAR_SCALE * size / gAssets.pedFramePx;
     const Rectangle& src = a.src[frame];
     float angle = p.angle + (lying ? 0.0f : p.sway);
     Vector2 at = p.pos + RightOf(angle) * (a.offset[frame].x * k) - Forward(angle) * (a.offset[frame].y * k);
-    float h = lying ? 1.5f + p.body.z : H_PED;          // a body in the air flies at its height
+    float h = lying ? Lerpf(H_PED, 1.5f, low) + p.body.z : H_PED;   // a body in the air flies at its height
     Color tint = WHITE;
     if (p.state == PedState::Dead) tint = ColorA({ 200, 190, 190, 255 }, 1.0f - Saturate((p.deadTime - PED_BODY_FADE) / (PED_BODY_GONE - PED_BODY_FADE)));
     DrawFlatSprite(a.tex, src, at, h, src.width * k, src.height * k, angle, tint);

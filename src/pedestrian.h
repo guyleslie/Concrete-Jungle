@@ -69,7 +69,8 @@ struct Pedestrian {
     PersonBody body;                 // what vehicles meet (impact.h)
     bool     pooled = false;         // dead: blood pool left where the body came to rest
     float    laneOffset = 0;         // personal walking line on the sidewalk (px)
-    float    sway = 0, spin = 0;
+    float    sway = 0;
+    float    fallT = 0, fallDur = 0;  // on the ground: s since the knock-down; how long the fall plays
     float    turnRate = 0;           // rad/s, for stepping round on the spot
     float    stuckT = 0;
     Vector2  lastPos{};

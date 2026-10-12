@@ -1145,8 +1145,10 @@ void Game::KnockDownPlayer(Vector2 vel, float vz, float down) {
     CancelReload(P);
     P.vel = vel;
     P.body.vz = vz; P.body.stagger = 0;
+    P.body.roll = GRng().Chance(0.5f) ? 1.0f : -1.0f;
     if (Len(vel) > 1) P.aim = AngleOf(vel * -1.0f);                // on their back, the head away from the blow
     P.fallT = 0; P.lieT = down; P.getUpT = 0;
+    P.fallDur = std::max(gAssets.playerDown.fallS, AirTime(P.body));  // falling until they land
     P.aiming = false; P.raise = 0; P.actionTimer = 0; P.bodyState = BodyAnim::Idle;
 }
 
@@ -1155,7 +1157,7 @@ void Game::KnockDownPlayer(Vector2 vel, float vz, float down) {
 void Game::UpdatePlayerDown(float dt) {
     PlayerState& P = player;
     P.fallT += dt;
-    MoveBody(P.pos, P.vel, P.body, dt);
+    P.aim = WrapAngle(P.aim + MoveBody(P.pos, P.vel, P.body, dt));   // flying, landing, tumbling
     CollidePlayer();
     if (P.health <= 0) return;
     if (P.getUpT > 0) {
@@ -2068,7 +2070,7 @@ void Game::DrawPlayerSprite(bool shadowPass, Vector2 sv) const {
         int frame = D.lie;
         float low = 1;                                       // 0 standing .. 1 lying
         if (player.getUpT > 0) { float k = 1 - player.getUpT / D.getUpS; frame = frameOf(D.getUp, k); low = 1 - k; }
-        else if (player.fallT < D.fallS) { float k = player.fallT / D.fallS; frame = frameOf(D.fall, k); low = k; }
+        else if (player.fallT < player.fallDur) { float k = player.fallT / player.fallDur; frame = frameOf(D.fall, k); low = k; }
         float size = Lerpf(CHAR_SCALE * gAssets.playerDrawScale, 1.0f, low);
         DrawPlayerFrame(D.atlas, frame, player.pos, player.aim, Lerpf(H_PED, 1.5f, low) + player.body.z, tint,
                         D.frameM * M * size / D.framePx);

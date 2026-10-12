@@ -51,9 +51,9 @@ Reaching 100 points, death, then has exactly the logistic probability 1 / (1 + e
 
 ## On the ground
 
-People on the ground move by `MoveBody`: in the air, landing, sliding. A civilian knocked down lies 1.2–2.0 s after coming to rest from a fall and 2.7–3.5 s from a throw, then gets up and runs off; a dead body stays where it came to rest, with its blood pool.
+People on the ground move by `MoveBody`: in the air, landing, sliding. Everyone knocked down falls as the clip `Hit_Knockback` does (thrown back off the feet onto the back), and the fall plays over the whole flight, at least 0.5 s: nobody is drawn lying in the air. On the road the body bounces and rolls rather than gliding in one pose, turning 40° per metre it slides, either way, until it comes to rest lying, the fall's last pose: on its back, the head away from the vehicle. At 80 km/h that is about 1.7 s in the air over 29 m, then 10 m along the road; the ground phase is as long as Searle's model and the staged tests give it, a quarter of the throw (Becker and Reade). A civilian knocked down lies 1.2–2.0 s after coming to rest from a fall and 2.7–3.5 s from a throw, then gets up and runs off; a dead body stays where it came to rest, with its blood pool.
 
-The player falls, lies and gets up without control (`Game::UpdatePlayerDown`), drawn from frames rendered from the 3D player ([CJ-011 pipeline](../../assets/art/cj011/README.md#on-the-ground)): eight frames of the Universal Animation Library clip `Hit_Knockback` (thrown back off the feet onto the back, 0.5 s), its last frame lying, and twelve frames of `LayToIdle` (getting up, 1.4 s). Each frame is centred on the pelvis, the body's position in the game. The player is drawn from the standing look, larger than life, to real size lying, as the civilians are, and back while getting up; the weapon is not drawn on the ground. The lying times plus getting up give control back 2.6–3.4 s after a fall comes to rest and 4.1–4.9 s after a throw. A player who dies of any cause on foot falls the same way and lies there until the respawn.
+The civilians' falling and lying frames are rendered from every look ([CJ-004 pipeline](../../assets/art/cj004/README.md#full-set-2026-10-08)). The player falls, lies and gets up without control (`Game::UpdatePlayerDown`), drawn from frames rendered from the 3D player ([CJ-011 pipeline](../../assets/art/cj011/README.md#on-the-ground)): eight frames of the Universal Animation Library clip `Hit_Knockback` (thrown back off the feet onto the back, at least 0.5 s), its last frame lying, and twelve frames of `LayToIdle` (getting up, 1.4 s). Each frame is centred on the pelvis, the body's position in the game. The player is drawn from the standing look, larger than life, to real size lying, as the civilians are, and back while getting up; the weapon is not drawn on the ground. The lying times plus getting up give control back 2.6–3.4 s after a fall comes to rest and 4.1–4.9 s after a throw. A player who dies of any cause on foot falls the same way and lies there until the respawn.
 
 ## Other falls
 
@@ -68,7 +68,7 @@ The player falls, lies and gets up without control (`Game::UpdatePlayerDown`), d
 |---|---|
 | `PERSON` | Mass 75 kg, centre of mass 1.0 m |
 | `BALANCE` | 1.0–1.6 m/s, stagger 0.8 s |
-| `GROUND` | Friction 0.7 |
+| `GROUND` | Friction 0.7; a sliding body turns 40° per metre |
 | `WRAP`, `PROJECTION` | 25°, 0.94; 10°, 1.0 |
 | `INJURY` | Δ*v*<sub>50</sub> 59.5 km/h, slope 0.089 per km/h |
 | `DOWN` | A fall below 25 km/h; lying 1.2–2.0 s after a fall, 2.7–3.5 s after a throw |
@@ -84,6 +84,7 @@ The published data behind the values:
 |---|---|
 | Happer et al. (2000), 106 real collisions, via the [THUMS validation](https://dynalook.com/conferences/11th-european-ls-dyna-conference/pedestrian-safety-head-impact/validation-of-thums-human-model-throw-distance-in-pedestrian-accident-scenarios) | Impact speed from the throw distance *d*: cars V = 12.7 √d − 2.6 km/h (±9 km/h), SUVs and light trucks V = 11.4 √d − 0.4 km/h (±10.5 km/h) |
 | Searle's model (same source) | A body launched at speed *v* comes to rest between v²/(2μg) and (1 + μ²) v²/(2μg) away; μ ≈ 0.7 on a dry road |
+| [Becker and Reade](https://arxiv.org/abs/1512.00790), staged impacts and simulations | The same three phases, contact, flight, then sliding and rolling along the road after a landing that takes μ times the vertical speed off the horizontal one |
 | [Tefft (2011), AAA Foundation](https://aaafoundation.org/impact-speed-pedestrians-risk-severe-injury-death/) | Death: 10, 25, 50, 75 and 90 % at 37, 51, 68, 80 and 93 km/h; severe injury at 26, 37, 50, 63 and 74 km/h |
 | Run-over studies ([pedestrian deaths](https://tandf.figshare.com/articles/journal_contribution/Injury_patterns_in_motor_vehicle_collision-pediatric_pedestrian_deaths/21235749), [French national data](https://trid.trb.org/View/1488036)) | Being driven over happens mostly below 30 km/h, with severe head injuries; about half the people hit by trucks are driven over |
 

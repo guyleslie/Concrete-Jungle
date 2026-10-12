@@ -646,7 +646,7 @@ static size_t PackCivilian(CivilianAtlas& a, Image strip, int framePx) {
 
 static spritegen::PedAnim PedAnimByName(const std::string& s) {
     using spritegen::PedAnim;
-    static const char* names[] = { "walk", "idle", "lying", "punch", "fist", "jog", "run" };
+    static const char* names[] = { "walk", "idle", "lying", "punch", "fist", "jog", "run", "fall" };
     for (int i = 0; i < (int)PedAnim::COUNT; i++) if (s == names[i]) return (PedAnim)i;
     return PedAnim::COUNT;
 }
@@ -654,7 +654,7 @@ static spritegen::PedAnim PedAnimByName(const std::string& s) {
 static void LoadCivilians(Assets& A) {
     using spritegen::PedAnim;
     int framePx = 0, frames = 0;
-    float frameM = 0, walkM = 1.3f, scale = 1.0f, sway = 0.05f;
+    float frameM = 0, walkM = 1.3f, scale = 1.0f, sway = 0.05f, fallS = 0;
     PedFrames layout[(int)PedAnim::COUNT];
     PedGait jog, run;
     size_t bytes = 0, uniform = 0;
@@ -674,6 +674,7 @@ static void LoadCivilians(Assets& A) {
             PedAnim a = PedAnimByName(r[1]);
             if (a == PedAnim::COUNT) { TraceLog(LOG_WARNING, "civilians.cfg:%d unknown animation '%s'", r.line, r[1].c_str()); continue; }
             layout[(int)a] = { r.I(2), r.I(3) };
+            if (a == PedAnim::Fall) fallS = r.F(4);
         } else if (r.Is("GAIT") && r.size() >= 6) {
             PedGait g = { r.F(2), r.F(3), r.F(4), r.F(5) };
             if (r[1] == "jog") jog = g; else if (r[1] == "run") run = g;
@@ -687,7 +688,7 @@ static void LoadCivilians(Assets& A) {
             for (const PedFrames& f : layout) needed = std::max(needed, f.first + f.count);
             bool complete = layout[(int)PedAnim::Walk].count > 0 && layout[(int)PedAnim::Idle].count > 0 &&
                             layout[(int)PedAnim::Lying].count > 0 && layout[(int)PedAnim::Punch].count >= 2 &&
-                            layout[(int)PedAnim::Fist].count >= 2;
+                            layout[(int)PedAnim::Fist].count >= 2 && layout[(int)PedAnim::Fall].count > 0 && fallS > 0;
             AssetValidate(img.height == framePx && complete && n >= needed && (!frames || n == frames),
                           TextFormat("civilians.cfg line %d: '%s' is %dx%d px: expected %d px frames, at least %d of them, like the others",
                                      r.line, r[1].c_str(), img.width, img.height, framePx, needed));
@@ -706,6 +707,7 @@ static void LoadCivilians(Assets& A) {
         A.pedFrameM = frameM;
         A.pedDrawScale = scale;
         A.pedSway = sway;
+        A.pedFallS = fallS;
         for (int i = 0; i < (int)PedAnim::COUNT; i++) A.pedAnim[i] = layout[i];
         A.pedJog = jog;
         A.pedRun = run;

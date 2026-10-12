@@ -114,7 +114,7 @@ File: `assets/data/impacts.cfg`: how vehicles meet people ([design](../design/im
 ```
 PERSON     <mass kg> <centre of mass m>
 BALANCE    <min m/s> <max m/s> <stagger s>
-GROUND     <friction>
+GROUND     <friction> <tumble deg per m>
 WRAP       <launch deg> <impact factor>
 PROJECTION <launch deg> <impact factor>
 INJURY     <km/h> <per km/h>
@@ -126,7 +126,7 @@ RUNOVER    <shove m> <jolt km/h>
 |---|---|
 | `PERSON` | A person's mass, and the height of their centre of mass: a vehicle's front edge (`FRONT`) below it wraps them, at or above it throws them forward |
 | `BALANCE` | The speed change a civilian withstands on their feet, drawn between the two values (the player has the mean), and how long a stagger lasts; another contact meanwhile knocks them down |
-| `GROUND` | The friction of a body sliding on the road, and of its landing |
+| `GROUND` | The friction of a body sliding on the road, and of its landing; how far it turns per metre as it bounces and rolls along, so that it tumbles to rest instead of gliding |
 | `WRAP`, `PROJECTION` | The launch angle and the impact factor (the share of the speed the body keeps) for the two kinds of front |
 | `INJURY` | The speed change at which half the people die, and the slope of the logistic curve |
 | `DOWN` | The speed change that separates a fall from a throw, and the time on the ground after coming to rest for each |
@@ -254,7 +254,7 @@ File: `assets/data/civilians.cfg`. Atlases go in `assets/characters/civilians/` 
 FRAME    <px> <metres>
 SCALE    <factor>
 SWAY     <radians>
-ANIM     <animation> <first frame> <frames>
+ANIM     <animation> <first frame> <frames> [<s>]
 GAIT     <jog|run> <from m/s> <steps/s> <to m/s> <steps/s>
 WALK     <metres>
 CIVILIAN <file> [walk cycle m]
@@ -265,7 +265,7 @@ CIVILIAN <file> [walk cycle m]
 | `FRAME` | Frame size in pixels and the metres one frame covers at life size |
 | `SCALE` | How much larger standing civilians are drawn, on top of `CHAR_SCALE`, so that an average man reads as large as the player |
 | `SWAY` | How far the game turns a walking person with the steps; 0 for rendered walks, which sway by themselves |
-| `ANIM` | Where an animation's frames are: `walk`, `idle`, `lying`, `punch` (right, left), `fist` (two shake positions), `jog`, `run`; jog and run are optional |
+| `ANIM` | Where an animation's frames are: `walk`, `idle`, `lying`, `punch` (right, left), `fist` (two shake positions), `jog`, `run`, `fall`; jog and run are optional. The fall gives the seconds it plays at least (a longer flight stretches it) and must end in the lying pose; falling and lying frames cover the frame's metres × `CHAR_SCALE`, so that a body on the ground draws at real size |
 | `GAIT` | From which speed a jog or run shows (it holds until 0.3 m/s below that), and its cadence, rising linearly between the two points |
 | `WALK` | Walk cycle (two steps) for `CIVILIAN` lines that give none |
 | `CIVILIAN` | One look and its walk cycle: the look's stride, so that a planted foot stays put |

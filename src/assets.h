@@ -111,6 +111,7 @@ struct Assets {
     int                       pedFramePx = 144;                         // square atlas frame (px)
     float                     pedFrameM = 1.4f;                         // metres a frame covers at life size
     float                     pedDrawScale = 1.0f;                      // standing civilians, on top of CHAR_SCALE
+    float                     pedFallS = 0;                             // s the fall plays at least (CJ-035)
     float                     pedSway = 0.05f;                          // body turn with the steps (rad)
     PedFrames                 pedAnim[(int)spritegen::PedAnim::COUNT];  // atlas layout
     PedGait                   pedJog, pedRun;                           // used when the atlas has those frames

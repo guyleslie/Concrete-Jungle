@@ -19,7 +19,7 @@ namespace spritegen {
 Image TrainCar(Color stripe);        // 18 m metro carriage, canvas 100 x 600
 
 // The animations of a pedestrian atlas; image atlases declare where each one is (civilians.cfg ANIM).
-enum class PedAnim : uint8_t { Walk, Idle, Lying, Punch, Fist, Jog, Run, COUNT };
+enum class PedAnim : uint8_t { Walk, Idle, Lying, Punch, Fist, Jog, Run, Fall, COUNT };
 
 enum class Prop {
     Bench, TrashBin, Hydrant, Cone, Barrel, Dumpster, ACUnit, LampHead, SignalHead, Planter,

@@ -2,12 +2,14 @@
 
     blender -b <civilian.blend> --python tools/cj004/render_civilian.py -- <out dir> <job> [<job> ...]
 
-A job is <pose>[:<frames>][:lying]:
+A job is <pose>[:<frames>][:lying|:fall]:
   - <pose> is "idle" (upright, arms hanging, feet under the hips, built here from the rest
     pose), "fist" (the right fist raised above the head, the left hand held out; frames 0 and
     1 are the two shake positions) or the name of an action on the rig;
   - <frames> is a comma-separated list of scene frames (fractions are interpolated);
-  - "lying" turns a body on the ground head up, centres it and renders it at real size.
+  - "lying" turns a body on the ground head up, centres it and renders it at real size;
+  - "fall" (CJ-035) renders a body falling to the ground in the frame of a lying one, each frame
+    centred on its own pelvis (the game moves the body, the pelvis is its position).
 Outputs are <out>/<pose>_<nn>.png (RGBA), numbered in the order of the frames,
 <pose>_<nn>_legs.png, a mask in which legs and shoes are white, and <pose>_pelvis.json, the
 pelvis position of every frame in atlas pixels from the frame centre (right, down).
@@ -277,7 +279,8 @@ for job in jobs:
     pose = parts[0]
     frames = [float(f) for f in parts[1].split(",")] if len(parts) > 1 and parts[1] else [0.0]
     lying = "lying" in parts[2:]
-    cam_data.ortho_scale = FRAME_M * (CHAR_SCALE if lying else 1.0)
+    fall = "fall" in parts[2:]
+    cam_data.ortho_scale = FRAME_M * (CHAR_SCALE if lying or fall else 1.0)
     if pose in ("idle", "fist"):
         choose_stance(pose_idle)
 
@@ -298,7 +301,7 @@ for job in jobs:
     # A standing job is centred on its mean pelvis position, so a cycle keeps the hips at the
     # frame centre on average and idle, walk and run share the same pivot.
     centre = Vector((0.0, 0.0))
-    if not lying:
+    if not lying and not fall:
         for f in frames:
             apply(f)
             centre += (rig.matrix_world @ rig.pose.bones["pelvis"].head).xy
@@ -308,6 +311,9 @@ for job in jobs:
         apply(f)
         if lying:
             lay_head_up_and_centre()
+        elif fall:
+            p = rig.matrix_world @ rig.pose.bones["pelvis"].head
+            cam.location.x, cam.location.y = p.x, p.y
         else:
             cam.location.x, cam.location.y = centre.x, centre.y
         stem = os.path.join(out_dir, "%s_%02d" % (pose, i))

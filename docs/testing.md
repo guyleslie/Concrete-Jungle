@@ -313,6 +313,7 @@ Every person of every scene is checked for no pushing and no passing through; th
 | Check | Criterion | Measured |
 |---|---|---|
 | (always) | 6, 7 | `contact_s`: the longest contact of a standing person with a vehicle, at most 0.1 s; `carried_m`: how far a vehicle carried a living person in one contact, at most 0.3 m; `overlap_frames`: consecutive frames a living person on the ground stayed more than 3 px inside a vehicle after the contact step, at most 2 |
+| (always, people who fell) | Playtest of 2026-10-12 | `lying_in_air_s`: time drawn lying while still in the air, 0; `tumble_deg_per_m`: for a body sliding more than 1 m along the road, how far it turned per metre, at least 20° |
 | `bump` | 1 | Touched, on their feet, unhurt, no contact later than 1 s after the first |
 | `falls` | 2 | On the ground at some time |
 | `throw` | 3 | The distance from the point of impact to the point of rest, within Searle's corridor for the launch speed measured right after the contact step (μ = 0.7) and, but for two-wheelers, within Happer's band for the impact speed: the car regression ±9 km/h for a front edge below 1 m, the light-truck regression ±10.5 km/h otherwise |
@@ -338,6 +339,8 @@ Every person of every scene is checked for no pushing and no passing through; th
 | 8 Driving over the living | Nobody died at 5 km/h; at 30 km/h the bodies slid 3.9–7.7 m | All 34 died; the body moved 0.20 m back under the vehicle, which lost 1.0 km/h and drove on |
 | 9 Driving over a body | Passed: 0 m, 0 km/h | 0.20 m, 1.0 km/h |
 | 10 Player | Never fell | Fell in every run at 10 km/h and more; controlled again 2.7–3.4 s after a fall came to rest and 4.1–4.9 s after a throw; 4 of 17 died at 50 km/h |
+
+**Playtest fix (2026-10-12).** The user saw people hit at speed lie down and die at once, then fly and slide about 10 m. A frame series of a taxi at 80 km/h showed the lying frame from the moment of impact, through 1.7 s and 29 m in the air, then 10.5 m along the road in 1.8 s without turning. With the fall frames played over the flight and the tumbling on the road, the scene file (2,170 checks, the two new ones added) passes in full: nobody is drawn lying in the air, and sliding bodies turn 33–79° per metre. The throws are unchanged. In `rampage` 77 % escaped, and the pedestrian CPU time was 0.39 ms (`day` 0.43 ms) at 75 FPS.
 
 Vehicles that kept on without braking drove over the person they hit at 30 km/h (17 of 17 died) and mostly at 60 km/h (14 of 17); at 90 km/h a taxi passed under the body (the `vault-art` scene).
 
