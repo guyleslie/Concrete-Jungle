@@ -1,6 +1,6 @@
 # Audio
 
-Every sound in the game is synthesised at start-up, so the game needs no audio files. Any sound can be replaced by a recording without code changes.
+Every sound effect in the game is synthesised at start-up, so the effects need no audio files. Any sound can be replaced by a recording without code changes. The car radio plays recorded music; it is described in [Radio](radio.md).
 
 Source: `src/audio.h`, `src/audio.cpp`.
 
@@ -27,7 +27,7 @@ An angry driver yells (see [Traffic › Driver incidents](traffic.md#driver-inci
 
 ## Positional playback
 
-One-shots are played at a world position. Their volume falls off with the distance from the listener (the camera) and they are panned left or right.
+One-shots are played at a world position. Their volume falls off with the distance from the listener (the camera) and they are panned left or right by their horizontal offset: raylib 6.0 takes −1 for left, 0 for the centre and +1 for right, and a sound 35 m or more to the side reaches ±0.8. Until 2026-10-12 the game still used raylib 5's scale (0.5 for the centre, 1 for left), so every sound, the interface sounds too, leaned to the right, and sounds on the left came from the right ([CJ-040](../backlog.md#cj-040-car-radio)).
 
 ## Replacing sounds
 

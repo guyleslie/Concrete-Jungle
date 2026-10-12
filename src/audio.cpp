@@ -411,7 +411,7 @@ void AudioSystem::Play(Sfx s, Vector2 pos, float volume, float pitch) {
     next[(int)s] = (next[(int)s] + 1) % (int)pool.size();
     SetSoundVolume(snd, Saturate(volume * att));
     SetSoundPitch(snd, pitch * GRng().Range(0.95f, 1.05f));
-    SetSoundPan(snd, Clampf(0.5f - (pos.x - listener.x) / 1400.0f, 0.1f, 0.9f));   // raylib: 1 = left
+    SetSoundPan(snd, Clampf((pos.x - listener.x) / 700.0f, -0.8f, 0.8f));   // raylib 6: -1 left, 0 centre, +1 right
     PlaySound(snd);
 }
 
@@ -421,7 +421,7 @@ void AudioSystem::PlayUI(Sfx s, float volume, float pitch) {
     if (pool.empty()) return;
     Sound& snd = pool[next[(int)s]];
     next[(int)s] = (next[(int)s] + 1) % (int)pool.size();
-    SetSoundVolume(snd, volume); SetSoundPitch(snd, pitch); SetSoundPan(snd, 0.5f);
+    SetSoundVolume(snd, volume); SetSoundPitch(snd, pitch); SetSoundPan(snd, 0.0f);   // centre
     PlaySound(snd);
 }
 

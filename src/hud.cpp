@@ -192,6 +192,13 @@ void Game::DrawHUD() {
         DrawUITextShadow(t.text.c_str(), W * 0.5f - tw * 0.5f, ty, 26 * ui, ColorA(t.col, a), true);
         ty -= 34 * ui;
     }
+    // ---- the radio station tuned in (CJ-040), top centre as in GTA 2 ----
+    float radioAlpha = 0;
+    if (const char* station = radio.Banner(radioAlpha)) {
+        float size = 40 * ui, y = (mission.type != MissionType::None ? 112 : 26) * ui;
+        float tw = MeasureUIText(station, size);
+        DrawUITextShadow(station, W * 0.5f - tw * 0.5f, y, size, ColorA({ 255, 170, 70, 255 }, radioAlpha));
+    }
     // ---- big centre message ----
     if (bigTimer > 0) {
         float a = Saturate(bigTimer / 0.8f) * Saturate((5.0f - bigTimer) * 4.0f + 1.0f);
@@ -206,7 +213,7 @@ void Game::DrawHUD() {
             "ON FOOT:  WASD move   Shift run   Mouse aim   LMB attack/shoot   R reload",
             "          1-6 / Q / wheel weapons   E / F / Enter  enter or hijack vehicle",
             "DRIVING:  W/S throttle & brake/reverse   A/D steer   Space handbrake",
-            "          E exit   H horn   L headlights   G siren (emergency vehicles)",
+            "          E exit   H horn   L headlights   G siren (emergency vehicles)   Q / wheel radio",
             "WORLD:    T fast-forward time   F3 debug   Esc/P pause   F1 hide help   Alt+F4 quit",
         };
         float lh = 22 * ui, bw = 0;

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Every positional sound leaned to the right, the interface sounds too, and sounds on the player's left came from the right: the game still gave raylib 6.0 the pan values of raylib 5 (CJ-040).
 - Vehicles pushed people: the player was carried along at any speed and hurt frame after frame, bodies slid ahead of cars and were knocked on again, and a person lying on the road was shoved instead of driven over. Every contact between a vehicle and a person is now one impact ([ADR-0011](docs/adr/0011-vehicle-person-impact.md), CJ-035).
 - People at the front or a corner of a bus or a truck were missed by the contact step for a frame or two (CJ-035).
 - People hit at speed lay down and died at once, then glided about 10 m along the road in the same pose. Civilians now fall as the player does, thrown back off their feet, through the whole flight, and tumble along the road to rest; the lying pose is the fall's last one (CJ-035 playtest).
@@ -29,6 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Car radio ([design](docs/design/radio.md), CJ-040): the first station, Asphalt Rock FM, 1980s American rock with its DJ and commercials, broadcasts live; the radio tunes in when the player gets into a car and shows the station's name; Q or the mouse wheel changes the station or turns it off. A programme of songs and talk without repeats close together, every clip at the same loudness. Four in ten cars in traffic play the radio, some loud; their music is heard muffled through the car body, quieter with distance, from their side, dropping in pitch as they pass, and duller still from inside a car. Stations and clips are data (`assets/data/radio.cfg`, `tools/radio_gain.py`).
+- [ADR-0014](docs/adr/0014-live-radio-stations.md) Live radio stations, one decoder each.
+- The radio scenes (`--scenario radio`, CJ-040): the programme simulated over many hours, radio cars passing the player and the player's radio across clip changes, recorded and measured by `tools/run_cj040.py` ([testing](docs/testing.md#radio-scenes)). Test scenes on the empty test floor no longer show the city's lane markings.
 - [ADR-0010](docs/adr/0010-no-fallback-content.md) No fallback content.
 - [ADR-0011](docs/adr/0011-vehicle-person-impact.md) A contact between a vehicle and a person is one impact.
 - [ADR-0012](docs/adr/0012-shorter-throws-for-play.md) Throws shortened for play.

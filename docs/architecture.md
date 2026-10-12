@@ -33,13 +33,14 @@ The `Game` class owns the world and the rules. Subsystems are plain modules with
 | Procedural art | `sprite_gen.*` | Signed-distance-field painter for the street furniture and the metro car, which no asset pack covers |
 | City | `city_map.*` | City generation, 3D structures, street furniture, spatial queries, traffic signals, minimap |
 | Vehicles | `vehicle.*`, `vehicle_types.*` | Vehicle classes, engine / brake / tyre model, vehicle drawing |
-| Measurements | `vehicle_tests.*`, `traffic_tests.*`, `traffic_clearance_tests.*`, `traffic_conflict_tests.*`, `traffic_incident_tests.*`, `traffic_turn_tests.*`, `person_hit_tests.*` | Isolated CJ-002 handling/collision, frozen CJ-016 recovery scenes, the nearby-box rejoin API regression, cooperative yielding and driver incident scenes, the CJ-020 turning scenes, the CJ-035 person-hit scenes of a scene file (`tests/`), enabled only by screenshot scenarios |
+| Measurements | `vehicle_tests.*`, `traffic_tests.*`, `traffic_clearance_tests.*`, `traffic_conflict_tests.*`, `traffic_incident_tests.*`, `traffic_turn_tests.*`, `person_hit_tests.*`, `radio_tests.*` | Isolated CJ-002 handling/collision, frozen CJ-016 recovery scenes, the nearby-box rejoin API regression, cooperative yielding and driver incident scenes, the CJ-020 turning scenes, the CJ-035 person-hit scenes and the CJ-040 radio scenes of a scene file (`tests/`), enabled only by screenshot scenarios |
 | Physics | `physics.*` | Vehicle collision detection and the contact solver |
 | Traffic | `traffic.*`, `traffic_turns.*`, `traffic_recovery.*`, `traffic_incidents.*` | Rail traffic, cooperative yielding and police AI; each class's turn paths through a junction; shared observations and budgeted physical recovery for knocked traffic; driver moods and collision incidents |
 | Pedestrians | `pedestrian.*` | Pedestrian AI, steering, the pedestrian grid and drawing |
 | Vehicles hitting people | `impact.*`, `assets/data/impacts.cfg` | One impact per vehicle-person contact (bump, launch, run-over), the injury, a body flying, landing and sliding, for civilians and the player alike ([design](design/impacts.md)) |
 | Rendering | `render.*`, `lighting.*`, `particles.*` | Camera, render passes, day/night cycle, particles, decals |
 | Audio | `audio.*` | Procedural sound synthesis, positional playback |
+| Radio | `radio.*`, `assets/data/radio.cfg` | Live radio stations, the player's car radio, the muffled music of passing cars on the audio thread ([design](design/radio.md), [ADR-0014](adr/0014-live-radio-stations.md)) |
 | Utilities | `math_utils.h` | Vectors, angles, oriented boxes, intersection tests, random numbers |
 
 Dependencies point downwards: `game` uses every other module; `traffic`, `physics` and `pedestrian` read the `Game`; `vehicle`, `city_map` and `render` do not know about `Game`.
@@ -75,6 +76,8 @@ The [CJ-030 specification](design/loading-screen-proposal.md) defines the accoun
 | 9 | Missions and pickups | `UpdateMission`, `UpdatePickups` |
 | 10 | Particles | `Particles::Update` |
 | 11 | Wanted-level cool-down, camera, audio | inline in `UpdatePlaying` |
+
+After the state's update, in every state, `Game::Update` updates the audio listener and then the radio (`RadioSystem::Update`): the stations' programmes, the player's radio and which radios in traffic are heard ([Radio](design/radio.md)).
 
 After `Wasted` or `Busted`, the world keeps running in slow motion (35 % speed) for four seconds before the player respawns.
 
@@ -119,7 +122,7 @@ Oriented boxes (`OBB`) have axis 0 = right and axis 1 = forward, matching how sp
 ## Global state and determinism
 
 - `gAssets` holds every loaded asset and is read-only after start-up.
-- `GRng()` is the single gameplay random number generator (xorshift, fixed seed).
+- `GRng()` is the single gameplay random number generator (xorshift, fixed seed). The radio has its own generator for its programmes and draws a car's radio from the car's serial, so it never moves `GRng()`.
 - The city is generated from a fixed seed, so every run has the same map.
 - In test mode (`--shot`) the frame time is fixed at 1/60 s, which makes runs comparable between code versions.
 - Isolated `traffic-recovery` cases retain the 1/60 s render clock while advancing AI and physics at either 1/60 s or 1/20 s. Their fixed seed, geometry and ownership checks are described in [Testing](testing.md#cj-016-recovery-measurements).

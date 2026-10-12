@@ -23,6 +23,7 @@ bool Game::Init(startup::Reporter* loading) {
     if (!map.BuildMinimap(loading)) return false;
     if (!renderer.Init(GetScreenWidth(), GetScreenHeight(), loading)) return false;
     if (!audio.Init(loading)) return false;
+    if (!radio.Init(audio.ok)) return false;
     if (!NewGame(loading)) return false;
     state = GameState::Title;
     startupInitialized = true;
@@ -700,9 +701,11 @@ void Game::LogPedStats() const {
     float cf = (float)std::max(1, cpuFrames), df = (float)std::max(1, cpuDrawFrames);
     TraceLog(LOG_INFO, "TIMING: CPU per frame - vehicles %.3f ms, pedestrians %.3f ms, world drawing %.3f ms",
              cpuVehicles * 1000.0 / cf, cpuPeds * 1000.0 / cf, cpuDraw * 1000.0 / df);
+    radio.LogSummary();
 }
 
 void Game::Unload() {
+    radio.Unload();                // its streams belong to the audio device
     audio.Unload();
     renderer.Unload();
     map.UnloadMinimap();
@@ -1034,6 +1037,7 @@ void Game::Update(float dt) {
         break;
     }
     audio.Update(cam.pos);
+    radio.Update(*this, dt);
     for (auto& t : toasts) t.time -= dt;
     toasts.erase(std::remove_if(toasts.begin(), toasts.end(), [](const Toast& t) { return t.time <= 0; }), toasts.end());
     bigTimer = std::max(0.0f, bigTimer - dt);
@@ -1446,6 +1450,8 @@ void Game::UpdatePlayerDriving(float dt) {
     if (IsKeyPressed(KEY_L)) headlightMode = (headlightMode + 1) % 3;
     v.headlights = headlightMode == 1 || (headlightMode == 0 && dn.night > 0.3f);
     if (IsKeyPressed(KEY_H)) audio.Play(Sfx::Horn, v.pos, 0.9f);
+    float wheel = GetMouseWheelMove();
+    if (IsKeyPressed(KEY_Q) || wheel != 0) radio.Tune(wheel < 0 ? -1 : 1);   // stations, then off (CJ-040), as weapons on foot
     if (v.S().emergency() && IsKeyPressed(KEY_G)) v.siren = !v.siren;
     if (IsKeyPressed(KEY_E) || IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_F)) { ExitVehicle(); return; }
     player.pos = v.pos;
@@ -2230,6 +2236,6 @@ void Game::Draw() {
     switch (state) {
         case GameState::Title: DrawTitle(); break;
         case GameState::Paused: DrawHUD(); DrawPause(); break;
-        default: DrawHUD(); break;
+        default: if (!testView) DrawHUD(); break;
     }
 }

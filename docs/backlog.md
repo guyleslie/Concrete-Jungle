@@ -17,7 +17,7 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07, CJ-032 to CJ-037 were added on 2026-10-11, the CJ-035 specification was agreed on 2026-10-11 and CJ-039 was added on 2026-10-12:
+Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07, CJ-032 to CJ-037 were added on 2026-10-11, the CJ-035 specification was agreed on 2026-10-11, CJ-039 was added on 2026-10-12 and CJ-040 was implemented on 2026-10-12:
 
 1. **[CJ-035](#cj-035-vehicles-hitting-people) Vehicles hitting people** — implemented on 2026-10-11, awaiting playtest: every contact is one impact, never a push; injuries from published measurements, throws an eighth as far as real ones for play (second playtest, 2026-10-12); vehicles drive over people lying on the road; the player falls, lies and gets up. Its isolated scene test passes every check.
 2. **[CJ-038](#cj-038-pedestrian-attention-and-evasion) Pedestrian attention and evasion** — test of 2026-10-11: nearly everyone escapes a car driven into a crowd; not everyone notices it, or can get away, in real life.
@@ -30,6 +30,7 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 9. ~~[CJ-011](#cj-011-relaxed-player-posture) Relaxed player posture~~ — done on 2026-10-11: the user playtested and accepted the 3D player.
 10. **[CJ-031](#cj-031-pedestrian-blocking-and-contact-realism) Pedestrian blocking and contact realism** — playtest of 2026-10-09: blocked people step on the spot, and people bumping into each other slide; specification agreed, next the before run.
 11. **[CJ-039](#cj-039-varied-falls-and-lying-poses) Varied falls and lying poses** — the user's request of 2026-10-12: falls, being hit and rolling on the ground from Mixamo, and people coming to rest in different poses.
+12. **[CJ-040](#cj-040-car-radio) Car radio** — implemented on 2026-10-12, awaiting playtest: the first station, Asphalt Rock FM, live; passing cars' music muffled by the car body. Its radio scenes pass every check; the station still needs two songs and four talk clips.
 
 CJ-010 (pedestrians), CJ-013 (full screen) and CJ-033 (code review fixes) await user playtest acceptance.
 
@@ -64,6 +65,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-005](#cj-005-data-driven-street-furniture) | Data-driven street furniture | Medium | Open |
 | [CJ-037](#cj-037-audio-randomness-apart-from-gameplay) | Audio randomness apart from gameplay | Medium | Open |
 | [CJ-039](#cj-039-varied-falls-and-lying-poses) | Varied falls and lying poses | Medium | Open |
+| [CJ-040](#cj-040-car-radio) | Car radio | High | Implemented, awaiting playtest |
 | [CJ-006](#cj-006-collision-polish) | Collision polish | Low | Open |
 | [CJ-007](#cj-007-large-vehicle-recovery) | Large-vehicle recovery after a crash | Low | Open |
 | [CJ-008](#cj-008-test-autopilot-improvements) | Test autopilot improvements | Low | Open |
@@ -179,6 +181,8 @@ Remaining: the playtest.
 - **Sirens:** police, ambulance and fire sirens with wail, yelp and phaser modes, switching between slow and fast, and stopping and starting like real ones.
 - **Effects:** varied recorded sounds for deaths and screams, punches, impacts by severity and material, tyre screech and braking, glass, explosions, footsteps on different surfaces.
 - Recorded sounds from sources that allow redistribution (for example CC0 libraries) instead of synthesis wherever synthesis sounds artificial; several variants per sound, picked at random.
+
+**Playtest (2026-10-12, during [CJ-040](#cj-040-car-radio)).** Sitting in a car with the radio on, the user hears every sound outside, crashes, shots, horns, as loud as on foot. In a closed car while driving, the sounds outside should come through the body: quieter and duller, roughly simulated. The radio already does this for a radio outside (the `BODY` of `assets/data/radio.cfg`: 25 dB and a 300 Hz low-pass per body, [Radio](design/radio.md#how-a-passing-car-sounds)); the same body is to be applied to every sound outside while the player sits in a car, the player's own engine, horn and radio excepted.
 
 **Acceptance criteria.** A sound list with sources and licences agreed before implementation; at least three variants for each frequent sound; horn and siren types configurable in the data files; a test scenario that logs which sounds played at which volume and pan; playtested and accepted; [Audio](design/audio.md) and [CREDITS](../CREDITS.md) updated.
 
@@ -509,6 +513,12 @@ Then the user's playtest.
 
 The testing guide gets an arena section with the test file format and the rule: features are tested in the arena; the real city is for integration and FPS runs and the user's playtest.
 
+**The user's requests of 2026-10-12 (watching the [CJ-040](#cj-040-car-radio) radio scenes).**
+
+- The test floor is to show only what the test needs: the empty asphalt showed the city's lane markings, the HUD's map and other things the test did not use. The radio scenes now draw the world without the HUD and with their own panel, and the empty test floor draws no markings for every fixture; the arena is to make this the rule for every test.
+- The checks must be understandable while they run: what the scene tests, what is expected, and the measured value beside it, so that the test situations can be reviewed quickly and well.
+- After a change, only the tests the change can affect are run, enough to verify its quality, correctness and implementation; scenarios the change cannot have touched are not run again.
+
 ### CJ-033 Code review fixes
 
 - **Priority:** High
@@ -658,6 +668,41 @@ Then the user's playtest.
 **Problem (user request, 2026-10-12).** Since [CJ-035](#cj-035-vehicles-hitting-people) everyone knocked down falls the same way, as the Universal Animation Library clip `Hit_Knockback` does, tumbles along the road by turning the whole sprite, and comes to rest in its last pose: on the back, the head away from the vehicle. The dead always lie in that one pose. The user would like falls and hits by a vehicle, and rolling on the ground, from Mixamo animations, and people coming to rest in different poses: on the back, face down, on the side.
 
 **Approach (to agree).** Mixamo clips for falling, being hit by a vehicle and rolling on the ground, downloaded by the user (In Place, 30 fps, without skin) to `build/art-sources/mixamo/`, as for the [CJ-011](#cj-011-relaxed-player-posture) strafes, and retargeted by `tools/cj004/retarget_ual.py`. The civilian and player atlases get several falls and lying poses; the game picks one by the impact (a fall, a throw, from the front, the side or behind) and at random, and a body on the ground rolls with frames instead of turning the sprite. The clips, frame counts, the atlas layout, the data records and measurable criteria are agreed at the start of the session; the poses are checked from the top, the front and the side, as for every pose.
+
+### CJ-040 Car radio
+
+- **Priority:** High
+- **Status:** Implemented on 2026-10-12, awaiting playtest
+
+**Request (2026-10-12).** The user made the first radio station, 1980s American rock, with Suno. Getting into a car, the radio plays; later the player can switch between stations of different kinds (rock, pop, house, rap and so on). Between the songs comes the DJ's talk ("habla babla"), varied, with little repetition: never the same song twice in a row, never talk after talk. A car passing close by plays its music as from a real closed car: louder and quieter with the distance, with a completely different tone. The files are to be renamed sensibly.
+
+**Specification (agreed with the user, 2026-10-12).** The user chose the name Asphalt Rock FM, a live broadcast (the radio joins where the station is), the radio stopping when the player gets out, and a separate worktree while another session works on CJ-038.
+
+1. The radio plays when the player gets into a car and shows the station's name for 3 s; Q or the mouse wheel steps through the stations and off; the pause menu pauses the broadcast.
+2. Stations broadcast live; every car on a station plays the same moment.
+3. Programme: at most one talk clip between two songs, never two in a row; a song comes back only after 5 others, a clip after 3; a clip after about 65 % of the songs; its own random generator.
+4. Every clip at the same loudness by a gain in the data file, without re-encoding.
+5. About 40 % of traffic plays a radio, some loud, never police, ambulances, fire engines or motorbikes; heard through the car body (the bass through, 1 kHz and up at least 20 dB duller), 6 dB less per doubling of the distance, out to about 11 m (normal) and 45 m (loud), from its side, with the travel time and so the Doppler shift; through two bodies from inside a car; the four nearest per station; no occlusion by buildings.
+6. Clips in `assets/radio/<station>/`, renamed by kind and number; every value in `assets/data/radio.cfg`.
+7. The pan of every sound fixed for raylib 6.0 (found during the work: every sound leaned right, and left and right were swapped).
+
+**Acceptance criteria and results (2026-10-12).** Measured by the [radio scenes](testing.md#radio-scenes).
+
+| # | Criterion | Target | Result |
+|---|---|---|---|
+| 1 | Programme over 24 h, ten seeds | No breach of its rules; a clip after 55–75 % of the songs; every clip played | 7,951 clips: no two clips in a row, songs back after 5 others at least, clips after 3, 60.5–65.5 %, every clip played |
+| 2 | Loudness | Every clip −16 ±1 LUFS | Files −16 ±0.05 after their gains (`tools/radio_gain.py --check`); talk clips in the mix −16.0 |
+| 3 | Change of clip | At most 50 ms of silence | 0–16 ms |
+| 4 | Passing cars | Level within 1.5 dB of the model; 1–4 kHz at least 20 dB duller than the player's radio, at least 8 dB more from a car; Doppler within 0.5 %; silent at 11 ±1 m and 45 ±3 m; the right side; no clicks | Level 0.35–0.56 dB (95 %); 26–32 dB duller, 25 dB more from a car; Doppler within 0.24 %; silent at 10.8–11.2 m and 42.1–42.7 m against 10.5 and 42.0 m where the model falls below the measured −60 dB; the right side always; no clicks |
+| 5 | Gameplay unchanged | The metric lines of `foot`, `drive`, `crash`, `rampage` identical | Identical |
+| 6 | Main-thread cost in `drive` | At most 0.2 ms per frame | 0.075 ms; 0.07–0.09 % of a core on the audio thread |
+| 7 | The user's listening and playtest | Accepted | Open |
+
+The design is in [Radio](design/radio.md) and [ADR-0014](adr/0014-live-radio-stations.md); the clips and their provenance in the [station's README](../assets/radio/asphalt_rock/README.md).
+
+**Content of a station (the user's requirement, 2026-10-12).** Every station needs ten songs and ten talk clips that, mixed and ordered well, sound like a real station of its kind. The songs are instrumental, without vocals; the talk between them is not meaningful speech but American-sounding gibberish. Asphalt Rock FM has eight songs and six talk clips (three DJ, three commercials): two songs and four talk clips are still to come. With ten of each, its `PROGRAMME` gaps can be raised to about 6 and 5. The Suno plan the clips were made with is still to be recorded in [CREDITS](../CREDITS.md#cj-040-asphalt-rock-fm).
+
+**Found during the work.** Saving a screenshot stalls the main thread for up to half a second, and a clip change that falls into it waits as long (491 ms in a run with `--every`, 0–16 ms without). The radio scenes are run without screenshots.
 
 ## Done
 

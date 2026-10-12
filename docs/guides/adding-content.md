@@ -1,6 +1,6 @@
 # Adding content
 
-Vehicles, people, weapons, foliage and sounds are data-driven: you add them by dropping files into `assets/` and adding a line to a data file, without changing code (see [ADR-0002](../adr/0002-data-driven-content.md)).
+Vehicles, people, weapons, foliage, sounds and radio stations are data-driven: you add them by dropping files into `assets/` and adding a line to a data file, without changing code (see [ADR-0002](../adr/0002-data-driven-content.md)).
 
 ## Contents
 
@@ -14,6 +14,7 @@ Vehicles, people, weapons, foliage and sounds are data-driven: you add them by d
 - [Foliage](#foliage)
 - [Loading screen](#loading-screen)
 - [Sounds](#sounds)
+- [Radio stations](#radio-stations)
 - [Street furniture](#street-furniture)
 - [Art and licence requirements](#art-and-licence-requirements)
 
@@ -315,6 +316,42 @@ Adding content to existing vehicle, character or foliage definitions automatical
 ## Sounds
 
 Put a WAV file named after the sound into `assets/sounds/` to replace the synthesised version. The names are listed in [Audio](../design/audio.md#sound-types); `shout1.wav`–`shout3.wav` replace the three driver shouts.
+
+## Radio stations
+
+File: `assets/data/radio.cfg`; its header documents every record. How the stations, the programme and the sound of a passing car work is in [Radio](../design/radio.md).
+
+### What a station needs
+
+The user's requirements (2026-10-12):
+
+| Content | Requirement |
+|---|---|
+| Songs | Ten instrumental songs of the station's kind, without vocals |
+| Talk clips | Ten clips between the songs, DJ talk and commercials, of American-sounding gibberish rather than meaningful speech, in the voice and energy of the station's kind |
+| Sound | The programme mixes and orders them so that the station sounds like a real one of its kind |
+
+The clips are MP3 (or any format raylib streams: OGG, WAV, QOA). They are used as they are, never re-encoded; keep only the audio stream and drop cover art and tags, for example with `ffmpeg -i in.mp3 -map 0:a -c:a copy -map_metadata -1 -id3v2_version 0 out.mp3`.
+
+### Adding a station or clips
+
+1. Put the clips into `assets/radio/<folder>/`, named by kind and number: `song_01.mp3`, `dj_01.mp3`, `ad_01.mp3`.
+2. Add a `STATION <folder> <name>` record, its `PROGRAMME` and one `SONG`, `DJ` or `AD` record per clip, with a gain of `+0.0`:
+
+   ```
+   STATION   asphalt_rock Asphalt Rock FM
+   PROGRAMME 0.65 5 3
+   SONG song_01.mp3 +0.0
+   DJ   dj_01.mp3   +0.0
+   AD   ad_01.mp3   +0.0
+   ```
+
+3. Run `python tools/radio_gain.py` (it needs ffmpeg): it measures every clip's loudness and writes the gain that brings it to the `LOUDNESS` target. `--check` only reports.
+4. Raise the `PROGRAMME` gaps with the number of clips: each must stay below the number of songs or clips. With ten of each, about 6 songs and 5 clips.
+5. Run the [radio scenes](../testing.md#radio-scenes): `python tools/run_cj040.py`.
+6. Record where the clips come from and their licence in [CREDITS.md](../../CREDITS.md).
+
+Up to eight stations are supported. A missing clip or a bad record stops loading ([ADR-0010](../adr/0010-no-fallback-content.md)).
 
 ## Street furniture
 

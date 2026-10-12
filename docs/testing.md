@@ -14,6 +14,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Driver incident fixture](#driver-incident-fixture)
 - [Turning fixture](#turning-fixture)
 - [Person-hit scenes](#person-hit-scenes)
+- [Radio scenes](#radio-scenes)
 - [Startup loading checks](#startup-loading-checks)
 - [Workflow](#workflow)
 
@@ -30,7 +31,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 | `--every <n>` | Also saves `<file>_<frame>.png` every *n* frames |
 | `--scenario <name>` | The scenario to set up (default `foot`) |
 | `--vehicle <Class>` | Selects a class for the isolated `handling` or `traffic-recovery` scenario (default `Taxi`; recovery supports `Taxi`, `Bus`, `BoxTruck`) |
-| `--test <file>` | The scene file of the `person-hits` scenario (default `tests/person-hits.cfg`) |
+| `--test <file>` | The scene file of the `person-hits` or `radio` scenario (default `tests/person-hits.cfg`, `tests/radio.cfg`) |
 | `--uncapped` | Disables vsync in screenshot mode; simulation still advances exactly 1/60 s per rendered frame |
 
 Screenshot paths must be **relative** to the working directory: raylib prefixes the working directory to the file name. The window opens while the test runs. Keep test output in `build/`, which is not version-controlled. On foot, test runs ignore the mouse cursor for the camera look-ahead (it decides what is on screen and so which cars and people are recycled); before 2026-10-06 `foot`, `day` and `brawl` counts depended on where the cursor rested.
@@ -61,6 +62,7 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 | `traffic-clearance` | Taxi rejoin with separated nearby building/parked-car boxes, plus actual-overlap, clearance-only-contact and forward-blockage API guards at 60 Hz and 20 Hz; 420 frames |
 | `traffic-turns` | Isolated CJ-020 turning fixture: every traffic class turns right, turns left and goes straight through an empty junction at 60 Hz and 20 Hz; see [Turning fixture](#turning-fixture) |
 | `person-hits` | Isolated CJ-035 scenes of vehicles meeting people, read from a scene file; see [Person-hit scenes](#person-hit-scenes) |
+| `radio` | Isolated CJ-040 radio scenes: the programme, radio cars passing the player, the player's radio across clip changes, read from a scene file; see [Radio scenes](#radio-scenes) |
 
 ## Startup loading checks
 
@@ -347,6 +349,38 @@ Every person of every scene is checked for no pushing and no passing through; th
 Vehicles that kept on without braking drove over the person they hit at 30 km/h (17 of 17 died) and mostly at 60 km/h (14 of 17); at 90 km/h a taxi passed under the body (the `vault-art` scene).
 
 In the city (1,500 frames, `rampage` 3,600), after: traffic hit nobody in `foot` and `day`; in `rampage` 77 % of the 102 people in the car's path escaped (80 % in an earlier run of the same build; 85 % before); nobody was down too long and sliding stayed at 0.1 %. The machine ran at about 30 FPS that afternoon, both builds alike, so the pedestrian CPU time was compared alternating the two builds in `day`: 0.513 and 0.521 ms before, 0.524 and 0.532 ms after (+2 %); the vehicle update 0.38 → 0.42 ms, now that every vehicle also meets the player in its contact step. In `brawl` and `crash`, traffic hit 2 and 10 people against 16 and 13 before: the old rule counted the same person hit again and again.
+
+## Radio scenes
+
+The radio scenes measure the car radio ([CJ-040](backlog.md#cj-040-car-radio), [Radio](design/radio.md)) on the empty test floor: no city, traffic, people or HUD, at 13:00. Sound plays in real time, so these scenes do too: the cars move by the wall clock rather than the fixed 1/60 s step, and the run is not bit-for-bit reproducible. It needs a sound device. The scenes are data, [`tests/radio.cfg`](../tests/radio.cfg), whose header is the reference for the format.
+
+```bash
+python tools/run_cj040.py
+```
+
+The tool runs `--scenario radio` (about 4 minutes, log in `build/shots/radio.log`) and then measures the recordings; `--analyse` measures the last run again. Do not add `--every`: saving a screenshot stalls the main thread for up to half a second, and the next clip starts only when the main thread runs.
+
+| Scene | What runs | Checked |
+|---|---|---|
+| `SCHEDULE` | Every station's programme simulated for 24 h with ten seeds, from the clip lengths | By the fixture: no two clips in a row, no song back within its gap of other songs, no clip within its gap, a clip after 55–75 % of the songs, every clip played |
+| `PASS` | A taxi with its radio on drives past the player on foot or sitting in a car with its radio off, at a speed and a side distance, from beyond hearing to beyond hearing | By `run_cj040.py`, from the final mix against the station's own signal delayed by the travel time; see below |
+| `INCAR` | The player in a car tuned to the station, which joins a song 6 s before its end, then plays a talk clip and the next song | By the fixture: each change of clip leaves at most 50 ms of silence, counted in device frames; by `run_cj040.py`: the talk clip's loudness in the mix |
+
+The fixture writes `build/radio/<scene>.wav` (the mix, to listen to), `<scene>_data.wav` (float: the mix left and right, and the station's own signal) and, for a passing car, `<scene>.csv` (per frame: distance, the radio's level, its gain, travel time and the second body). The recording is taken before the master volume; the pan law of raylib's mixer (0.6875 per channel in the centre) is taken out.
+
+| Check (`run_cj040.py`) | Criterion |
+|---|---|
+| `level` | The mix's 40–150 Hz band against the station's, with the station's band scaled by the Doppler factor, compared with the radio.cfg model's gain followed with the processor's 30 ms smoothing, in windows where the model hears the car and its level changes by less than 1 dB in 100 ms: 95 % within 1.5 dB |
+| `tone` | (1–4 kHz) / (40–150 Hz) of the mix against the station's: at least 20 dB lower on foot; from inside a car at least 8 dB lower than the same car heard on foot |
+| `doppler` | The delay line's playback rate, on the audio clock, against 1 − (dd/dt)/c of the car 50 ms earlier, where it changes by less than 0.1 % over 0.3 s: within 0.5 % |
+| `range` | The farthest distance at which the mix is above −60 dB of the player's own radio, against the distance at which the model's gain falls to that level: within 1 m (normal radio) or 3 m (loud); silence where the model never hears the car |
+| `direction` | More than 3 m to the side, the car's side is the louder channel in 99 % of the windows |
+| `click` | The largest 5 ms peak of the mix's second difference over its level, against the scene's median: at most 20 times |
+| `lufs` | The complete talk clip in the mix, without the in-car volume and the pan law: the `LOUDNESS` target ±1 LU |
+
+**Result (2026-10-12).** All 17 fixture checks and 62 measured checks pass, at 44.1 and at 48 kHz. Programme: 7,951 clips over 240 h, no two clips in a row, songs back after at least 5 others (16.7 minutes at the soonest, 23.8 on average), clips after at least 3, a clip after 60.5–65.5 % of the songs, every clip played. Changes of clip 0–16 ms. Talk clips −16.0 LUFS. Passing cars: level within 0.35–0.56 dB (95 %); 26–32 dB duller than the player's radio on foot, 25 dB duller again from inside a car; Doppler within 0.04–0.24 %, a drop of 0.82, 1.41 and 2.25 semitones at 30, 50 and 80 km/h; silent from 10.8–11.2 m (normal) and 42.1–42.7 m (loud) on, where the model says 10.5 m and 42.0 m; from inside a car a loud radio 2 m away is heard to 2.5 m, one 4 m away and a normal one not at all; direction right in every window; no clicks (at most 14.9).
+
+In the city the radio leaves the simulation as it was: the metric lines of `foot`, `drive`, `crash` (1,500 frames) and `rampage` (3,600) are identical with and without it. Its `RADIO` line reports 0.072–0.075 ms of main-thread time per frame and 0.07–0.09 % of a core on the audio thread.
 
 ## Workflow
 

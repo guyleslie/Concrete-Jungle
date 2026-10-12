@@ -84,6 +84,7 @@ Other build options (debug builds, CMake, Linux and macOS), packaging a release 
 | H | Horn |
 | L | Headlights: auto / on / off |
 | G | Siren (emergency vehicles) |
+| Q / mouse wheel | Radio: next or previous station, then off |
 
 ### General
 

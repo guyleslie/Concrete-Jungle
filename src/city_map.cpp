@@ -983,6 +983,7 @@ void CityMap::DrawGround(Rectangle view, float t) const {
 }
 
 void CityMap::DrawMarkings(Rectangle view) const {
+    if (testGround) return;                                      // the test floor is plain: no city lanes or crossings
     SetDepthTest(false);
     const float T = (float)TILE, H = 0.2f;
     const Color white = { 235, 235, 228, 215 }, yellow = { 235, 190, 60, 220 };

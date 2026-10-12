@@ -35,13 +35,14 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [Vehicles hitting people](design/impacts.md) | One impact per contact, throws, injuries and run-overs from published measurements, falling, lying and getting up |
 | [Gameplay](design/gameplay.md) | Player, weapons, wanted level, police response, missions, pickups |
 | [Audio](design/audio.md) | Procedural sound synthesis and file overrides |
+| [Radio](design/radio.md) | Live radio stations, the programme, the player's radio and the muffled music of passing cars |
 
 ## Guides
 
 | Document | Task |
 |---|---|
 | [Building](guides/building.md) | Toolchain setup, build options, troubleshooting |
-| [Adding content](guides/adding-content.md) | New vehicles, characters, weapons, foliage and sounds without code changes |
+| [Adding content](guides/adding-content.md) | New vehicles, characters, weapons, foliage, sounds and radio stations without code changes |
 
 ## Decision records
 

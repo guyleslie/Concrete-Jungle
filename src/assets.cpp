@@ -3,6 +3,7 @@
 // =====================================================================================
 #include "assets.h"
 #include "impact.h"
+#include "radio.h"
 #include "math_utils.h"
 #include <cstdio>
 #include <cstring>
@@ -515,6 +516,8 @@ static void LoadVehicles(Assets& A) {
     { startup::AtomicSpan span(assetReporter, "data", "Vehicle classes"); LoadVehicleClasses(records); }
     std::string impactError;                       // how vehicles meet people (CJ-035)
     AssetValidate(LoadImpacts(AssetData("assets/data/impacts.cfg"), impactError), impactError);
+    std::string radioError;                        // car radio stations and their clips (CJ-040)
+    AssetValidate(LoadRadio(AssetData("assets/data/radio.cfg"), radioError), radioError);
     A.byClass.assign(VehicleClasses().size(), {});
     char path[256];
     const float hues[3] = { 130, 215, 0 };

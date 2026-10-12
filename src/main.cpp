@@ -14,6 +14,7 @@
 //    pedestrian.*      pedestrian AI & drawing
 //    particles.*       smoke, fire, debris, skid marks, decals, flashes
 //    audio.*           procedural sound
+//    radio.*           car radio: live stations, passing cars heard through the body
 //    impact.*          vehicles hitting people
 //    game.* / hud.cpp  rules, player, weapons, wanted level, missions, HUD
 // =====================================================================================
@@ -28,6 +29,7 @@
 #include "traffic_incident_tests.h"
 #include "traffic_turn_tests.h"
 #include "person_hit_tests.h"
+#include "radio_tests.h"
 #include "traffic_turns.h"
 #include "loading_screen.h"
 #include "loading_tests.h"
@@ -105,7 +107,7 @@ int main(int argc, char** argv) {
     const char* shot = nullptr; const char* scenario = "foot"; int shotFrames = 180, every = 0;
     bool scenarioGiven = false;          // --scenario without --shot: play that scenario by hand
     const char* testVehicle = "Taxi";
-    const char* testFile = "tests/person-hits.cfg";   // --scenario person-hits
+    const char* testFile = "tests/person-hits.cfg";   // --scenario person-hits (radio: tests/radio.cfg)
     bool uncapped = false;
     const char* loadingTest = nullptr;
     const char* loadingCapture = nullptr;
@@ -303,6 +305,8 @@ int main(int argc, char** argv) {
     TrafficIncidentTests incidentTests;
     TrafficTurnTests turnTests;
     PersonHitTests hitTests;
+    RadioTests radioTests;
+    if (shot) game.radio.seed = 0x0CA40040u;      // the same radio programme in every test run (CJ-040)
     bool vehicleFixture = shot && (TextIsEqual(scenario, "handling") || TextIsEqual(scenario, "crash-handling"));
     bool trafficFixture = shot && TextIsEqual(scenario, "traffic-recovery");
     bool clearanceFixture = shot && TextIsEqual(scenario, "traffic-clearance");
@@ -310,11 +314,14 @@ int main(int argc, char** argv) {
     bool incidentFixture = shot && TextIsEqual(scenario, "traffic-incident");
     bool turnFixture = shot && TextIsEqual(scenario, "traffic-turns");
     bool hitFixture = shot && TextIsEqual(scenario, "person-hits");
-    bool fixture = vehicleFixture || trafficFixture || clearanceFixture || conflictFixture || incidentFixture || turnFixture || hitFixture;
+    bool radioFixture = shot && TextIsEqual(scenario, "radio");
+    bool fixture = vehicleFixture || trafficFixture || clearanceFixture || conflictFixture || incidentFixture || turnFixture || hitFixture ||
+                   radioFixture;
     if ((vehicleFixture && !tests.Init(game, scenario, testVehicle)) || (trafficFixture && !trafficTests.Init(game, testVehicle)) ||
         (clearanceFixture && !clearanceTests.Init(game)) || (conflictFixture && !conflictTests.Init(game)) ||
         (incidentFixture && !incidentTests.Init(game)) || (turnFixture && !turnTests.Init(game)) ||
-        (hitFixture && !hitTests.Init(game, testFile))) {
+        (hitFixture && !hitTests.Init(game, testFile)) ||
+        (radioFixture && !radioTests.Init(game, TextIsEqual(testFile, "tests/person-hits.cfg") ? "tests/radio.cfg" : testFile))) {
         game.Unload(); gAssets.Unload(); loadingScreen.Unload(); CloseWindow(); return 2;
     }
     if (shot && !fixture) { game.DebugScenario(scenario); game.debugContacts = true; }
@@ -333,6 +340,7 @@ int main(int argc, char** argv) {
         else if (incidentFixture) incidentTests.Update(game, dt);
         else if (turnFixture) turnTests.Update(game, dt);
         else if (hitFixture) hitTests.Update(game, dt);
+        else if (radioFixture) radioTests.Update(game, dt);
         else game.Update(dt);
         BeginDrawing();
         ClearBackground(BLACK);
@@ -343,6 +351,7 @@ int main(int argc, char** argv) {
         else if (incidentFixture) incidentTests.Draw(game);
         else if (turnFixture) turnTests.Draw(game);
         else if (hitFixture) hitTests.Draw(game);
+        else if (radioFixture) radioTests.Draw(game);
         else game.Draw();
         if (loadingOverlay) {
             double fade = (GetTime() - readyTime) / 0.25;
@@ -352,7 +361,7 @@ int main(int argc, char** argv) {
         }
         bool lastShot = shot && (++frame >= shotFrames || (conflictFixture && conflictTests.Finished()) ||
                                 (incidentFixture && incidentTests.Finished()) || (turnFixture && turnTests.Finished()) ||
-                                (hitFixture && hitTests.Finished()));
+                                (hitFixture && hitTests.Finished()) || (radioFixture && radioTests.Finished()));
         if (lastShot) {
             rlDrawRenderBatchActive(); TakeScreenshot(shot);
             if (vehicleFixture) tests.Log();
@@ -362,6 +371,7 @@ int main(int argc, char** argv) {
             else if (incidentFixture) incidentTests.Log();
             else if (turnFixture) turnTests.Log();
             else if (hitFixture) hitTests.Log();
+            else if (radioFixture) { radioTests.Log(); game.radio.LogSummary(); }
             else { game.LogTrafficStats(); game.LogPhysStats(); game.LogPedStats(); }
         }
         else if (shot && every > 0 && frame % every == 0) {
@@ -403,5 +413,6 @@ int main(int argc, char** argv) {
     if (incidentFixture) return (!incidentTests.Finished() || incidentTests.Failed()) ? 1 : 0;
     if (turnFixture) return (!turnTests.Finished() || turnTests.Failed()) ? 1 : 0;
     if (hitFixture) return (!hitTests.Finished() || hitTests.Failed()) ? 1 : 0;
+    if (radioFixture) return (!radioTests.Finished() || radioTests.Failed()) ? 1 : 0;
     return 0;
 }

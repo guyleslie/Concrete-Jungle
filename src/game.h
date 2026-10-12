@@ -14,6 +14,7 @@
 #include "lighting.h"
 #include "render.h"
 #include "audio.h"
+#include "radio.h"
 #include "physics.h"
 #include "startup_input.h"
 #include <vector>
@@ -98,6 +99,7 @@ public:
     CameraRig               cam;
     Renderer                renderer;
     AudioSystem             audio;
+    RadioSystem             radio;          // car radio stations (CJ-040)
     PlayerState             player;
 
     // ---- rules / progress ----
@@ -128,6 +130,7 @@ public:
     int  aiContacts = 0;
     int  jolts = 0, joltRail = 0, joltKnocked = 0, joltPolice = 0;
     bool debugContacts = false;
+    bool testView = false;          // fixtures: draw the world only, without the HUD and its map
     bool debugOverview = false;                    // AI-vs-AI collision count (diagnostics)
     void LogTrafficStats() const;
     // --shot autopilots: 0 cruise, 1 scripted crash course, 2 demolition derby, 3 sidewalk rampage,
