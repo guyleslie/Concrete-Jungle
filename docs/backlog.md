@@ -126,6 +126,8 @@ Remaining: the playtest.
 
 **Problem.** Playtesting shows the vehicles are not controllable enough; the handling maths is not right. The physics is far from perfect: collisions need much closer attention, the vehicle types must handle clearly differently, and the game needs a reasonably realistic physics engine so that driving and every other vehicle action feel real.
 
+**Playtest (2026-10-12).** The user finds the cars hard to turn and hard to control. Driving forwards feels right, but reversing seems inverted in some situations. GTA 1 and 2 felt much better to drive, so how they handled steering, reversing included, is to be studied before the model is changed. One likely cause of the inversion: the steering sense follows the car's actual motion along its axis (`dir`, `clamp(vF / 30, −1, 1)` in `VehicleForces`), not the key held. A car still rolling forwards while the player holds reverse steers as if driving forwards; a car pushed backwards while the player accelerates steers as if reversing; and near a standstill the steering fades out. The sense changes at a moment the player cannot see.
+
 **City collision finding (2026-10-03).** The matching `rampage` baseline recorded 4 deep-overlap frames and a maximum penetration of 5.4 px. Keep this visible alongside the isolated collision failures; a zero process exit status is not proof of collision acceptance.
 
 **Current state.** An arcade model (`VehicleForces` in `src/vehicle.cpp`, described in [Vehicles › Handling model](design/vehicles.md#handling-model)): steering sets a target yaw rate, and sideways velocity decays exponentially. The class values in `vehicles.cfg` are 4–9 times real-world figures (for example 90 m/s² braking). The contact solver ([ADR-0005](adr/0005-vehicle-contact-solver.md)) is sound but was tuned for the arcade model.
@@ -149,6 +151,8 @@ Remaining: the playtest.
 **Problem.** When and how a vehicle breaks down is not convincing yet.
 
 **Current state.** A single health value per vehicle. Crash damage follows the impact's delta-V (`DV_*` constants in `src/game.cpp`); the engine smokes below 50 % and 25 % health, catches fire at zero and explodes 3–5 s later. There is no visible deformation, and the delta-V balance has not been playtested. See [Vehicles › Damage, fire and explosions](design/vehicles.md#damage-fire-and-explosions).
+
+**Playtest (2026-10-12).** The user found that vehicles explode too soon. Each crash costs 0.13 health per px/s of delta-V above 90 px/s (20 km/h): a delta-V of 60 km/h, a head-on hit on a wall at about that speed, costs a Stinger 23 of its 100 points, and 100 km/h costs 46. Four such hits at 60 km/h, or two at 100 km/h, set it on fire, and every vehicle on fire explodes 3–5 s later. The rules table of this item is to say how much a vehicle takes before it is disabled, and when, if ever, it catches fire and explodes, from real crash data and for play.
 
 **Ideas.** Separate subsystems (engine, body, tyres, lights) with their own effects — power loss, pulling to one side, flat tyres, broken headlights; visible damage on the sprite; clear rules for fire and explosion; driver injury tuning.
 
