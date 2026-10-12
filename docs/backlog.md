@@ -312,7 +312,13 @@ The player has no jog: the walk shows below 4 m/s and the run from 4 m/s. The wa
 
 **Problem.** Street furniture sizes, collision shapes and breakaway materials are defined in code (`Dim` and `ApplyMaterial` in `src/city_map.cpp`), unlike every other kind of content ([ADR-0002](adr/0002-data-driven-content.md)).
 
-**Acceptance criteria.** A `props.cfg` (or similar) defines each prop's size, collision shape, bullet breakability, strength and loose mass; the city generator reads it; [Adding content](guides/adding-content.md#street-furniture) documents it.
+**Playtest (2026-10-12).** The user asked for street furniture that is placed and breaks as in real life:
+
+- **Placement.** There are too many fire hydrants on the sidewalks. Today each free kerb tile gets one at random (6 %), about one or two per block, wherever they fall. Every kind of furniture is to be placed as in a real city: where it stands, and how far apart, from real street design; the figures are to be researched when the item is specified.
+- **Breaking by speed.** A vehicle that runs into a hydrant slowly must not break it; one that drives over it faster shears it off, and water sprays from it. Today it breaks at the impulse of a 1 t car at about 20 km/h (`strength` 90), and a broken hydrant gushes water already. The thresholds of every breakable prop are to be checked against real breakaway designs and measured in a test.
+- **Remains.** Shrubs and other props that can be run down need a second, broken graphic: today a broken prop or shrub disappears, leaving only debris that fades (only knocked-over poles stay). See [CJ-006](#cj-006-collision-polish).
+
+**Acceptance criteria.** A `props.cfg` (or similar) defines each prop's size, collision shape, bullet breakability, strength and loose mass, its placement rules and its broken graphic; the city generator reads it; [Adding content](guides/adding-content.md#street-furniture) documents it. To be agreed: placement densities from real references; break thresholds measured at set speeds.
 
 ### CJ-006 Collision polish
 
@@ -325,7 +331,7 @@ Smaller improvements left after the collision rewrite:
 - wheel-spin smoke when a vehicle presses against an obstacle under full throttle;
 - knocked-over poles are decoration only; they could become low obstacles;
 - dumpsters are rigid; they could be pushable bodies;
-- a shrub driven over must stay as a flattened, broken shrub, with leaves and twigs flying, instead of disappearing; destructible scenery in general should leave realistic remains.
+- a shrub driven over must stay as a flattened, broken shrub, with leaves and twigs flying, instead of disappearing; destructible scenery in general should leave realistic remains, a second, broken graphic for every prop that can be run down (the user's request of 2026-10-12, with [CJ-005](#cj-005-data-driven-street-furniture)).
 
 ### CJ-007 Large-vehicle recovery
 
