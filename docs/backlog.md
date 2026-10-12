@@ -273,6 +273,11 @@ The player has no jog: the walk shows below 4 m/s and the run from 4 m/s. The wa
 
 **Problem.** The light from the street lamps does not fall where it should, the lamp posts themselves could look better, and the lighting of the whole game at night could be much better, with a cooler colour and without the current bugs.
 
+**Playtest (2026-10-12).** The user found two faults:
+
+- The head of a lamp does not always sit on the end of its arm. Likely cause: `CityMap` draws the arm as a box along the x or the y axis only, while the head is drawn at the arm's real end; the lamps at the corners of a plaza point diagonally at its centre, so their heads float beside the arm. Every kind of lamp (street, plaza, park, parking) is to be checked.
+- Junctions are too dark. Street lamps stand on every fourth tile along the kerbs, so a junction gets light only from lamps that happen to be near it. In real life junctions are lit more brightly than the roads that meet there, from lamps at their corners or on the signal masts, because they are where vehicles and people cross; the lighting standards and how real junctions are lit are to be researched when the item is specified.
+
 **Acceptance criteria.** A list of the lighting bugs with screenshots; lamp light pools aligned with the lamp heads; a night palette agreed with the user; before/after screenshots at dusk and at night; see [Rendering](design/rendering.md).
 
 ### CJ-017 Pedestrian life
@@ -374,7 +379,12 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 
 **Problem.** Bus stops are only shelters on the sidewalk. A bus should be able to pull into a bay beside the lane, so that it does not hold up the traffic while people get on and off.
 
-**Acceptance criteria.** To be agreed: bus bays at the stops (geometry and art, with [CJ-023](#cj-023-vehicle-widths-and-street-geometry)); buses on routes that stop in the bay and pull out into the traffic; people waiting at the stop board and alight ([CJ-017](#cj-017-pedestrian-life)); traffic measured passing a stopped bus; playtested.
+**Playtest (2026-10-12).** The shelters themselves look wrong:
+
+- The two posts holding up the roof always show, even where the roof should hide them from the camera. Likely cause: `CityMap` draws the posts as solid boxes reaching the roof's height, and the roof afterwards as a flat, translucent sprite that writes no depth, so the posts show through it from every angle.
+- The roof is poorly drawn: a procedural sprite (`sprite_gen.cpp`) of a glass pane with three bars and an advertising panel, which does not reach the [art requirements](guides/adding-content.md#art-and-licence-requirements) of the rest of the city.
+
+**Acceptance criteria.** To be agreed: a shelter that looks right from every angle, the posts hidden where the roof covers them, and art of the city's quality; bus bays at the stops (geometry and art, with [CJ-023](#cj-023-vehicle-widths-and-street-geometry)); buses on routes that stop in the bay and pull out into the traffic; people waiting at the stop board and alight ([CJ-017](#cj-017-pedestrian-life)); traffic measured passing a stopped bus; playtested.
 
 ### CJ-022 Three-point turns
 
