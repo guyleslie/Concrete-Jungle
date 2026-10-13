@@ -1,6 +1,6 @@
 # Asphalt Rock FM
 
-The first radio station ([CJ-040](../../../docs/backlog.md#cj-040-car-radio)): 1980s American rock, instrumental, with an FM rock DJ and over-enthusiastic 1980s commercials in American-sounding gibberish. The project's author made every clip with [Suno](https://suno.com/) on 2026-10-11 and 2026-10-12; the licence is recorded in [CREDITS](../../../CREDITS.md#cj-040-asphalt-rock-fm). The station is defined in [`assets/data/radio.cfg`](../../data/radio.cfg).
+The first radio station ([CJ-040](../../../docs/backlog.md#cj-040-car-radio)): 1980s American rock, instrumental, with an FM rock DJ and over-enthusiastic 1980s commercials in American-sounding gibberish. The project's author made every clip with [Suno](https://suno.com/) on a paid plan on 2026-10-11 and 2026-10-12, and owns them; see [CREDITS](../../../CREDITS.md#cj-040-asphalt-rock-fm). The station is defined in [`assets/data/radio.cfg`](../../data/radio.cfg).
 
 ## Clips
 

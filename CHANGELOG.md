@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-13
+
+The car radio (CJ-040): Asphalt Rock FM, 1980s American rock, plays live when the player gets into a car, with the DJ or a commercial after every song, and the music of passing cars is heard muffled through their bodies, quieter with distance and dropping in pitch as they go by. Vehicles hitting people follow published crash measurements, with throws shortened for play (CJ-035). Every data file is now required (CJ-034), and the code review's bugs are fixed (CJ-033). The radio and the vehicles hitting people await the user's playtest.
+
 ### Fixed
 
 - Every positional sound leaned to the right, the interface sounds too, and sounds on the player's left came from the right: the game still gave raylib 6.0 the pan values of raylib 5 (CJ-040).
