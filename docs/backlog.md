@@ -451,6 +451,8 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 
 **Problem (playtest, 2026-10-09).** People walk well, but when an obstacle stops them they keep stepping, jogging or running on the spot; when they bump into each other and slide past, they slow down while stepping as fast as before; and they slide sideways. The user wants this much more realistic: sliding cut to a minimum, and people turning away when they must.
 
+**Playtest (2026-10-13).** When a vehicle stands across the sidewalk (one that mounted the kerb, crashed or stopped there), the people walking along it mostly get stuck: they keep trying to walk through the vehicle and step on the spot beside it. They should go round it, by the road if the traffic allows it, or turn and go another way. Going round by the road needs the same look at the traffic as crossing it, and the scenario of point 5 gets a vehicle blocking the sidewalk.
+
 **Causes in the code (`src/pedestrian.cpp`).**
 
 - The drawn gait and its pace come from the steering velocity (`p.vel`), not from the actual displacement. The contact pass, the player's push and the walls (`Collide`) move the position afterwards without changing the velocity, so a blocked person animates at full pace.
