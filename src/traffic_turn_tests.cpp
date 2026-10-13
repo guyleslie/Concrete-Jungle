@@ -13,13 +13,18 @@
 //      stop-line zone (60 px past the box, which cars waiting at a stop line 72 px back
 //      leave free), the oncoming half of the exit road or a road the car does not use.
 //      The strict measure, counting the stop-line zone too, is logged alongside.
+//  The separate CJ-038 mode reads timed stationary crossing-person cases. It checks
+//  full-body contacts, yielding and resuming, without a pedestrian dodge masking a
+//  driver's missed turning footprint; the ordinary CJ-020 schedule is unchanged.
 // =====================================================================================
 #include "traffic_turn_tests.h"
 #include "game.h"
 #include "traffic.h"
 #include "traffic_turns.h"
+#include "datafile.h"
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -38,7 +43,13 @@ enum class Turn { Right, Left, Straight };
 const char* TurnName(Turn t) { return t == Turn::Right ? "right" : t == Turn::Left ? "left" : "straight"; }
 int TurnCode(Turn t) { return t == Turn::Right ? 1 : t == Turn::Left ? 2 : 0; }
 
-struct Case { std::string cls; Turn turn; float step; std::string name; };
+struct Case {
+    std::string cls; Turn turn; float step; std::string name;
+    bool pedestrian = false;
+    Tile surface = Tile::Road;
+    Vector2 person{};
+    float clearAt = 8.0f;
+};
 
 int SkinOf(const std::string& cls) {
     VClass c = FindVehicleClass(cls);
@@ -63,6 +74,43 @@ std::vector<Case> Schedule() {
         if (!chosen.empty()) cases = chosen;
     }
     return cases;
+}
+
+// A stationary crossing person isolates what the driver sees. They cannot save the
+// test by dodging; after the timed clearance the driver must finish the turn.
+bool PedestrianSchedule(const char* path, std::vector<Case>& cases, std::string& error) {
+    for (const DataRecord& r : ReadDataFile(path)) {
+        auto fail = [&]() { error = TextFormat("%s:%d expected CASE name class right|left 60|20 road|sidewalk x_px y_px clear_s", path, r.line); return false; };
+        if (!r.Is("CASE") || r.size() != 9) return fail();
+        Case c; c.name = r[1]; c.cls = r[2]; c.pedestrian = true;
+        if (r[3] == "right") c.turn = Turn::Right;
+        else if (r[3] == "left") c.turn = Turn::Left;
+        else return fail();
+        if (r[4] == "60") c.step = RENDER_DT;
+        else if (r[4] == "20") c.step = 1.0f / 20.0f;
+        else return fail();
+        if (r[5] == "road") c.surface = Tile::Road;
+        else if (r[5] == "sidewalk") c.surface = Tile::Sidewalk;
+        else return fail();
+        float* values[] = { &c.person.x, &c.person.y, &c.clearAt };
+        for (int i = 0; i < 3; i++) {
+            char* end = nullptr;
+            *values[i] = strtof(r[6 + i].c_str(), &end);
+            if (end == r[6 + i].c_str() || *end || !std::isfinite(*values[i])) return fail();
+        }
+        if (SkinOf(c.cls) < 0 || fabsf(c.person.x) > 400 || fabsf(c.person.y) > 400 || c.clearAt < 4 || c.clearAt > 15) return fail();
+        for (const Case& previous : cases) if (previous.name == c.name) return fail();
+        cases.push_back(c);
+    }
+    if (cases.empty()) { error = std::string(path) + ": no pedestrian cases"; return false; }
+    const char* only = std::getenv("CJ_TEST_CASE");
+    if (only && *only) {
+        std::vector<Case> chosen;
+        for (const Case& c : cases) if (c.name.find(only) != std::string::npos) chosen.push_back(c);
+        if (chosen.empty()) { error = "CJ_TEST_CASE matches no pedestrian cases"; return false; }
+        cases = std::move(chosen);
+    }
+    return true;
 }
 
 bool Finite(const Vehicle& v) {
@@ -94,14 +142,18 @@ struct TrafficTurnTests::State {
     float ghostClock = 0;
     std::string capture, lastResult;
     float classRadius = 0;
+    int person = -1, personContacts = 0;
+    float personWait = 0, maxPersonOverlap = 0, unbrakedOverlap = 0;
+    bool personCleared = false;
 
     const Case& Current() const { return cases[index]; }
+    const char* Fixture() const { return Current().pedestrian ? "cj038-turn-pedestrians-v1" : FIXTURE_ID; }
     void Check(const char* name, float value, float low, float high) {
         bool pass = std::isfinite(value) && value >= low && value <= high;
         checks++;
         if (!pass) { failures++; lastResult = Current().name + ": " + name + " FAILED"; }
         TraceLog(LOG_INFO, "CJ020T metric fixture=%s case=%s name=%s value=%.6f min=%.6f max=%.6f result=%s",
-                 FIXTURE_ID, Current().name.c_str(), name, value, low, high, pass ? "PASS" : "FAIL");
+                 Fixture(), Current().name.c_str(), name, value, low, high, pass ? "PASS" : "FAIL");
     }
     // Local frame: junction centre at the origin, the car approaches northwards (-y) in
     // the lane at x = +LANE_OFFSET.
@@ -110,7 +162,7 @@ struct TrafficTurnTests::State {
     void Start(Game& g) {
         const Case& c = Current();
         g.vehicles.clear(); g.peds.clear(); g.pickups.clear();
-        g.map.ResetTestGround(Tile::Road); g.pedGrid.Build(g.peds);
+        g.map.ResetTestGround(c.pedestrian ? c.surface : Tile::Road); g.pedGrid.Build(g.peds);
         g.physics = VehiclePhysics{};
         GRng().s = SEED + (uint32_t)index * 7919u;
         ic = g.map.InterCenter(3, 3);
@@ -143,9 +195,45 @@ struct TrafficTurnTests::State {
         g.player.inVehicle = false; g.player.vehicle = -1;
         g.player.pos = ic + V2(-3000, 0); g.player.vel = {};
         g.cam.Snap(ic, 900); g.heat = 0; g.time = 0;
+        person = -1; personContacts = 0; personWait = maxPersonOverlap = unbrakedOverlap = 0; personCleared = false;
+        if (c.pedestrian) {
+            person = g.SpawnPed(ic + c.person, 0, false);
+            Pedestrian& p = g.peds[person];
+            p.state = PedState::Cross; p.resume = PedState::Idle;
+            p.pos = ic + c.person; p.target = p.pos; p.vel = V2(0, 0);
+            p.sense = p.reaction = 1e9f; p.alarm = -1; p.alarmVehicle = -1;
+            p.angle = PI; p.timer = 1e9f;
+            // Validate that the unbraked physical body reaches the configured person.
+            // This is independent of ScanPath's candidate query or detection geometry.
+            for (float ahead = 0; ahead <= START_GAP + 2 * cfg::ROAD_HALF + r.length + 400; ahead += 1) {
+                float angle = 0; Vector2 at = AIPathPose(r, ahead, &angle), n; float depth;
+                if (CircleOBB(p.pos, PED_RADIUS, MakeOBB(at, angle, r.width * 0.5f, r.length * 0.5f), n, depth))
+                    unbrakedOverlap = std::max(unbrakedOverlap, depth);
+            }
+            g.pedGrid.Build(g.peds);
+            TraceLog(LOG_INFO, "CJ038T person case=%s surface=%s local_px=(%.1f,%.1f) clear_s=%.2f unbraked_overlap_px=%.3f",
+                     c.name.c_str(), c.surface == Tile::Road ? "road" : "sidewalk", c.person.x, c.person.y, c.clearAt, unbrakedOverlap);
+        }
         TraceLog(LOG_INFO, "CJ020T begin fixture=%s case=%s class=%s turn=%s physics_dt=%.8f length_px=%.1f width_px=%.1f turn_circle_m=%.2f min_rear_radius_px=%.2f",
-                 FIXTURE_ID, c.name.c_str(), c.cls.c_str(), TurnName(c.turn), c.step, r.length, r.width,
+                 Fixture(), c.name.c_str(), c.cls.c_str(), TurnName(c.turn), c.step, r.length, r.width,
                  r.S().turnCircle / cfg::M, classRadius);
+    }
+    void PreparePerson(Game& g) {
+        if (person < 0) return;
+        if (!personCleared && phaseTime >= Current().clearAt) { g.peds[person].active = false; personCleared = true; }
+        g.pedGrid.Build(g.peds);
+    }
+    void ObservePerson(Game& g, float step) {
+        if (person < 0 || personCleared) return;
+        const Vehicle& v = g.vehicles[car];
+        const Pedestrian& p = g.peds[person];
+        Vector2 n; float depth;
+        if (CircleOBB(p.pos, PED_RADIUS, v.Box(), n, depth)) {
+            personContacts++;
+            maxPersonOverlap = std::max(maxPersonOverlap, depth);
+        }
+        if (v.ai.reason == 3 && v.ai.speed < 1) personWait += step;
+        g.VehiclePedCollisions();
     }
     // How far a body corner reaches into the wrong half of a road arm outside the box;
     // 'zone' px past the box edge on the exit and unused arms are not counted.
@@ -247,6 +335,22 @@ struct TrafficTurnTests::State {
         int before = failures;
         const Case& c = Current();
         const Vehicle& v = g.vehicles[car];
+        if (c.pedestrian) {
+            Check("unbraked_person_overlap_px", unbrakedOverlap, 0.1f, 1000);
+            Check("person_body_contacts", (float)personContacts, 0, 0);
+            Check("person_overlap_px", maxPersonOverlap, 0, 0);
+            Check("yielded_to_person_s", personWait, 0.2f, c.clearAt);
+            Check("person_cleared", (float)personCleared, 1, 1);
+            Check("resumed_exit_s", reachedAt, c.clearAt, MAX_CASE_S);
+            Check("ownership_losses", (float)ownership, 0, 0);
+            Check("nonfinite", (float)nonfinite, 0, 0);
+            bool pass = failures == before;
+            if (pass) passedCases++;
+            TraceLog(LOG_INFO, "CJ038T result case=%s contact_frames=%d overlap_px=%.3f waited_s=%.3f cleared=%d reached_s=%.3f result=%s",
+                     c.name.c_str(), personContacts, maxPersonOverlap, personWait, (int)personCleared, reachedAt, pass ? "PASS" : "FAIL");
+            completed++; capture = c.name;
+            return;
+        }
         bool large = v.S().large();
         bool turn = c.turn != Turn::Straight;
         float lateralLimit = RailTurnLateralAccel();
@@ -292,14 +396,17 @@ struct TrafficTurnTests::State {
 TrafficTurnTests::TrafficTurnTests() = default;
 TrafficTurnTests::~TrafficTurnTests() = default;
 
-bool TrafficTurnTests::Init(Game& g) {
+bool TrafficTurnTests::Init(Game& g, const char* pedestrianTestFile) {
     state = std::make_unique<State>();
     State& s = *state;
-    s.cases = Schedule();
+    if (pedestrianTestFile) {
+        std::string error;
+        if (!PedestrianSchedule(pedestrianTestFile, s.cases, error)) { s.invalid = true; TraceLog(LOG_ERROR, "CJ038T invalid: %s", error.c_str()); return false; }
+    } else s.cases = Schedule();
     if (s.cases.empty()) { s.invalid = true; TraceLog(LOG_ERROR, "CJ020T no traffic classes with sprites"); return false; }
     const char* revision = std::getenv("CJ_TEST_REVISION");
-    TraceLog(LOG_INFO, "CJ020T run fixture=%s scenario=traffic-turns revision=%s seed=%08x planned_cases=%d render_dt=%.8f max_case_s=%.1f lateral_accel_ms2=%.3f build=%s_%s",
-             FIXTURE_ID, revision ? revision : "UNRECORDED", SEED, (int)s.cases.size(), RENDER_DT, MAX_CASE_S,
+    TraceLog(LOG_INFO, "CJ020T run fixture=%s scenario=%s revision=%s seed=%08x planned_cases=%d render_dt=%.8f max_case_s=%.1f lateral_accel_ms2=%.3f build=%s_%s",
+             s.Fixture(), pedestrianTestFile ? "traffic-turn-peds" : "traffic-turns", revision ? revision : "UNRECORDED", SEED, (int)s.cases.size(), RENDER_DT, MAX_CASE_S,
              RailTurnLateralAccel() / cfg::M, __DATE__, __TIME__);
     for (size_t i = 0; i < s.cases.size(); i++)
         TraceLog(LOG_INFO, "CJ020T scheduled index=%d case=%s physics_dt=%.8f", (int)i + 1, s.cases[i].name.c_str(), s.cases[i].step);
@@ -319,6 +426,7 @@ void TrafficTurnTests::Update(Game& g, float dt) {
     int divisor = c.step > 0.03f ? 3 : 1;
     if ((s.phaseFrame + 1) % divisor == 0) {
         g.time += c.step;
+        s.PreparePerson(g);
         AIObserveTraffic(g);
         AIResolveWaitCycles(g, c.step);
         for (size_t i = 0; i < g.vehicles.size(); i++) {
@@ -328,6 +436,7 @@ void TrafficTurnTests::Update(Game& g, float dt) {
         }
         PhysicsStepOptions options; options.disableWorldEdges = true;
         g.physics.Step(g, c.step, options);
+        s.ObservePerson(g, c.step);
         s.physicsSteps++;
         s.Observe(g, c.step);
     }
@@ -384,17 +493,28 @@ void TrafficTurnTests::Draw(const Game& g) const {
                    V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, { 0, 0, 0, 120 });
     DrawTexturePro(sprite.tex, sprite.src, { v.pos.x, v.pos.y, sw, v.length },
                    V2(sw * 0.5f, v.length * 0.5f), v.angle * RAD2DEG, WHITE);
+    if (s.person >= 0 && !s.personCleared) {
+        const Pedestrian& p = g.peds[s.person];
+        DrawCircleV(p.pos, PED_RADIUS, { 240, 155, 105, 255 });
+        DrawCircleLinesV(p.pos, PED_RADIUS + 2, WHITE);
+    }
     EndMode2D();
     DrawRectangle(0, 0, GetScreenWidth(), 140, { 12, 17, 23, 240 });
-    DrawUIText("CONCRETE JUNGLE / CJ-020 TURNING KINEMATICS", 25, 14, 25, { 215, 231, 241, 255 }, true);
+    DrawUIText(s.Current().pedestrian ? "CONCRETE JUNGLE / CJ-038 TURNING PEDESTRIAN SAFETY" : "CONCRETE JUNGLE / CJ-020 TURNING KINEMATICS",
+               25, 14, 25, { 215, 231, 241, 255 }, true);
     DrawUIText(TextFormat("%s | case %d / %d | %.2f s | %.0f Hz | turning circle %.1f m, min rear radius %.2f m",
                           s.Current().name.c_str(), s.index + 1, (int)s.cases.size(), s.phaseTime, 1.0f / s.Current().step,
                           v.S().turnCircle / cfg::M, s.classRadius / cfg::M), 25, 50, 21, WHITE);
-    DrawUIText(TextFormat("slip turning %.1f deg | rear radius %.2f m | lateral %.2f m/s2 | kerb: body %.1f px, wheels %.1f px | encroach %.1f px | failures %d",
-                          s.turnSlip, s.minRadius < 1e8f ? s.minRadius / cfg::M : 0.0f, s.maxLateral / cfg::M, s.kerb, s.wheelKerb,
-                          s.encroach, s.failures), 25, 86, 19, s.failures ? Color{ 255, 151, 115, 255 } : Color{ 116, 217, 165, 255 });
+    const char* measures = s.Current().pedestrian
+        ? TextFormat("contact frames %d | overlap %.2f px | yielded %.2f s | person clears at %.1f s | cleared %d | failures %d",
+                     s.personContacts, s.maxPersonOverlap, s.personWait, s.Current().clearAt, (int)s.personCleared, s.failures)
+        : TextFormat("slip turning %.1f deg | rear radius %.2f m | lateral %.2f m/s2 | kerb: body %.1f px, wheels %.1f px | encroach %.1f px | failures %d",
+                     s.turnSlip, s.minRadius < 1e8f ? s.minRadius / cfg::M : 0.0f, s.maxLateral / cfg::M, s.kerb, s.wheelKerb,
+                     s.encroach, s.failures);
+    DrawUIText(measures, 25, 86, 19, s.failures ? Color{ 255, 151, 115, 255 } : Color{ 116, 217, 165, 255 });
     DrawRectangle(0, GetScreenHeight() - 38, GetScreenWidth(), 38, { 12, 17, 23, 235 });
-    DrawUIText(s.lastResult.empty() ? "Amber: rear axle path. Cyan: front axle path. Outlines every 0.2 s. Kerbs at the road edges."
+    DrawUIText(s.lastResult.empty() ? (s.Current().pedestrian ? "The crossing person stays still until clearance. The driver must yield, then finish the turn."
+                                                            : "Amber: rear axle path. Cyan: front axle path. Outlines every 0.2 s. Kerbs at the road edges.")
                                     : s.lastResult.c_str(), 25, GetScreenHeight() - 29, 18, LIGHTGRAY);
 }
 
@@ -402,7 +522,7 @@ void TrafficTurnTests::Log() const {
     if (!state) return;
     const State& s = *state;
     TraceLog(LOG_INFO, "CJ020T summary fixture=%s seed=%08x scheduled=%d completed=%d passed_cases=%d unfit_turns=%d render_frames=%d physics_steps=%d checks=%d failures=%d incomplete=%d invalid=%d result=%s",
-             FIXTURE_ID, SEED, (int)s.cases.size(), s.completed, s.passedCases, s.unfit, s.frame, s.physicsSteps, s.checks, s.failures,
+             s.cases.empty() ? FIXTURE_ID : s.Fixture(), SEED, (int)s.cases.size(), s.completed, s.passedCases, s.unfit, s.frame, s.physicsSteps, s.checks, s.failures,
              (int)!s.finished, (int)s.invalid, s.finished && !s.invalid && s.failures == 0 ? "PASS" : "FAIL");
 }
 bool TrafficTurnTests::Failed() const { return state && (state->invalid || state->failures > 0 || !state->finished); }

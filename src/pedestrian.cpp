@@ -11,13 +11,9 @@
 using namespace cfg;
 
 // ---- Tuning (world px, s) ------------------------------------------------------------
-static const float LOOK_AHEAD   = 1.6f;              // s: how far ahead people predict vehicles
-static const float SENSE_PERIOD = 0.1f;              // s between looks at the traffic
 static const float BODY_MARGIN  = 0.35f * M;         // space people want between them and a car body
 static const float SLOW_VEHICLE = 20.0f / 3.6f * M;  // slower vehicles are stepped away from calmly
 static const float RUN_SPEED    = 5.2f * M;          // fleeing, for an average walker
-static const float DODGE_SPEED  = 5.5f * M;          // jumping out of a vehicle's path
-static const float STEP_SPEED   = 1.8f * M;          // stepping aside for a slow vehicle
 static const float GAIT_HYSTERESIS = 0.3f;          // m/s: a faster gait holds until this much below its start
 static int PedGaitFor(float mps, int current);
 // Anticipatory avoidance (Karamouzas, Skinner & Guy 2014): E(tau) = k / tau^2 * e^(-tau / tau0)
@@ -29,10 +25,10 @@ static const float GOAL_TIME    = 0.5f;              // s: relaxation time towar
 
 // How quickly a body can change speed and turn, and how hard it may swerve.
 struct Gait { float accel, turn, avoid; };           // px/s^2, rad/s, px/s^2
-static Gait GaitOf(PedState s) {
-    switch (s) {
+static Gait GaitOf(const Pedestrian& p) {
+    switch (p.state) {
         case PedState::Flee:  return { 6.0f * M, 8.0f, 8.0f * M };
-        case PedState::Dodge: return { 12.0f * M, 20.0f, 3.0f * M };
+        case PedState::Dodge: return { gAssets.pedEvasion.accel * p.mobility, gAssets.pedEvasion.turn, 3.0f * M * p.mobility };
         case PedState::Fight: return { 6.0f * M, 8.0f, 4.0f * M };
         default:              return { 3.0f * M, 4.5f, 4.0f * M };
     }
@@ -168,12 +164,26 @@ static bool PredictHit(Vector2 pos, Vector2 vel, const Vehicle& v, float horizon
     return false;
 }
 
-static Danger MostUrgent(Vector2 pos, Vector2 vel, const Game& g, float horizon) {
+static bool SeesVehicle(const Pedestrian& p, const Vehicle& v) {
+    Vector2 to = v.pos - p.pos;
+    return Len2(to) < 0.01f || Dot(Forward(p.angle), Norm(to)) >= gAssets.pedAttention[(int)p.attention].viewCos;
+}
+
+static bool NoticesVehicle(const Pedestrian& p, const Vehicle& v) {
+    return gAssets.pedAttention[(int)p.attention].hearsBehind || SeesVehicle(p, v);
+}
+
+// Crossing gap checks pass no observer: road safety remains a complete prediction.
+// A dodging person tracks the threat it already learned even as it turns away.
+static Danger MostUrgent(Vector2 pos, Vector2 vel, const Game& g, float horizon, const Pedestrian* observer = nullptr) {
     Danger best, d;
     for (size_t i = 0; i < g.vehicles.size(); i++) {
         const Vehicle& v = g.vehicles[i];
         if (!v.active) continue;
-        if (PredictHit(pos, vel, v, horizon, d) && d.ttc < best.ttc) { best = d; best.vehicle = (int)i; }
+        if (!PredictHit(pos, vel, v, horizon, d)) continue;
+        bool learned = observer && observer->state == PedState::Dodge && observer->dodgeFrom == (int)i && observer->dodgeSerial == v.serial;
+        if (observer && !learned && !NoticesVehicle(*observer, v)) continue;
+        if (d.ttc < best.ttc) { best = d; best.vehicle = (int)i; }
     }
     return best;
 }
@@ -189,6 +199,7 @@ static void StartFlee(Pedestrian& p, Vector2 from, float duration, bool secondHa
     p.rethink = 0;
     p.alarm = -1;
     p.alarmVehicle = -1;
+    p.freezeT = 0;
 }
 
 void ScarePed(Pedestrian& p, Vector2 from, float duration) {
@@ -246,6 +257,7 @@ void StaggerPed(Pedestrian& p, const Game& g, int vehicle) {
     d.lateral = Dot(p.pos - v.pos, d.across);
     d.halfAcross = OBBProjectRadius(v.Box(), d.across) + BODY_MARGIN + PED_RADIUS;
     StartDodge(p, g, d);
+    p.freezeT = 0;                                                  // contact itself starts a recovery step at once
     // and back as they go, keeping ahead of the vehicle until they are out of its path: the
     // shove turns them and sets them going at once
     Vector2 move = p.moveDir * p.moveSpeed + dir * (d.speed * 1.3f);
@@ -269,8 +281,8 @@ void ProvokePed(Pedestrian& p, const Game& g) {
     p.alarm = -1; p.alarmVehicle = -1;
 }
 
-// Jump (or, for a slow vehicle, step) sideways out of the vehicle's path, towards the
-// nearer edge unless a wall or furniture is in the way there.
+// Step sideways out of the vehicle's path, towards the nearer edge unless a wall or
+// furniture is in the way there.
 static void StartDodge(Pedestrian& p, const Game& g, const Danger& d) {
     float side = d.lateral >= 0 ? 1.0f : -1.0f;
     float needSame = d.halfAcross - fabsf(d.lateral), needOther = d.halfAcross + fabsf(d.lateral);
@@ -282,8 +294,9 @@ static void StartDodge(Pedestrian& p, const Game& g, const Danger& d) {
     float need = needSame;
     if (blocked(side, needSame) && !blocked(-side, needOther)) { side = -side; need = needOther; }
     bool fast = d.speed > SLOW_VEHICLE;
-    if (p.state != PedState::Dodge) p.rethink = 0;                  // counts the time spent dodging (negative)
     if (p.state != PedState::Dodge) {
+        p.rethink = 0;                                             // counts the time spent dodging (negative)
+        p.freezeT = p.freezeDelay;                                  // re-planning cannot restart a freeze
         bool resumable = p.state == PedState::Walk || p.state == PedState::Wait || p.state == PedState::Cross ||
                          p.state == PedState::Wander || p.state == PedState::Flee;
         if (resumable) p.resume = p.state;
@@ -291,9 +304,11 @@ static void StartDodge(Pedestrian& p, const Game& g, const Danger& d) {
     }
     p.state = PedState::Dodge;
     p.moveDir = d.across * side;
-    p.moveSpeed = fast ? DODGE_SPEED * Clampf(p.walkSpeed / 24.0f, 0.85f, 1.15f) : STEP_SPEED;
-    p.timer = Clampf(need / p.moveSpeed + 0.2f, 0.3f, 1.2f);
+    float pace = Clampf(p.walkSpeed / (24.0f * p.mobility), 0.85f, 1.15f);
+    p.moveSpeed = (fast ? gAssets.pedEvasion.fastSpeed * pace : gAssets.pedEvasion.slowSpeed) * p.mobility;
+    p.timer = Clampf(need / p.moveSpeed + 0.2f, 0.3f, 1.2f) + p.freezeT;
     p.dodgeFrom = d.vehicle;
+    p.dodgeSerial = g.vehicles[d.vehicle].serial;
     p.closeCall = fast && d.ttc < 0.9f;
     p.alarm = -1; p.alarmVehicle = -1;
 }
@@ -308,7 +323,9 @@ static void Resume(Pedestrian& p) {
 
 static void EndDodge(Pedestrian& p, Game& g) {
     Rng& r = GRng();
-    Vector2 from = p.dodgeFrom >= 0 && p.dodgeFrom < (int)g.vehicles.size() ? g.vehicles[p.dodgeFrom].pos : p.pos - p.moveDir * 20.0f;
+    bool known = p.dodgeFrom >= 0 && p.dodgeFrom < (int)g.vehicles.size() && g.vehicles[p.dodgeFrom].serial == p.dodgeSerial;
+    Vector2 from = known ? g.vehicles[p.dodgeFrom].pos : p.pos - p.moveDir * 20.0f;
+    p.freezeT = 0;
     if (p.resume == PedState::Flee) { p.resume = PedState::Idle; StartFlee(p, p.threat, r.Range(2.0f, 3.0f), p.secondHand); return; }
     if (p.closeCall && r.Chance(0.5f)) {                            // that was close: panic
         if (r.Chance(0.3f)) g.audio.Play(Sfx::Scream, p.pos, 0.35f, r.Range(0.9f, 1.3f));
@@ -364,13 +381,26 @@ void InitPed(Pedestrian& p, Vector2 pos, int skin, const CityMap& map) {
     p.active = true;
     p.serial = ++nextSerial;
     p.skin = skin;
-    p.walkSpeed = r.Range(19.0f, 27.0f);
+    const CivilianAtlas& look = gAssets.peds[skin];
+    p.mobility = look.mobility;
+    p.walkSpeed = r.Range(19.0f, 27.0f) * p.mobility;
     p.laneOffset = r.Range(-9.0f, 9.0f);
-    p.reaction = r.Range(0.18f, 0.45f);
+    // Use the original reaction draw as a seed. Extra personal traits must not move
+    // the next person's spawn or redraw the existing balance/courage distribution.
+    Rng personal(r.Next() ^ 0xC038A17Eu);
+    float profile = personal.Float();
+    int attention = profile < gAssets.pedAttention[0].share ? 0 :
+                    (profile < gAssets.pedAttention[0].share + gAssets.pedAttention[1].share ? 1 : 2);
+    p.attention = (PedAttention)attention;
+    const PedAttentionDef& traits = gAssets.pedAttention[attention];
+    p.sensePeriod = traits.sensePeriod;
+    p.noticeHorizon = traits.noticeHorizon;
+    p.reaction = personal.Range(traits.reactionMin, traits.reactionMax) * look.reactionFactor;
+    p.freezeDelay = personal.Chance(gAssets.pedEvasion.freezeShare) ? personal.Range(gAssets.pedEvasion.freezeMin, gAssets.pedEvasion.freezeMax) : 0;
     p.body.balance = BalanceLimit(r);
     p.patience = r.Range(18.0f, 45.0f);
     p.courage = r.Float();
-    p.sense = r.Range(0.0f, SENSE_PERIOD);
+    p.sense = r.Range(0.0f, p.sensePeriod);
     p.resume = PedState::Idle;
     p.bi = std::clamp((int)(pos.x / (BLOCK_PITCH * TILE)), 0, BLOCKS_X - 1);
     p.bj = std::clamp((int)(pos.y / (BLOCK_PITCH * TILE)), 0, BLOCKS_Y - 1);
@@ -465,7 +495,8 @@ static Vector2 TTCForce(Vector2 x, Vector2 v, float R) {
 // People walk where their body faces: the steering velocity turns the body at a limited
 // rate, and only its component along the body (plus a small side step) is walked.
 static float Locomote(Pedestrian& p, Vector2 goal, Vector2 avoid, float faceTo, float dt) {
-    Gait G = GaitOf(p.state);
+    Gait G = GaitOf(p);
+    Vector2 before = p.vel;
     float al = Len(avoid);
     if (al > G.avoid) avoid = avoid * (G.avoid / al);
     Vector2 acc = (goal - p.vel) / GOAL_TIME + avoid;
@@ -484,6 +515,17 @@ static float Locomote(Pedestrian& p, Vector2 goal, Vector2 avoid, float faceTo, 
     float fwd = std::max(0.0f, Dot(want, f));
     float side = Clampf(Dot(want, rt), -0.3f * M, 0.3f * M);
     p.vel = f * fwd + rt * side;
+    if (p.state == PedState::Dodge) {
+        // Inherited running speed can exceed the step's cap; slow it within the same
+        // acceleration limit, while avoidance cannot make it faster still.
+        float speed = Len(p.vel), cap = std::max(Len(before), p.moveSpeed);
+        if (speed > cap) p.vel = p.vel * (cap / speed);
+        // Turning the body projects the desired velocity too; bound the actual velocity
+        // change, including that projection, so an evasive turn cannot jump in speed.
+        Vector2 change = p.vel - before;
+        float amount = Len(change), limit = G.accel * dt;
+        if (amount > limit) p.vel = before + change * (limit / amount);
+    }
     return turn / dt;
 }
 
@@ -546,18 +588,20 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
     // ---- perception: vehicles about to run into us, delayed reactions ----
     p.sense -= dt;
     if (p.sense <= 0) {
-        p.sense = SENSE_PERIOD * r.Range(0.8f, 1.2f);
-        Danger d = MostUrgent(p.pos, p.vel, g, LOOK_AHEAD);
+        p.sense = p.sensePeriod * r.Range(0.8f, 1.2f);
+        Danger d = MostUrgent(p.pos, p.vel, g, p.noticeHorizon, &p);
         if (d.vehicle >= 0) {
             if (p.state == PedState::Dodge) {
                 // still in a path: re-plan for another vehicle, or when moving the wrong way
                 float side = d.lateral >= 0 ? 1.0f : -1.0f;
-                if (d.vehicle != p.dodgeFrom || Dot(p.moveDir, d.across) * side < 0) StartDodge(p, g, d);
+                if (d.vehicle != p.dodgeFrom || g.vehicles[d.vehicle].serial != p.dodgeSerial || Dot(p.moveDir, d.across) * side < 0) StartDodge(p, g, d);
             } else if (p.alarm < 0 || p.alarmVehicle < 0) {
                 const Vehicle& v = g.vehicles[d.vehicle];
-                bool behind = Dot(Forward(p.angle), Norm(v.pos - p.pos)) < -0.3f;   // heard, not seen
-                p.alarm = p.reaction * (behind ? 1.5f : 1.0f) * r.Range(0.85f, 1.15f);
+                bool behind = !SeesVehicle(p, v);                   // heard, not seen
+                float factor = behind ? gAssets.pedAttention[(int)p.attention].behindFactor : 1.0f;
+                p.alarm = p.reaction * factor * r.Range(0.85f, 1.15f);
                 p.alarmVehicle = d.vehicle;
+                p.alarmVehicleSerial = v.serial;
             }
         }
     }
@@ -569,7 +613,8 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
             p.alarmVehicle = -1;
             if (vi >= 0) {
                 Danger d;
-                if (vi < (int)g.vehicles.size() && g.vehicles[vi].active && PredictHit(p.pos, p.vel, g.vehicles[vi], LOOK_AHEAD, d)) {
+                if (vi < (int)g.vehicles.size() && g.vehicles[vi].active && g.vehicles[vi].serial == p.alarmVehicleSerial &&
+                    NoticesVehicle(p, g.vehicles[vi]) && PredictHit(p.pos, p.vel, g.vehicles[vi], p.noticeHorizon, d)) {
                     d.vehicle = vi;
                     StartDodge(p, g, d);
                 }
@@ -634,13 +679,14 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
         }
         break;
     case PedState::Dodge:
+        p.freezeT = std::max(0.0f, p.freezeT - dt);
         p.timer -= dt;
         p.rethink -= dt;
         if (p.timer <= 0) {
             // only stop once really out of its way (at most 2 s in all)
             Danger d;
             const Vehicle* v = p.dodgeFrom >= 0 && p.dodgeFrom < (int)g.vehicles.size() ? &g.vehicles[p.dodgeFrom] : nullptr;
-            if (v && v->active && p.rethink > -2.0f && PredictHit(p.pos, V2(0, 0), *v, 1.0f, d)) p.timer = 0.1f;
+            if (v && v->active && v->serial == p.dodgeSerial && p.rethink > -2.0f && PredictHit(p.pos, V2(0, 0), *v, 1.0f, d)) p.timer = 0.1f;
             else EndDodge(p, g);
         }
         break;
@@ -695,7 +741,7 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
     case PedState::Wander: goal = towards(p.target, p.walkSpeed * 0.85f); break;
     case PedState::Rejoin: if (p.timer <= 0) goal = towards(p.target, p.walkSpeed); break;
     case PedState::Flee:   goal = p.moveDir * (RUN_SPEED * p.walkSpeed / 24.0f); break;
-    case PedState::Dodge:  goal = p.moveDir * p.moveSpeed; break;
+    case PedState::Dodge:  if (p.freezeT <= 0) goal = p.moveDir * p.moveSpeed; break;
     case PedState::Fight: {
         Vector2 foePos = g.player.pos;
         float reach = 0, x = 0, y = 0;
@@ -762,6 +808,7 @@ void UpdatePed(Pedestrian& p, Game& g, float dt) {
     }
 
     // ---- move ----
+    if (p.state == PedState::Dodge && p.freezeT > 0) avoid = V2(0, 0);  // freeze, without an abrupt velocity reset
     p.turnRate = Locomote(p, goal, avoid, faceTo, dt);
     p.pos = p.pos + p.vel * dt;
     Collide(p, map);

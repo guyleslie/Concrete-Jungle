@@ -106,6 +106,7 @@ int main(int argc, char** argv) {
     bool scenarioGiven = false;          // --scenario without --shot: play that scenario by hand
     const char* testVehicle = "Taxi";
     const char* testFile = "tests/person-hits.cfg";   // --scenario person-hits
+    bool testFileGiven = false;
     bool uncapped = false;
     const char* loadingTest = nullptr;
     const char* loadingCapture = nullptr;
@@ -118,7 +119,7 @@ int main(int argc, char** argv) {
         else if (TextIsEqual(argv[i], "--every") && i + 1 < argc) every = TextToInteger(argv[++i]);
         else if (TextIsEqual(argv[i], "--scenario") && i + 1 < argc) { scenario = argv[++i]; scenarioGiven = true; }
         else if (TextIsEqual(argv[i], "--vehicle") && i + 1 < argc) testVehicle = argv[++i];
-        else if (TextIsEqual(argv[i], "--test") && i + 1 < argc) testFile = argv[++i];
+        else if (TextIsEqual(argv[i], "--test") && i + 1 < argc) { testFile = argv[++i]; testFileGiven = true; }
         else if (TextIsEqual(argv[i], "--uncapped")) uncapped = true;
         // Measurement runs may read an alternative traffic data file (e.g. a baseline).
         else if (TextIsEqual(argv[i], "--traffic-config") && i + 1 < argc) gTrafficConfigPath = argv[++i];
@@ -308,12 +309,14 @@ int main(int argc, char** argv) {
     bool clearanceFixture = shot && TextIsEqual(scenario, "traffic-clearance");
     bool conflictFixture = shot && TextIsEqual(scenario, "traffic-conflict");
     bool incidentFixture = shot && TextIsEqual(scenario, "traffic-incident");
-    bool turnFixture = shot && TextIsEqual(scenario, "traffic-turns");
+    bool turnPedFixture = shot && TextIsEqual(scenario, "traffic-turn-peds");
+    bool turnFixture = shot && (TextIsEqual(scenario, "traffic-turns") || turnPedFixture);
     bool hitFixture = shot && TextIsEqual(scenario, "person-hits");
     bool fixture = vehicleFixture || trafficFixture || clearanceFixture || conflictFixture || incidentFixture || turnFixture || hitFixture;
     if ((vehicleFixture && !tests.Init(game, scenario, testVehicle)) || (trafficFixture && !trafficTests.Init(game, testVehicle)) ||
         (clearanceFixture && !clearanceTests.Init(game)) || (conflictFixture && !conflictTests.Init(game)) ||
-        (incidentFixture && !incidentTests.Init(game)) || (turnFixture && !turnTests.Init(game)) ||
+        (incidentFixture && !incidentTests.Init(game)) || (turnFixture && !turnTests.Init(game,
+            turnPedFixture ? (testFileGiven ? testFile : "tests/traffic-turn-pedestrians.cfg") : nullptr)) ||
         (hitFixture && !hitTests.Init(game, testFile))) {
         game.Unload(); gAssets.Unload(); loadingScreen.Unload(); CloseWindow(); return 2;
     }

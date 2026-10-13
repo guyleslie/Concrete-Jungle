@@ -190,14 +190,18 @@ def verdict(rep):
 
 
 def write_cfg_strides(reports):
-    """Give every CIVILIAN line of civilians.cfg its look's measured walk stride."""
+    """Update measured strides while preserving each look's behaviour and comments."""
     text = open(CFG, encoding="utf-8").read()
 
     def line(m):
         lid = m.group(1)
         r = reports.get(lid)
-        return "CIVILIAN %s.png %.2f" % (lid, r["gait"][GAITS["walk"]["action"]]["stride_m"]) if r else m.group(0)
-    open(CFG, "w", encoding="utf-8", newline="\n").write(re.sub(r"^CIVILIAN (\S+)\.png.*$", line, text, flags=re.M))
+        if not r:
+            return m.group(0)
+        fields = m.group(2).strip().split(maxsplit=1)
+        suffix = " " + fields[1] if len(fields) > 1 else ""
+        return "CIVILIAN %s.png %.2f%s" % (lid, r["gait"][GAITS["walk"]["action"]]["stride_m"], suffix)
+    open(CFG, "w", encoding="utf-8", newline="\n").write(re.sub(r"^CIVILIAN (\S+)\.png([^\n]*)$", line, text, flags=re.M))
 
 
 def main():

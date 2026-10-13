@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -53,8 +54,8 @@ bool ParseKind(const std::string& s, Kind& k) {
     for (int i = 0; i <= (int)Kind::Player; i++) if (s == KindName((Kind)i)) { k = (Kind)i; return true; }
     return false;
 }
-const char* const CHECKS[] = { "bump", "falls", "throw", "momentum", "runover", "body", "getup" };
-const char* const METRICS[] = { "hit", "fell", "dead", "escaped" };
+const char* const CHECKS[] = { "bump", "falls", "throw", "momentum", "runover", "body", "getup", "evasion-accel", "evasion-speed", "reaction-time", "freeze-time", "frozen-speed", "look-mobility", "reaction-ratio", "inherited-slowdown" };
+const char* const METRICS[] = { "hit", "fell", "dead", "escaped", "threatened-escaped", "noticed", "dodged", "noticed-before-hit", "dodged-before-hit", "frozen" };
 template <size_t N> bool Known(const char* const (&list)[N], const std::string& s) {
     for (const char* k : list) if (s == k) return true;
     return false;
@@ -67,6 +68,16 @@ struct Range { std::string name; float lo = 0, hi = 0; };
 struct Capture { std::string name; float t = 0; };
 struct Scene {
     std::string name; float maxT = 10; int line = 0;
+    uint32_t seed = 0;                              // 0: retain the original per-run seed
+    float evasionAccel = -1;                        // optional observed acceleration ceiling (m/s^2)
+    float evasionSpeed = -1, frozenSpeed = -1, startSpeed = 0;
+    float slowdownAt = -1, slowdownDrop = 0;
+    int look = -1, attention = -1;                  // optional one look / controlled aware-person traits
+    float scan = 0, horizon = 0, reaction = 0, mobility = -1, freeze = 0;
+    Range reactionTime, freezeTime;
+    float expectedMobility = -1;
+    std::string reactionReference;
+    Range reactionRatio;
     std::vector<VehicleLine> vehicles;
     std::vector<PersonLine> people;
     std::vector<CrowdLine> crowds;
@@ -123,7 +134,30 @@ bool Parse(const char* path, std::vector<Scene>& scenes, std::vector<Sweep>& swe
         }
         if (scenes.empty()) return fail(r, r[0] + " before the first SCENE");
         Scene& s = scenes.back();
-        if (r.Is("VEHICLE")) {
+        if (r.Is("SEED")) {
+            char* end = nullptr;
+            unsigned long long seed = r.size() == 2 ? strtoull(r[1].c_str(), &end, 0) : 0;
+            if (r.size() != 2 || !end || end == r[1].c_str() || *end != '\0' || seed == 0 || seed > 0xffffffffull || s.seed != 0)
+                return fail(r, "SEED <positive 32-bit integer> (at most once per scene)");
+            s.seed = (uint32_t)seed;
+        } else if (r.Is("LOOK")) {
+            float look = 0;
+            if (r.size() != 2 || !Num(r, 1, look) || look != floorf(look) || look < 1 || look > (float)gAssets.peds.size())
+                return fail(r, "LOOK <1-based civilian look index>");
+            s.look = (int)look - 1;
+        } else if (r.Is("MOTION")) {
+            if (r.size() != 2 || !Num(r, 1, s.startSpeed) || s.startSpeed < 0)
+                return fail(r, "MOTION <initial aware-person speed m/s along their facing>");
+        } else if (r.Is("TRAITS")) {
+            if (r.size() != 7) return fail(r, "TRAITS <attentive|distracted|headphones> <scan s> <horizon s> <reaction s|look> <mobility|look> <freeze s>");
+            s.attention = r[1] == "attentive" ? 0 : r[1] == "distracted" ? 1 : r[1] == "headphones" ? 2 : -1;
+            if (s.attention < 0 || !Num(r, 2, s.scan) || s.scan <= 0 || !Num(r, 3, s.horizon) || s.horizon <= 0 ||
+                (r[4] != "look" && (!Num(r, 4, s.reaction) || s.reaction < 0)) || !Num(r, 6, s.freeze) || s.freeze < 0 ||
+                (r[5] != "look" && (!Num(r, 5, s.mobility) || s.mobility <= 0)))
+                return fail(r, "TRAITS: valid attention, positive scan/horizon/mobility (or look), nonnegative reaction/freeze");
+            if (r[5] == "look") s.mobility = -1;
+            if (r[4] == "look") s.reaction = -1;
+        } else if (r.Is("VEHICLE")) {
             VehicleLine v;
             if (r.size() != 7 || !Num(r, 2, v.kmh) || !Num(r, 4, v.front.x) || !Num(r, 5, v.front.y) || !Num(r, 6, v.heading) ||
                 v.kmh < 0 || (r[3] != "brake" && r[3] != "keep")) return fail(r, "VEHICLE <class|all> <km/h> <brake|keep> <x m> <y m> <heading deg>");
@@ -148,11 +182,32 @@ bool Parse(const char* path, std::vector<Scene>& scenes, std::vector<Sweep>& swe
             c.count = (int)count;
             s.crowds.push_back(c);
         } else if (r.Is("CHECK")) {
-            if (r.size() != 2 || !Known(CHECKS, r[1])) return fail(r, "CHECK bump|falls|throw|momentum|runover|body|getup");
+            if (r.size() < 2 || !Known(CHECKS, r[1])) return fail(r, "CHECK bump|falls|throw|momentum|runover|body|getup, or CHECK evasion-accel <max m/s^2>");
+            if (r[1] == "evasion-accel" || r[1] == "evasion-speed" || r[1] == "frozen-speed") {
+                float& ceiling = r[1] == "evasion-accel" ? s.evasionAccel : r[1] == "evasion-speed" ? s.evasionSpeed : s.frozenSpeed;
+                if (r.size() != 3 || !Num(r, 2, ceiling) || ceiling < 0 || (r[1] != "frozen-speed" && ceiling == 0))
+                    return fail(r, "CHECK evasion-accel|evasion-speed|frozen-speed <max in m/s^2 or m/s>");
+            } else if (r[1] == "reaction-time" || r[1] == "freeze-time") {
+                Range& bounds = r[1] == "reaction-time" ? s.reactionTime : s.freezeTime;
+                if (r.size() != 4 || !Num(r, 2, bounds.lo) || !Num(r, 3, bounds.hi) || bounds.lo < 0 || bounds.hi < bounds.lo)
+                    return fail(r, "CHECK reaction-time|freeze-time <min s> <max s>");
+            } else if (r[1] == "look-mobility") {
+                if (r.size() != 3 || !Num(r, 2, s.expectedMobility) || s.expectedMobility <= 0)
+                    return fail(r, "CHECK look-mobility <expected multiplier>");
+            } else if (r[1] == "reaction-ratio") {
+                if (r.size() != 5 || !SafeName(r[2]) || !Num(r, 3, s.reactionRatio.lo) || !Num(r, 4, s.reactionRatio.hi) ||
+                    s.reactionRatio.lo <= 0 || s.reactionRatio.hi < s.reactionRatio.lo)
+                    return fail(r, "CHECK reaction-ratio <earlier scene name> <min multiplier> <max multiplier>");
+                s.reactionReference = r[2];
+            } else if (r[1] == "inherited-slowdown") {
+                if (r.size() != 4 || !Num(r, 2, s.slowdownAt) || !Num(r, 3, s.slowdownDrop) || s.slowdownAt <= 0 || s.slowdownDrop <= 0)
+                    return fail(r, "CHECK inherited-slowdown <time after Dodge s> <min speed reduction m/s>");
+            } else if (r.size() != 2) return fail(r, "CHECK <name>");
             s.checks.push_back(r[1]);
         } else if (r.Is("EXPECT")) {
             Range e;
-            if (r.size() != 4 || !Known(METRICS, r[1]) || !Num(r, 2, e.lo) || !Num(r, 3, e.hi)) return fail(r, "EXPECT hit|fell|dead|escaped <min> <max>");
+            if (r.size() != 4 || !Known(METRICS, r[1]) || !Num(r, 2, e.lo) || !Num(r, 3, e.hi) || e.lo < 0 || e.hi > 1 || e.hi < e.lo)
+                return fail(r, "EXPECT hit|fell|dead|escaped|threatened-escaped|noticed|dodged <min share> <max share> (0..1)");
             e.name = r[1];
             s.expects.push_back(e);
         } else if (r.Is("CAPTURE")) {
@@ -175,6 +230,14 @@ struct Person {
     int ped = -1;                                   // -1: the player
     Vector2 start{};
     float startHealth = 100;
+    bool threatened = false;                       // starts in a vehicle's straight swept body
+    float noticedAt = -1, dodgedAt = -1, maxEvasionAccel = 0;
+    bool noticedBeforeHit = false, dodgedBeforeHit = false;
+    float mobility = 1, frozenTime = 0;
+    float sampledReaction = 0, initialReaction = 0;
+    float maxEvasionSpeed = 0, evasionDistance = 0;
+    int evasionFrames = 0;
+    float maxFrozenSpeed = 0, entrySpeed = -1, slowdownSpeed = -1;
     // contact with vehicles
     bool touching = false, standingTouch = false;
     float touchT = 0, maxTouchT = 0, carried = 0, maxCarried = 0, firstTouch = -1, lastTouch = -1;
@@ -210,6 +273,8 @@ struct PersonHitTests::State {
     int index = -1, frame = 0, checks = 0, failures = 0, completed = 0;
     bool invalid = false, finished = false, nextRun = false;
     std::string error;
+    struct ReactionResult { std::string name; std::vector<float> values; };
+    std::vector<ReactionResult> reactionResults;      // same-seed adult / older-look comparisons
     // the running scene
     std::vector<Car> cars;
     std::vector<Person> people;
@@ -266,11 +331,24 @@ struct PersonHitTests::State {
             P.fallT = -1; P.lieT = P.getUpT = 0;
             g.autoMode = 6;                                    // stands still, no input
         } else {
-            p.ped = g.SpawnPed(pos, (int)(people.size() * 7 + 3) % std::max(1, (int)gAssets.peds.size()), false);
+            const Scene& scene = S();
+            int look = scene.look >= 0 ? scene.look : scene.seed ? (int)people.size() : (int)(people.size() * 7 + 3);
+            p.ped = g.SpawnPed(pos, look % std::max(1, (int)gAssets.peds.size()), false);
             Pedestrian& q = g.peds[p.ped];
             q.angle = angle; q.vel = V2(0, 0);
+            if (kind == Kind::Aware) q.vel = Forward(angle) * (scene.startSpeed * M);
             q.state = PedState::Idle; q.resume = PedState::Idle; q.timer = 1e9f;
             q.courage = 0;
+            p.sampledReaction = q.reaction;
+            if (kind == Kind::Aware && scene.attention >= 0) {
+                q.attention = (PedAttention)scene.attention;
+                q.sensePeriod = scene.scan; q.noticeHorizon = scene.horizon; q.sense = 0;
+                if (scene.reaction >= 0) q.reaction = scene.reaction;
+                if (scene.mobility > 0) q.mobility = scene.mobility;
+                q.freezeDelay = scene.freeze;
+            }
+            p.mobility = q.mobility;
+            p.initialReaction = q.reaction;
             if (kind != Kind::Aware) { q.reaction = 1e9f; q.sense = 1e9f; }    // does not see it coming
             if (kind == Kind::Lying) q.state = PedState::Down;
             if (kind == Kind::Dead) { q.state = PedState::Dead; q.health = 0; q.pooled = true; }
@@ -289,7 +367,8 @@ struct PersonHitTests::State {
         g.physics = VehiclePhysics{};
         g.state = GameState::Playing; g.heat = 0;
         g.autoMode = 0;
-        GRng().s = SEED + (uint32_t)index * 7919u;
+        uint32_t seed = s.seed ? s.seed : SEED + (uint32_t)index * 7919u;
+        GRng().s = seed;
         centre = V2(cfg::WORLD_W * 0.5f, cfg::WORLD_H * 0.5f);
         // the player stays well away unless the scene uses them
         g.player.inVehicle = false; g.player.vehicle = -1;
@@ -311,22 +390,38 @@ struct PersonHitTests::State {
         }
         for (const PersonLine& l : s.people)
             for (int k = 0; k < l.count; k++) AddPerson(g, l.kind, l.at + l.step * (float)k, l.facing);
+        // New seeded scenes keep their placement independent of any extra random
+        // traits drawn at spawn; old unseeded scenes retain their recorded sequence.
+        Rng layoutRng; layoutRng.s = seed ^ 0x4c41594fu;
+        Rng& layout = s.seed ? layoutRng : GRng();
         for (const CrowdLine& c : s.crowds) {
             int placed = 0;
             for (int tries = 0; placed < c.count && tries < c.count * 50; tries++) {
-                float a = GRng().Range(0, 2 * PI), d = c.radius * sqrtf(GRng().Float());
+                float a = layout.Range(0, 2 * PI), d = c.radius * sqrtf(layout.Float());
                 Vector2 at = c.at + V2(cosf(a), sinf(a)) * d;
                 bool free = true;
                 for (const Person& o : people) free = free && Dist(o.start, centre + at * M) > PED_RADIUS * 2.2f;
                 if (!free) continue;
-                AddPerson(g, c.kind, at, GRng().Range(0, 360));
+                AddPerson(g, c.kind, at, layout.Range(0, 360));
                 placed++;
             }
         }
+        int threatened = 0;
+        for (Person& p : people) {
+            if (p.kind == Kind::Lying || p.kind == Kind::Dead) continue;
+            for (const Car& car : cars) {
+                const Vehicle& v = g.vehicles[car.idx];
+                Vector2 rel = p.start - v.pos;
+                float along = Dot(rel, car.dir), across = fabsf(Cross(car.dir, rel));
+                p.threatened = p.threatened || (along >= v.length * 0.5f - Radius(p) &&
+                    along <= v.length * 0.5f + car.target * s.maxT + Radius(p) && across < v.width * 0.5f + Radius(p));
+            }
+            threatened += p.threatened ? 1 : 0;
+        }
         captured.assign(s.captures.size(), 0);
         t = 0; settledAt = -1;
-        TraceLog(LOG_INFO, "PERSONHIT start fixture=%s run=%s index=%d vehicles=%d people=%d", FIXTURE_ID, run.name.c_str(),
-                 index + 1, (int)cars.size(), (int)people.size());
+        TraceLog(LOG_INFO, "PERSONHIT start fixture=%s run=%s index=%d seed=%08x vehicles=%d people=%d threatened=%d", FIXTURE_ID, run.name.c_str(),
+                 index + 1, seed, (int)cars.size(), (int)people.size(), threatened);
     }
 
     // ---- one frame ----
@@ -418,7 +513,32 @@ struct PersonHitTests::State {
 
     void Track(Game& g) {
         bool settled = true;
-        for (Person& p : people) {
+        for (size_t k = 0; k < people.size(); k++) {
+            Person& p = people[k];
+            if (p.ped >= 0) {
+                const Pedestrian& q = g.peds[p.ped];
+                bool dodging = q.state == PedState::Dodge;
+                if (p.noticedAt < 0 && (q.alarmVehicle >= 0 || dodging)) p.noticedAt = t;
+                if (p.dodgedAt < 0 && dodging) { p.dodgedAt = t; p.entrySpeed = Len(preVel[k]) / M; }
+                if (!p.hit) {
+                    p.noticedBeforeHit = p.noticedBeforeHit || q.alarmVehicle >= 0 || dodging;
+                    p.dodgedBeforeHit = p.dodgedBeforeHit || dodging;
+                    if (dodging && q.freezeT > 0) {
+                        p.frozenTime += DT;
+                        p.maxFrozenSpeed = std::max(p.maxFrozenSpeed, Len(q.vel) / M);
+                    }
+                    if (S().slowdownAt > 0 && p.dodgedAt >= 0 && p.slowdownSpeed < 0 && t - p.dodgedAt >= S().slowdownAt)
+                        p.slowdownSpeed = Len(q.vel) / M;
+                }
+                // Observe actual velocity, including the body-heading projection, without
+                // treating the impact impulse or a later get-up as an evasive acceleration.
+                if (!p.hit && dodging) {
+                    p.maxEvasionAccel = std::max(p.maxEvasionAccel, Len(q.vel - preVel[k]) / (DT * M));
+                    p.maxEvasionSpeed = std::max(p.maxEvasionSpeed, Len(q.vel) / M);
+                    p.evasionDistance = std::max(p.evasionDistance, Dist(q.pos, p.start) / M);
+                    if (Len(q.vel) > 0.05f * M) p.evasionFrames++;
+                }
+            }
             const PersonBody& b = Body(g, p);
             if (b.Airborne()) { p.airT += DT; p.maxZ = std::max(p.maxZ, b.z); }
             if (b.Airborne() && OnGround(g, p) && FallOver(g, p)) p.airLying += DT;
@@ -466,6 +586,23 @@ struct PersonHitTests::State {
                      "momentum_ratio=%.3f runover_loss_kmh=%.3f run_over=%d",
                      run.name.c_str(), id, Dist(end, p.start) / M, p.maxTouchT, p.maxCarried / M, p.maxOverlapRun,
                      p.momentumRatio, p.runoverLoss, (int)p.runOver);
+            if (p.kind == Kind::Aware)
+                TraceLog(LOG_INFO, "PERSONHIT evasion run=%s person=%d threatened=%d noticed_s=%.3f dodge_s=%.3f reaction_s=%.3f accel_mps2=%.3f hit=%d",
+                         run.name.c_str(), id, (int)p.threatened, p.noticedAt, p.dodgedAt,
+                         p.noticedAt >= 0 && p.dodgedAt >= 0 ? p.dodgedAt - p.noticedAt : -1, p.maxEvasionAccel, (int)p.hit);
+            if (p.kind == Kind::Aware) {
+                const Pedestrian& q = g.peds[p.ped];
+                TraceLog(LOG_INFO, "PERSONHIT traits run=%s person=%d look=%d attention=%d scan_s=%.3f horizon_s=%.3f reaction_s=%.3f mobility=%.3f freeze_s=%.3f frozen_s=%.3f",
+                         run.name.c_str(), id, q.skin + 1, (int)q.attention, q.sensePeriod, q.noticeHorizon,
+                         q.reaction, p.mobility, q.freezeDelay, p.frozenTime);
+                TraceLog(LOG_INFO, "PERSONHIT movement run=%s person=%d peak_mps=%.3f evasion_m=%.3f moving_dodge_frames=%d",
+                         run.name.c_str(), id, p.maxEvasionSpeed, p.evasionDistance, p.evasionFrames);
+                TraceLog(LOG_INFO, "PERSONHIT sampled run=%s person=%d sampled_reaction_s=%.5f initial_reaction_s=%.5f",
+                         run.name.c_str(), id, p.sampledReaction, p.initialReaction);
+                if (s.frozenSpeed >= 0 || s.slowdownAt > 0)
+                    TraceLog(LOG_INFO, "PERSONHIT transition run=%s person=%d frozen_peak_mps=%.4f entry_mps=%.4f later_mps=%.4f after_s=%.3f",
+                             run.name.c_str(), id, p.maxFrozenSpeed, p.entrySpeed, p.slowdownSpeed, s.slowdownAt);
+            }
             // always: no pushing (CJ-035 criterion 6), no passing through (criterion 7)
             if (p.kind != Kind::Dead) {
                 Check("contact_s", id, p.maxTouchT, 0, 0.1f);
@@ -511,16 +648,51 @@ struct PersonHitTests::State {
                         Check(thrown ? "getup_after_throw_s" : "getup_after_fall_s", id,
                               p.upT >= 0 && p.restT >= 0 ? p.upT - p.restT : NAN, thrown ? 4.0f : 2.5f, thrown ? 5.0f : 3.5f);
                     }
+                } else if (c == "evasion-accel" && p.kind == Kind::Aware) {
+                    Check("evasion_accel_mps2", id, p.maxEvasionAccel, 0, s.evasionAccel * p.mobility);
+                } else if (c == "evasion-speed" && p.kind == Kind::Aware) {
+                    Check("evasion_speed_mps", id, p.maxEvasionSpeed, 0, s.evasionSpeed * p.mobility);
+                } else if (c == "reaction-time" && p.kind == Kind::Aware) {
+                    Check("reaction_time_s", id, p.noticedAt >= 0 && p.dodgedAt >= 0 ? p.dodgedAt - p.noticedAt : NAN,
+                          s.reactionTime.lo, s.reactionTime.hi);
+                } else if (c == "freeze-time" && p.kind == Kind::Aware) {
+                    Check("freeze_time_s", id, p.frozenTime, s.freezeTime.lo, s.freezeTime.hi);
+                } else if (c == "frozen-speed" && p.kind == Kind::Aware) {
+                    Check("frozen_speed_mps", id, p.maxFrozenSpeed, 0, s.frozenSpeed);
+                } else if (c == "look-mobility" && p.kind == Kind::Aware) {
+                    Check("look_mobility", id, p.mobility, s.expectedMobility, s.expectedMobility);
+                } else if (c == "reaction-ratio" && p.kind == Kind::Aware) {
+                    float reference = NAN;
+                    for (const ReactionResult& prior : reactionResults)
+                        if (prior.name == s.reactionReference && k < prior.values.size()) reference = prior.values[k];
+                    Check("look_reaction_ratio", id, reference > 0 ? p.initialReaction / reference : NAN,
+                          s.reactionRatio.lo, s.reactionRatio.hi);
+                } else if (c == "inherited-slowdown" && p.kind == Kind::Aware) {
+                    Check("inherited_speed_reduction_mps", id,
+                          p.entrySpeed >= 0 && p.slowdownSpeed >= 0 ? p.entrySpeed - p.slowdownSpeed : NAN, s.slowdownDrop, s.startSpeed);
                 }
             }
         }
+        ReactionResult reactionResult; reactionResult.name = run.name;
+        for (const Person& p : people) reactionResult.values.push_back(p.initialReaction);
+        reactionResults.push_back(std::move(reactionResult));
+        if (s.evasionAccel > 0 || s.evasionSpeed > 0) {
+            int moved = 0;
+            for (const Person& p : people) moved += p.evasionFrames > 0 ? 1 : 0;
+            Check("moving_evasion_people", 0, (float)moved, 1, (float)people.size());
+        }
         for (const Range& e : s.expects) {
-            float n = 0, total = (float)std::max<size_t>(1, people.size());
+            float n = 0, total = 0;
             for (const Person& p : people) {
-                bool v = e.name == "hit" ? p.hit : e.name == "fell" ? p.fell || p.died : e.name == "dead" ? p.died : !p.hit;
+                if (e.name == "threatened-escaped" && !p.threatened) continue;
+                bool v = e.name == "hit" ? p.hit : e.name == "fell" ? p.fell || p.died : e.name == "dead" ? p.died :
+                         e.name == "noticed" ? p.noticedAt >= 0 : e.name == "dodged" ? p.dodgedAt >= 0 :
+                         e.name == "noticed-before-hit" ? p.noticedBeforeHit : e.name == "dodged-before-hit" ? p.dodgedBeforeHit :
+                         e.name == "frozen" ? p.frozenTime > 0 : !p.hit;
                 n += v ? 1.0f : 0.0f;
+                total += 1.0f;
             }
-            Check(e.name.c_str(), 0, n / total, e.lo, e.hi);
+            Check(e.name.c_str(), 0, total > 0 ? n / total : NAN, e.lo, e.hi);
         }
         completed++;
     }
