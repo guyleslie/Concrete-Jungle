@@ -122,7 +122,7 @@ Oriented boxes (`OBB`) have axis 0 = right and axis 1 = forward, matching how sp
 ## Global state and determinism
 
 - `gAssets` holds every loaded asset and is read-only after start-up.
-- `GRng()` is the single gameplay random number generator (xorshift, fixed seed). The radio has its own generator for its programmes and draws a car's radio from the car's serial, so it never moves `GRng()`.
+- `GRng()` is the shared gameplay random number generator (xorshift, fixed seed). At pedestrian creation, the original reaction draw seeds a local generator for attention, reaction and freezing; extra personal traits do not consume additional shared draws or change the next person's spawn and the existing balance/courage draws. The radio has its own generator for its programmes and draws a car's radio from the car's serial, so it never moves `GRng()`.
 - The city is generated from a fixed seed, so every run has the same map.
 - In test mode (`--shot`) the frame time is fixed at 1/60 s, which makes runs comparable between code versions.
 - Isolated `traffic-recovery` cases retain the 1/60 s render clock while advancing AI and physics at either 1/60 s or 1/20 s. Their fixed seed, geometry and ownership checks are described in [Testing](testing.md#cj-016-recovery-measurements).

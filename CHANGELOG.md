@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Pedestrians have individual attention and reaction traits (CJ-038): distracted people notice vehicles later, headphones suppress rear warning, older looks walk and evade more slowly, and a small share briefly freeze. Actual evasive velocity changes follow the acceleration limit, including turning and avoidance. Profiles, mobility and limits come from `civilians.cfg` ([ADR-0013](docs/adr/0013-individual-pedestrian-attention.md)); the impact, balance and injury model is unchanged. Awaiting the user's playtest.
+- Known CJ-038 regression: people remain on crossings at the traffic's green longer (2.5 → 12.0 person-s in `foot`/`day`), despite zero traffic hits. The agreed retained-crossing criterion is not met; blocked-crossing/contact behaviour follows up under [CJ-031](docs/backlog.md#cj-031-pedestrian-blocking-and-contact-realism). CJ-038 remains awaiting playtest with this issue.
+
+### Fixed
+
+- Turning traffic could miss a person reached by its front corner or side because it checked a point along the nose path. Drivers now check people against the planned body poses and the current body, on road or sidewalk (CJ-038).
+
+### Added
+
+- CJ-038 crowd and pinned-trait scenes in `tests/person-evasion.cfg`: front/rear noticing, reaction and freeze timing, old-look mobility, persistent traits and actual speed/acceleration limits. `tools/run_cj038.py` retains evidence and runs the evasion fixture plus `foot`, `day` and `rampage`, with narrower suite/scenario selections ([measurements](docs/design/pedestrian-attention-results.md)).
+
 ## [0.7.0] - 2026-10-13
 
 The car radio (CJ-040): Asphalt Rock FM, 1980s American rock, plays live when the player gets into a car, with the DJ or a commercial after every song, and the music of passing cars is heard muffled through their bodies, quieter with distance and dropping in pitch as they go by. Vehicles hitting people follow published crash measurements, with throws shortened for play (CJ-035). Every data file is now required (CJ-034), and the code review's bugs are fixed (CJ-033). The radio and the vehicles hitting people await the user's playtest.

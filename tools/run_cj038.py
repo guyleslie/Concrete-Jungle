@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Retain CJ-038 attention/evasion evidence, one visible game window at a time.
 
-Build separately. Use --phase before|after --run-name NAME; --suite selects city,
-evasion, impacts or turning traffic. Existing evidence is never overwritten. Baseline failures remain
-visible; exit 1 means failed acceptance or incomplete evidence in either phase.
+Build separately. Use --phase before|after --run-name NAME. The default suite runs
+evasion and city; other suites are explicit. --scenario narrows a city run.
+Existing evidence is never overwritten. Baseline failures remain visible;
+exit 1 means failed acceptance or incomplete evidence in either phase.
 """
 
 import argparse
@@ -45,9 +46,9 @@ def summarize(run, phase):
         summaries = [record_fields(l) for l in lines if "CJ020T summary" in l]
         summary = summaries[-1] if len(summaries) == 1 else {}
         run["summary"] = summary
-        run["complete"] = (run["exit"] in (0, 1) and shot_exists and summary.get("finished") == "1"
-                           and summary.get("invalid") == "0" and summary.get("cases") == summary.get("completed"))
-        run["accepted"] = run["complete"] and summary.get("failed") == "0"
+        run["complete"] = (run["exit"] in (0, 1) and shot_exists and summary.get("incomplete") == "0"
+                           and summary.get("invalid") == "0" and summary.get("scheduled") == summary.get("completed"))
+        run["accepted"] = run["complete"] and summary.get("failures") == "0"
         return
     if run["suite"] != "city":
         summaries = [record_fields(l) for l in lines if "PERSONHIT summary" in l]
@@ -85,10 +86,14 @@ def main():
     parser.add_argument("--phase", required=True, choices=("before", "after"))
     parser.add_argument("--run-name", required=True)
     parser.add_argument("--suite", choices=("all", "city", "evasion", "impacts", "turns", "turn-peds"), default="all")
+    parser.add_argument("--scenario", choices=tuple(name for name, _ in CITY),
+                        help="run only this city scenario (requires --suite city)")
     parser.add_argument("--exe", type=Path, default=Path("ConcreteJungle.exe"))
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--timeout", type=positive_seconds, default=1800)
     args = parser.parse_args()
+    if args.scenario and args.suite != "city":
+        parser.error("--scenario requires --suite city")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.run_name) or not 1 <= args.repeat <= 10:
         parser.error("run-name must be 1-64 letters/digits/_/-; repeat must be 1-10")
     executable = (ROOT / args.exe).resolve()
@@ -109,14 +114,15 @@ def main():
     schedule = []
     if args.suite in ("all", "evasion"):
         schedule.append(("evasion", "person-hits", 1000000, "tests/person-evasion.cfg"))
-    if args.suite in ("all", "impacts"):
+    if args.suite == "impacts":
         schedule.append(("impacts", "person-hits", 1000000, "tests/person-hits.cfg"))
-    if args.suite in ("all", "turn-peds"):
+    if args.suite == "turn-peds":
         schedule.append(("turn-peds", "traffic-turn-peds", 12000, "tests/traffic-turn-pedestrians.cfg"))
-    if args.suite in ("all", "turns"):
+    if args.suite == "turns":
         schedule.append(("turns", "traffic-turns", 200000, None))
     if args.suite in ("all", "city"):
-        schedule.extend(("city", name, frames, None) for name, frames in CITY)
+        schedule.extend(("city", name, frames, None) for name, frames in CITY
+                        if not args.scenario or name == args.scenario)
     save()
     try:
         for repetition in range(args.repeat):

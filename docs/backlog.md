@@ -17,10 +17,10 @@ Planned work for Concrete Jungle, in priority order. Each item has a stable ID (
 
 ## Next session
 
-Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07, CJ-032 to CJ-037 were added on 2026-10-11, the CJ-035 specification was agreed on 2026-10-11, CJ-039 was added on 2026-10-12 and CJ-040 was implemented on 2026-10-12:
+Recommended order, updated after the CJ-023 specification was agreed on 2026-10-07, CJ-032 to CJ-037 were added on 2026-10-11, the CJ-035 specification was agreed on 2026-10-11, CJ-039 was added on 2026-10-12, CJ-040 was implemented on 2026-10-12 and CJ-038 was continued on 2026-10-13:
 
 1. **[CJ-035](#cj-035-vehicles-hitting-people) Vehicles hitting people** — implemented on 2026-10-11, awaiting playtest: every contact is one impact, never a push; injuries from published measurements, throws an eighth as far as real ones for play (second playtest, 2026-10-12); vehicles drive over people lying on the road; the player falls, lies and gets up. Its isolated scene test passes every check.
-2. **[CJ-038](#cj-038-pedestrian-attention-and-evasion) Pedestrian attention and evasion** — test of 2026-10-11: nearly everyone escapes a car driven into a crowd; not everyone notices it, or can get away, in real life.
+2. **[CJ-038](#cj-038-pedestrian-attention-and-evasion) Pedestrian attention and evasion** — implemented on 2026-10-13, awaiting playtest with a known crossing regression: individual attention and reaction, slower old looks, brief freezes and bounded evasive steps; normal traffic checks its turning body for people. Blocked-crossing/contact follow-up under CJ-031.
 3. **[CJ-032](#cj-032-isolated-test-arena) Isolated test arena** — approach agreed on 2026-10-11; the measurable criteria are confirmed and the before values measured at the start of the session. Later items that change the player, animation or lighting are tested in it.
 4. **[CJ-023](#cj-023-vehicle-widths-and-street-geometry) Vehicle widths and street geometry** — specification agreed; continue with step 1 (measurements only and the before run) of the [street geometry proposal](design/street-geometry-proposal.md#delivery).
 5. **[CJ-018](#cj-018-police-driving-and-reactions) Police driving and reactions** — police in pursuit run down pedestrians, ram other cars and cause crashes; they do not react to a fight between drivers. Needs its own session and specification.
@@ -52,7 +52,7 @@ Before each item, search for open-source code, assets and references that would 
 | [CJ-023](#cj-023-vehicle-widths-and-street-geometry) | Vehicle widths and street geometry | High | Specification agreed |
 | [CJ-033](#cj-033-code-review-fixes) | Code review fixes | High | Implemented, awaiting playtest |
 | [CJ-035](#cj-035-vehicles-hitting-people) | Vehicles hitting people | High | Implemented, awaiting playtest |
-| [CJ-038](#cj-038-pedestrian-attention-and-evasion) | Pedestrian attention and evasion | High | Open |
+| [CJ-038](#cj-038-pedestrian-attention-and-evasion) | Pedestrian attention and evasion | High | Implemented, awaiting playtest; known crossing regression |
 | [CJ-014](#cj-014-city-art-and-layout) | City art and layout | Medium | Open |
 | [CJ-015](#cj-015-street-lighting) | Street lighting | Medium | Open |
 | [CJ-017](#cj-017-pedestrian-life) | Pedestrian life | Medium | Open |
@@ -453,6 +453,8 @@ The `drive` autopilot never reverses, so it stays stuck once it drives into some
 
 **Playtest (2026-10-13).** When a vehicle stands across the sidewalk (one that mounted the kerb, crashed or stopped there), the people walking along it mostly get stuck: they keep trying to walk through the vehicle and step on the spot beside it. They should go round it, by the road if the traffic allows it, or turn and go another way. Going round by the road needs the same look at the traffic as crossing it, and the scenario of point 5 gets a vehicle blocking the sidewalk.
 
+**CJ-038 follow-up (2026-10-13).** The [attention measurements](design/pedestrian-attention-results.md) show a real crossing regression: `foot`/`day` occupancy at the traffic's green grew from 2.5 to 12.0 person-s, despite zero traffic hits. A diagnostic person in `Cross` stayed near one position for 360 frames while its steering velocity remained about −49 px/s; another was in `Wait` on the road for 88 frames. Cover blocked crossing progress, contact corrections and waiting people displaced onto the road in the agreed crossing-crowd scene. This is outstanding work, and does not turn CJ-038's retained-crossing criterion into a pass.
+
 **Causes in the code (`src/pedestrian.cpp`).**
 
 - The drawn gait and its pace come from the steering velocity (`p.vel`), not from the actual displacement. The contact pass, the player's push and the walls (`Collide`) move the position afterwards without changing the velocity, so a blocked person animates at full pace.
@@ -648,7 +650,7 @@ Then the user's playtest.
 ### CJ-038 Pedestrian attention and evasion
 
 - **Priority:** High
-- **Status:** Open; after [CJ-035](#cj-035-vehicles-hitting-people)
+- **Status:** Implemented on 2026-10-13, awaiting playtest with a known crossing regression
 
 **Problem (test runs, 2026-10-11).** In `rampage` the car drives into people at 50 km/h and nearly everyone gets away: 85 % of the 141 people in its path escaped on 2026-10-11. In real life not everyone notices a car, and not everyone who does can get out of its way. Cause: everyone looks at the traffic in every direction ten times a second, reacts within 0.18–0.45 s and jumps sideways at 5.5 m/s from a standstill (`src/pedestrian.cpp`).
 
@@ -658,9 +660,13 @@ Then the user's playtest.
 - In a virtual-reality study, 70 % of attentive participants avoided an approaching vehicle; those who were hit decided later (0.41 s against 0.17–0.24 s), and carrying out an avoidance took 1.5–1.8 s ([Scientific Reports 2021](https://doaj.org/article/075b455608484b35865b855acb9f3542)).
 - Older people start avoiding later ([Université Laval](https://cirris.ulaval.ca/en/seniors-at-higher-risk-of-pedestrian-collisions)).
 
-**Approach (proposed, 2026-10-11).** Personal traits drawn when a person appears, from data in `civilians.cfg`: attention (about 30 % distracted, noticing vehicles late; people listening to music do not hear a vehicle behind them), a reaction-time spread, an evasive step limited by acceleration instead of an instant jump, mobility by look (older looks slower), and a small share who freeze for a moment. The [CJ-035](#cj-035-vehicles-hitting-people) balance limit becomes one of these traits.
+**Approach (agreed, 2026-10-12).** The [accepted plan](design/pedestrian-attention-proposal.md) and [ADR-0013](adr/0013-individual-pedestrian-attention.md) introduce personal traits drawn when a person appears, from data in `civilians.cfg`: attention (about 30 % distracted, noticing vehicles late; people listening to music do not hear a vehicle behind them), a reaction-time spread, an evasive step limited by acceleration instead of an instant jump, mobility by look (older looks slower), and a small share who freeze for a moment. The [CJ-035](#cj-035-vehicles-hitting-people) balance distribution and impact model stay unchanged.
 
-**Target (proposed).** In `rampage` 50–65 % of the people in the car's path escape; this replaces the [CJ-010](#cj-010-pedestrian-behaviour) target of at least 70 %. Traffic still hits nobody in `foot` and `day`. Measured with crowd scenes in the CJ-035 test file and in `rampage`, then the user's playtest.
+**Target (agreed).** In `rampage` 50–65 % of the people in the car's path escape; this replaces the [CJ-010](#cj-010-pedestrian-behaviour) target of at least 70 %. Traffic still hits nobody in `foot` and `day`. Pedestrian CPU time stays at most 0.5 ms per frame. Measured with the focused `tests/person-evasion.cfg` and city scenarios, then the user's playtest.
+
+**Implementation (2026-10-13).** Persistent personal traits use a local sampler seeded by the original reaction draw; extra draws preserve the next spawn and the existing balance/courage draws. Delayed alarms and replanning respect perception, while crossing gap checks remain omnidirectional. Actual dodge velocity changes, including heading projection, respect acceleration and speed limits. Traffic checks sampled body poses for people swept by a turning corner. The measured tuning uses an attentive notice horizon of 1.1 s and a fast step of 4.0 m/s. Final focused measurements: all 17 evasion scenes and 1,055 checks pass, traffic hits nobody in `foot`/`day`, and 65 of 112 people in the `rampage` path escape (58.04 %, against 78.69 % before). Pedestrian CPU is 0.438 / 0.464 / 0.411 ms per frame. The [measurement report](design/pedestrian-attention-results.md) retains the failed 2026-10-12 run, the compiled WIP baseline and tuning trials.
+
+**Known regression.** Crossing occupancy at the traffic's green increased from 2.5 to 12.0 person-s in `foot`/`day` (10.2 to 20.6 person-s in `rampage`), so the agreed retained-crossing criterion is **not met**. Diagnostics expose the blocked-crossing/contact work already specified by [CJ-031](#cj-031-pedestrian-blocking-and-contact-realism); it remains a follow-up rather than expanding CJ-038 into obstacle routing. The visible population is 3.38, still below the older target of four. The runner's `accepted=true` covers its explicit primary criteria, not every agreed criterion. This item stays implemented, awaiting the user's playtest with the known crossing regression; it is not fully accepted or moved to Done.
 
 ### CJ-039 Varied falls and lying poses
 

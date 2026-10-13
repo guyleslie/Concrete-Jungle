@@ -66,7 +66,7 @@ The path is planned one junction ahead and always extends at least 520 px beyond
 | Cruise speed | 215–265 px/s (≈ 48–60 km/h); large vehicles 170–205 px/s. Panicking drivers go 50 % faster. |
 | Curves | On a turn path, the speed keeps the lateral acceleration at the rear axle within `TURN lateral_accel` (3.5 m/s²) from how fast the body's heading turns at each point: about 11–15 km/h through a right turn and 15–19 km/h through a left turn. The driver brakes towards these limits at the comfortable rate. U-turns keep the old limit of 130 px/s (95 px/s for large vehicles). |
 | Signals | Stops for red. Stops for yellow if it can do so comfortably. |
-| Obstacles | A look-ahead of 40 px + 1.1 × speed + half its length along the path finds vehicles and, unless the driver is distracted, pedestrians on the road (found through the pedestrian grid). The allowed speed follows the gap; the car stops 14 px short of the obstacle. |
+| Obstacles | A look-ahead of 40 px + 1.1 × speed + half its length along the path finds vehicles and, unless the driver is distracted, people in the planned body footprint on road or sidewalk (found through the pedestrian grid). The allowed speed follows the gap; the car stops 14 px short of the obstacle. |
 | Acceleration | 45 % of the class acceleration; comfortable braking at 670 px/s², hard braking at 900 px/s² for an obstacle right ahead. |
 
 ### Planned stop
@@ -75,7 +75,7 @@ Every frame a rail car records in `DriverAI::stopDist` how far its front can sti
 
 ### Scan cost
 
-The look-ahead runs for every rail car every frame, so its cost matters: it first samples its path points (continuing along the path from the previous sample and computing each segment's heading once), then tests only the vehicles whose enlarged box could reach the area around those points and only the people found in the grid cells that area covers. The obstacle found is the same as when every car and person is tested at every point.
+The look-ahead runs for every rail car every frame, so its cost matters: it first samples its path points (continuing along the path from the previous sample and computing each segment's heading once), then tests only the vehicles whose enlarged box could reach the area around those points. People come from the grid cells covering the sampled body boxes and the current body. Candidate filtering reduces the work for those queries; CJ-038 intentionally replaces the earlier pedestrian nose-point geometry with body checks.
 
 ## Junction rules
 
@@ -88,6 +88,8 @@ A car only enters a junction box when:
 Directional right-of-way rules allow compatible movements through a junction and make left turns yield to oncoming traffic. They do not authorize ignoring an occupied vehicle footprint. A knocked car standing in the box is not a "mover" for these rules, so traffic can still enter and get stuck around it; drivers who end up waiting on each other in a loop are resolved by the [wait-for cycle](#wait-for-cycles) rule.
 
 ## Obstacles and impatience
+
+An attentive driver scans ahead for people against the vehicle's actual planned body poses, including its rear-axle turn and lane change. A nose point alone misses people swept by a front corner or side in a turn, and sidewalk tiles cannot exclude someone reached by that body. Samples are 12 px apart, with 10 px of practical body clearance (the existing 4 px plus half a sample interval); the pedestrian's radius is checked against each box. The candidate query covers those boxes and the current body, including a car still blending back to its rail pose. The clearance is not a proof of a continuous swept-body bound, and intermediate legacy blend or U-turn poses are not newly forecast. Vehicle obstacles retain their existing query. See the [CJ-038 measurements](pedestrian-attention-results.md) for the missed-corner diagnosis and its evidence limits.
 
 | Situation | Reaction |
 |---|---|

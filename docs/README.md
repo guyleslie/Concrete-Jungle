@@ -33,6 +33,7 @@ How each subsystem works, why it works that way, and which constants tune it.
 | [CJ-023 street geometry proposal](design/street-geometry-proposal.md) | Agreed specification for real-world vehicle widths, street profiles, sidewalk zones, rounded kerbs and their acceptance measurements |
 | [Pedestrians](design/pedestrians.md) | Sidewalk behaviour, crossings, perception and dodging, fleeing, fighting back, steering, injuries, population |
 | [CJ-038 attention and evasion proposal](design/pedestrian-attention-proposal.md) | Individual attention and reaction traits, bounded dodge movement, source research, data schema and before/after criteria |
+| [CJ-038 attention and evasion results](design/pedestrian-attention-results.md) | Before/after city and isolated measurements, failed intermediate runs, evidence and playtest status |
 | [Vehicles hitting people](design/impacts.md) | One impact per contact, throws, injuries and run-overs from published measurements, falling, lying and getting up |
 | [Gameplay](design/gameplay.md) | Player, weapons, wanted level, police response, missions, pickups |
 | [Audio](design/audio.md) | Procedural sound synthesis and file overrides |

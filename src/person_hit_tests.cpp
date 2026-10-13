@@ -54,7 +54,7 @@ bool ParseKind(const std::string& s, Kind& k) {
     for (int i = 0; i <= (int)Kind::Player; i++) if (s == KindName((Kind)i)) { k = (Kind)i; return true; }
     return false;
 }
-const char* const CHECKS[] = { "bump", "falls", "throw", "momentum", "runover", "body", "getup", "evasion-accel", "evasion-speed", "reaction-time", "freeze-time", "frozen-speed", "look-mobility", "reaction-ratio", "inherited-slowdown" };
+const char* const CHECKS[] = { "bump", "falls", "throw", "momentum", "runover", "body", "getup", "evasion-accel", "evasion-speed", "reaction-time", "freeze-time", "frozen-speed", "look-mobility", "reaction-ratio", "inherited-slowdown", "persistent-traits" };
 const char* const METRICS[] = { "hit", "fell", "dead", "escaped", "threatened-escaped", "noticed", "dodged", "noticed-before-hit", "dodged-before-hit", "frozen" };
 template <size_t N> bool Known(const char* const (&list)[N], const std::string& s) {
     for (const char* k : list) if (s == k) return true;
@@ -182,7 +182,7 @@ bool Parse(const char* path, std::vector<Scene>& scenes, std::vector<Sweep>& swe
             c.count = (int)count;
             s.crowds.push_back(c);
         } else if (r.Is("CHECK")) {
-            if (r.size() < 2 || !Known(CHECKS, r[1])) return fail(r, "CHECK bump|falls|throw|momentum|runover|body|getup, or CHECK evasion-accel <max m/s^2>");
+            if (r.size() < 2 || !Known(CHECKS, r[1])) return fail(r, "CHECK bump|falls|throw|momentum|runover|body|getup|persistent-traits, or CHECK evasion-accel <max m/s^2>");
             if (r[1] == "evasion-accel" || r[1] == "evasion-speed" || r[1] == "frozen-speed") {
                 float& ceiling = r[1] == "evasion-accel" ? s.evasionAccel : r[1] == "evasion-speed" ? s.evasionSpeed : s.frozenSpeed;
                 if (r.size() != 3 || !Num(r, 2, ceiling) || ceiling < 0 || (r[1] != "frozen-speed" && ceiling == 0))
@@ -235,6 +235,8 @@ struct Person {
     bool noticedBeforeHit = false, dodgedBeforeHit = false;
     float mobility = 1, frozenTime = 0;
     float sampledReaction = 0, initialReaction = 0;
+    int initialAttention = -1, changedTraitFrames = 0;
+    float initialScan = 0, initialHorizon = 0, initialFreeze = 0;
     float maxEvasionSpeed = 0, evasionDistance = 0;
     int evasionFrames = 0;
     float maxFrozenSpeed = 0, entrySpeed = -1, slowdownSpeed = -1;
@@ -253,6 +255,7 @@ struct Person {
     float airLying = 0, groundDist = 0, groundTurn = 0;  // s drawn lying in the air; px slid and rad turned on the road
     Vector2 prevPos{};
     float prevAngle = NAN;
+    bool wasGrounded = false;                      // previous observation: a fallen body on the road
     bool fell = false, died = false;
     float restT = -1, upT = -1;
     Vector2 restPos{};
@@ -347,14 +350,20 @@ struct PersonHitTests::State {
                 if (scene.mobility > 0) q.mobility = scene.mobility;
                 q.freezeDelay = scene.freeze;
             }
-            p.mobility = q.mobility;
-            p.initialReaction = q.reaction;
             if (kind != Kind::Aware) { q.reaction = 1e9f; q.sense = 1e9f; }    // does not see it coming
             if (kind == Kind::Lying) q.state = PedState::Down;
             if (kind == Kind::Dead) { q.state = PedState::Dead; q.health = 0; q.pooled = true; }
+            // Snapshot after all fixture overrides; timers may change, personal traits may not.
+            p.mobility = q.mobility;
+            p.initialReaction = q.reaction;
+            p.initialAttention = (int)q.attention;
+            p.initialScan = q.sensePeriod;
+            p.initialHorizon = q.noticeHorizon;
+            p.initialFreeze = q.freezeDelay;
         }
         p.start = pos;
         p.startHealth = p.ped < 0 ? g.player.health : g.peds[p.ped].health;
+        p.wasGrounded = OnGround(g, p) && !Body(g, p).Airborne();
         people.push_back(p);
     }
 
@@ -517,6 +526,9 @@ struct PersonHitTests::State {
             Person& p = people[k];
             if (p.ped >= 0) {
                 const Pedestrian& q = g.peds[p.ped];
+                if ((int)q.attention != p.initialAttention || q.sensePeriod != p.initialScan ||
+                    q.noticeHorizon != p.initialHorizon || q.reaction != p.initialReaction ||
+                    q.mobility != p.mobility || q.freezeDelay != p.initialFreeze) p.changedTraitFrames++;
                 bool dodging = q.state == PedState::Dodge;
                 if (p.noticedAt < 0 && (q.alarmVehicle >= 0 || dodging)) p.noticedAt = t;
                 if (p.dodgedAt < 0 && dodging) { p.dodgedAt = t; p.entrySpeed = Len(preVel[k]) / M; }
@@ -543,11 +555,14 @@ struct PersonHitTests::State {
             if (b.Airborne()) { p.airT += DT; p.maxZ = std::max(p.maxZ, b.z); }
             if (b.Airborne() && OnGround(g, p) && FallOver(g, p)) p.airLying += DT;
             float angle = Angle(g, p);
-            if (p.fell && !b.Airborne() && Len(Vel(g, p)) > 0.5f * M && std::isfinite(p.prevAngle)) {
+            bool grounded = OnGround(g, p) && !b.Airborne();
+            // Measure only road-sliding segments, excluding landing flight and movement after getting up.
+            if (p.fell && p.wasGrounded && grounded && Len(Vel(g, p)) > 0.5f * M && std::isfinite(p.prevAngle)) {
                 p.groundDist += Dist(Pos(g, p), p.prevPos);
                 p.groundTurn += fabsf(WrapAngle(angle - p.prevAngle));
             }
             p.prevPos = Pos(g, p); p.prevAngle = angle;
+            p.wasGrounded = grounded;
             if (OnGround(g, p) && p.kind != Kind::Lying && p.kind != Kind::Dead) p.fell = true;
             if (!Alive(g, p) && p.kind != Kind::Dead) p.died = true;
             bool still = !b.Airborne() && Len(Vel(g, p)) < REST_SPEED;
@@ -670,6 +685,8 @@ struct PersonHitTests::State {
                 } else if (c == "inherited-slowdown" && p.kind == Kind::Aware) {
                     Check("inherited_speed_reduction_mps", id,
                           p.entrySpeed >= 0 && p.slowdownSpeed >= 0 ? p.entrySpeed - p.slowdownSpeed : NAN, s.slowdownDrop, s.startSpeed);
+                } else if (c == "persistent-traits" && p.kind == Kind::Aware) {
+                    Check("changed_trait_frames", id, (float)p.changedTraitFrames, 0, 0);
                 }
             }
         }

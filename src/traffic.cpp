@@ -432,19 +432,32 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
     int n = (int)(lookAhead / step) + 1;
     float front = ai.s + v.length * 0.5f;
     float halfW = v.width * 0.5f + 4.0f;
-    float pedReach = halfW + PED_RADIUS;
-    // The sample points first, and the box around them: only vehicles and people that
-    // can reach that box are tested at every sample. The order of the tests, and so
-    // the obstacle found, is the same as testing everyone at every sample.
-    struct PathSample { Vector2 p; float hd; OBB body; };
+    // Keep the vehicle query on its existing nose path. A turning body's front and
+    // sides sweep a different footprint, so people need the actual rail body poses.
+    // Half a sample interval pads the body's clearance between the 12 px samples.
+    const float pedMargin = 4.0f + step * 0.5f;
+    struct PathSample { Vector2 p; float hd; OBB body, pedBody; };
     static std::vector<PathSample> samples;
     samples.clear();
     PathCursor cursor;
     float lastHd = 0; Vector2 lastSide = Perp(Forward(0.0f));
-    Rectangle area{};
+    Rectangle area{}, personArea{};
+    bool hasPersonArea = false;
+    auto includeBody = [&](const OBB& body) {
+        Vector2 corners[4]; OBBCorners(body, corners);
+        for (Vector2 q : corners) {
+            if (!hasPersonArea) { personArea = { q.x, q.y, 0, 0 }; hasPersonArea = true; }
+            float x0 = std::min(personArea.x, q.x), y0 = std::min(personArea.y, q.y);
+            float x1 = std::max(personArea.x + personArea.width, q.x), y1 = std::max(personArea.y + personArea.height, q.y);
+            personArea = { x0, y0, x1 - x0, y1 - y0 };
+        }
+    };
+    // Legacy rail easing can start outside its planned pose. Check the current body
+    // too, rather than losing a nearby person while the car returns to the rail.
+    OBB currentBody = MakeOBB(v.pos, v.angle, v.width * 0.5f + pedMargin, v.length * 0.5f + pedMargin);
+    if (watchPeople) includeBody(currentBody);
     // During a lane change each point is looked at where the car will be when it gets there.
     bool profiled = lateralShift == ai.laneShift && ai.shiftFrom != ai.shiftTo;
-    float kerbSide = profiled ? std::max(ai.shiftFrom, ai.shiftTo) : lateralShift;   // > 0: onto the sidewalk
     for (int i = 0; i < n; i++) {
         float hd = 0;
         Vector2 p = SampleAt(ai, front + i * step, cursor, &hd);
@@ -456,10 +469,18 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
                                              ai.shiftFrom, ai.shiftTo, ai.shiftS0, ai.shiftS1, v.angle, &heading);
             p = centre + heading * (v.length * 0.5f);
             hd = AngleOf(heading);
-            samples.push_back({ p, hd, MakeOBB(centre, hd, v.width * 0.5f + 4, v.length * 0.5f + 4) });
+            samples.push_back({ p, hd, MakeOBB(centre, hd, v.width * 0.5f + 4, v.length * 0.5f + 4), OBB{} });
         } else {
             p = p + lastSide * lateralShift;
-            samples.push_back({ p, hd, OBB{} });
+            samples.push_back({ p, hd, OBB{}, OBB{} });
+        }
+        if (watchPeople) {
+            Vector2 heading;
+            Vector2 centre = ShiftedRailPose([&](float x) { return Sample(ai, x); }, ai.s + i * step, v.length,
+                                             profiled ? ai.shiftFrom : lateralShift, profiled ? ai.shiftTo : lateralShift,
+                                             ai.shiftS0, ai.shiftS1, v.angle, &heading);
+            samples.back().pedBody = MakeOBB(centre, AngleOf(heading), v.width * 0.5f + pedMargin, v.length * 0.5f + pedMargin);
+            includeBody(samples.back().pedBody);
         }
         if (i == 0) area = { p.x, p.y, 0, 0 };
         float x0 = std::min(area.x, p.x), y0 = std::min(area.y, p.y);
@@ -483,11 +504,10 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
     static std::vector<int> people;
     people.clear();
     if (watchPeople)
-        g.pedGrid.QueryRect(area.x - pedReach, area.y - pedReach, area.x + area.width + pedReach,
-                            area.y + area.height + pedReach, [&](int k) {
+        g.pedGrid.QueryRect(personArea.x - PED_RADIUS, personArea.y - PED_RADIUS,
+                            personArea.x + personArea.width + PED_RADIUS, personArea.y + personArea.height + PED_RADIUS, [&](int k) {
             const Pedestrian& pd = g.peds[k];
             if (!pd.active || pd.state == PedState::Dead) return;
-            if (g.map.TileAt(pd.pos) != Tile::Road && kerbSide <= 0) return;   // on the sidewalk: ignore
             people.push_back(k);
         });
     for (int i = 0; i < n; i++) {
@@ -510,12 +530,16 @@ static Obstacle ScanPath(Game& g, int self, float lookAhead, float lateralShift,
         }
         if (best.gap <= d) break;
         if (watchPeople) {
+            auto reaches = [&](Vector2 pos, float radius) {
+                Vector2 normal; float depth;
+                return CircleOBB(pos, radius, samples[i].pedBody, normal, depth) ||
+                       (i == 0 && CircleOBB(pos, radius, currentBody, normal, depth));
+            };
             bool seen = false;
             for (int k : people)
-                if (Len2(g.peds[k].pos - p) <= pedReach * pedReach) { seen = true; break; }
+                if (reaches(g.peds[k].pos, PED_RADIUS)) { seen = true; break; }
             if (seen) { best = Obstacle{}; best.gap = d; best.isPed = true; }
-            if (!g.player.inVehicle && Len2(g.player.pos - p) < pedReach * pedReach &&
-                (g.map.TileAt(g.player.pos) == Tile::Road || kerbSide > 0) && d < best.gap) {
+            if (!g.player.inVehicle && d < best.gap && reaches(g.player.pos, PLAYER_RADIUS)) {
                 best = Obstacle{}; best.gap = d; best.isPlayer = true; best.isPed = true;
             }
         }

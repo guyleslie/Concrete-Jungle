@@ -58,7 +58,9 @@ Traffic stops for people in the road (see [Traffic › Obstacles and impatience]
 
 At creation a person samples one persistent attention profile, a reaction time and a brief freeze duration (usually zero). The look supplies mobility and a reaction multiplier. The required `ATTENTION`, `DODGE`, `FREEZE` and `CIVILIAN` records in [civilians.cfg](../guides/adding-content.md#civilians) control these traits; [ADR-0013](../adr/0013-individual-pedestrian-attention.md) refines the original predictive steering decision. The [specification](pedestrian-attention-proposal.md) records the research and its limits, and the [measurements](pedestrian-attention-results.md) record before and after.
 
-Attentive people scan about every 0.1 s and predict 1.6 s ahead. The distracted profiles scan about every 0.35 s and predict 1.0 s ahead. The intervals have independent offsets and jitter. About 30 % are distracted, including 11 % wearing headphones. A fresh vehicle threat must be in the person's viewing cone or audible from behind; headphones suppress that rear warning. This angle gate is applied before choosing the most urgent danger, so an unheard car cannot hide a visible one. Predictions retain the existing model:
+The original shared reaction draw seeds a local generator for these personal traits. Adding trait draws therefore preserves the next person's spawn and the existing balance and courage draws. Later scans and threats keep the sampled traits; their timers can change without resampling the person.
+
+Attentive people scan about every 0.1 s; the distracted profiles scan about every 0.35 s. Each predicts conflicts within its configured notice horizon; the measured tuning is in [`civilians.cfg`](../../assets/data/civilians.cfg). The intervals have independent offsets and jitter. About 30 % are distracted, including 11 % wearing headphones. A fresh vehicle threat must be in the person's viewing cone or audible from behind; headphones suppress that rear warning. This angle gate is applied before choosing the most urgent danger, so an unheard car cannot hide a visible one. Predictions retain the existing model:
 
 | Vehicle | Prediction |
 |---|---|
@@ -67,9 +69,9 @@ Attentive people scan about every 0.1 s and predict 1.6 s ahead. The distracted 
 
 The person is in danger when its predicted position falls inside the vehicle's body grown by 0.35 m of personal space (0.1 m for a vehicle that is about to stop), and not beside its rear half. Normal traffic passing a sidewalk therefore never alarms anyone.
 
-A person in danger reacts after its sampled reaction time: initially 0.18–0.45 s for attentive people or 0.35–0.75 s for distracted people, scaled by the look, the rear-hearing factor and small jitter. The vehicle must still be perceived and predicted to collide when the delay expires; a serial guards against a reused vehicle slot. Someone already dodging can keep track of that learned threat after turning away, while other vehicles still pass the perception gate. The crossing gap check is deliberately independent of these distraction filters and continues to look in every direction.
+A person in danger reacts after its sampled reaction time: 0.18–0.45 s for attentive people or 0.35–0.75 s for distracted people, scaled by the look, the rear-hearing factor and small jitter. The vehicle must still be perceived and predicted to collide when the delay expires; a serial guards against a reused vehicle slot. Someone already dodging can keep track of that learned threat after turning away, while other vehicles still pass the perception gate. The crossing gap check is deliberately independent of these distraction filters and continues to look in every direction.
 
-The person chooses the nearer free side unless a wall, furniture or the city edge blocks it. Initially 8 % freeze for 0.25–0.65 s before stepping; they slow with bounded acceleration rather than resetting their velocity. Replanning an ongoing dodge cannot restart the freeze. The voluntary step targets 4.5 m/s for a vehicle faster than 20 km/h, otherwise 1.8 m/s, with the look's mobility and personal pace applied. Its actual velocity change, including heading projection, is limited to 6 m/s² times mobility. Avoidance cannot accelerate it past the target speed; faster motion inherited from fleeing or a contact stagger decelerates within the same limit. The stagger itself remains the immediate physical contact response specified by CJ-035.
+The person chooses the nearer free side unless a wall, furniture or the city edge blocks it. Eight percent freeze for 0.25–0.65 s before stepping; they slow with bounded acceleration rather than resetting their velocity. Replanning an ongoing dodge cannot restart the freeze. The voluntary step targets 4.0 m/s for a vehicle faster than 20 km/h, otherwise 1.8 m/s, with the look's mobility and personal pace applied. Its actual velocity change, including heading projection, is limited to 6 m/s² times mobility. Avoidance cannot accelerate it past the target speed; faster motion inherited from fleeing or a contact stagger decelerates within the same limit. The stagger itself remains the immediate physical contact response specified by CJ-035.
 
 It keeps dodging until it is out of the vehicle's path (at most 2 s), and replans if another perceived vehicle becomes more urgent. After a close call (the vehicle was less than 0.9 s away) it panics and flees with a 50 % chance, sometimes screaming; otherwise it stands startled for 0.5–1.4 s and carries on.
 
@@ -106,7 +108,7 @@ People walk where their body faces. The steering produces a desired velocity; th
 |---|---|---|---|
 | Walking, waiting, crossing | 3 m/s² | 4.5 rad/s | 4 m/s² |
 | Fleeing | 6 m/s² | 8 rad/s | 8 m/s² |
-| Dodging | `DODGE` acceleration × mobility (initially 6 m/s²) | `DODGE` turn rate (20 rad/s) | 3 m/s² × mobility |
+| Dodging | `DODGE` acceleration × mobility (6 m/s²) | `DODGE` turn rate (20 rad/s) | 3 m/s² × mobility |
 | Fighting | 6 m/s² | 8 rad/s | 4 m/s² |
 | Confronting, returning to a car | 3 m/s² | 4.5 rad/s | 4 m/s² |
 
