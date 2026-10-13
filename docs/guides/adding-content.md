@@ -259,8 +259,10 @@ SCALE    <factor>
 SWAY     <radians>
 ANIM     <animation> <first frame> <frames> [<s>]
 GAIT     <jog|run> <from m/s> <steps/s> <to m/s> <steps/s>
-WALK     <metres>
-CIVILIAN <file> [walk cycle m]
+ATTENTION <attentive|distracted|headphones> <share> <scan s> <notice horizon s> <view degrees> <reaction min s> <reaction max s> <behind reaction factor> <hears behind 0|1>
+DODGE    <fast m/s> <slow m/s> <acceleration m/s²> <turn rad/s>
+FREEZE   <share> <min s> <max s>
+CIVILIAN <file> <walk cycle m> <mobility factor> <reaction factor>
 ```
 
 | Record | Meaning |
@@ -270,10 +272,33 @@ CIVILIAN <file> [walk cycle m]
 | `SWAY` | How far the game turns a walking person with the steps; 0 for rendered walks, which sway by themselves |
 | `ANIM` | Where an animation's frames are: `walk`, `idle`, `lying`, `punch` (right, left), `fist` (two shake positions), `jog`, `run`, `fall`; jog and run are optional. The fall gives the seconds it plays at least (a longer flight stretches it) and must end in the lying pose; falling and lying frames cover the frame's metres × `CHAR_SCALE`, so that a body on the ground draws at real size |
 | `GAIT` | From which speed a jog or run shows (it holds until 0.3 m/s below that), and its cadence, rising linearly between the two points |
-| `WALK` | Walk cycle (two steps) for `CIVILIAN` lines that give none |
-| `CIVILIAN` | One look and its walk cycle: the look's stride, so that a planted foot stays put |
+| `ATTENTION` | One of the three required profiles: its population share, scan period, predicted-conflict horizon, viewing angle, reaction range and response to a rear vehicle |
+| `DODGE` | Base fast dodge and slow step speeds, acceleration and turn rate before the look's mobility factor; the fast speed also follows personal walking pace, clamped to 0.85–1.15 times the base |
+| `FREEZE` | Share of newly created people who pause briefly before evading, and the duration range |
+| `CIVILIAN` | One look, its measured walk cycle (two steps), a mobility factor for walking and voluntary evasion, and a reaction-time factor |
 
 The walk advances with the distance walked; the jog and run play by cadence, because their feet touch the ground for a frame at most. Every atlas needs the same frame size and count. The lying frame covers `FRAME` × `CHAR_SCALE` metres, so that the body shows at real size. At load, every frame is cut to its visible part and packed, so the transparent margins of the frames cost no video memory. At least one loadable `CIVILIAN` line is required; without one, loading fails ([ADR-0009](../adr/0009-required-character-atlases.md)).
+
+All three `ATTENTION` records, one `DODGE`, one `FREEZE` and the four fields of every `CIVILIAN` record are required. The attention shares sum to 1 (within 0.0001); duplicate profiles or behaviour records fail loading. Values must be finite numbers in these ranges; invalid records stop loading with the file and line, and absent required records stop loading with the file and missing record names ([ADR-0010](../adr/0010-no-fallback-content.md)).
+
+| Field | Valid range |
+|---|---|
+| Attention / freeze share | 0–1 |
+| Scan period | 0.02–2 s |
+| Notice horizon | 0.1–3 s |
+| Viewing angle | 180–200° |
+| Reaction minimum / maximum | 0.05–3 s; maximum at least minimum |
+| Rear reaction factor | 1–3 |
+| Hears behind | 0 or 1 |
+| Fast / slow dodge speed | 0.5–10 m/s / 0.5–3 m/s |
+| Dodge acceleration | 0.1–20 m/s² |
+| Dodge turn rate | 1–30 rad/s |
+| Freeze minimum / maximum | 0–3 s; maximum at least minimum |
+| Per-look walk cycle | 0.2–4 m |
+| Per-look mobility | 0.25–1.5 |
+| Per-look reaction factor | 0.5–3 |
+
+Traits are drawn once when a person appears. A mobility factor below 1 lowers walking speed and dodge speed and acceleration; a reaction factor above 1 delays the reaction. The balance distribution in `impacts.cfg` remains unchanged. A headphone profile with `hears behind 0` cannot notice a new rear threat outside its viewing angle, while a person already dodging can track the vehicle they saw. Crossing gap checks remain independent of these attention filters. See [Pedestrians](../design/pedestrians.md#perception-and-dodging) and the [CJ-038 plan](../design/pedestrian-attention-proposal.md).
 
 The shipped looks are rendered from 3D models: to change or add one, edit [looks.json](../../tools/cj004/looks.json) and run `python tools/cj004/make_civilians.py` (see the [civilian 3D pipeline](../../assets/art/cj004/README.md#civilian-3d-pipeline)).
 

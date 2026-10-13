@@ -2,10 +2,12 @@
 //  Pedestrians: walk around their block's sidewalk ring, wait at the kerb for the
 //  lights and a gap in the traffic, use the zebra crossings, wander into parks, idle.
 //
-//  Perception: every ~0.1 s a person predicts the motion of nearby vehicles (keeping
+//  Perception: a personal profile sets the scan interval and how far ahead to predict
+//  nearby vehicles (keeping
 //  their speed and turn rate; a driver braking for people is assumed to stop). Only a
-//  vehicle whose predicted path actually reaches them within 1.6 s is a danger: after
-//  a personal reaction time they jump sideways out of its path (Dodge), then either
+//  vehicle whose predicted path actually reaches them is a danger: after
+//  individual attention and reaction time they step sideways out of its path (Dodge),
+//  sometimes freezing briefly, then either
 //  carry on, stand startled, or run (Flee). Gunfire and explosions make people flee
 //  after their reaction time; panic spreads to bystanders, but only one step.
 //
@@ -27,6 +29,7 @@ class CityMap;
 
 // Confront: a driver walks to the other party and argues; ToCar: back to their own car.
 enum class PedState : uint8_t { Walk, Wait, Cross, Idle, Wander, Flee, Rejoin, Dodge, Fight, Confront, ToCar, Down, Dead };
+enum class PedAttention : uint8_t { Attentive, Distracted, Headphones };
 
 struct Pedestrian {
     bool     active = false;
@@ -52,14 +55,21 @@ struct Pedestrian {
     float    moveSpeed = 0;          // Dodge: speed of the jump / step aside
     float    rethink = 0;            // Flee / Wait: time until the next decision
     int      dodgeFrom = -1;         // vehicle being dodged
+    uint32_t dodgeSerial = 0;        // the learned threat, guarded against a reused vehicle slot
     bool     closeCall = false;      // the vehicle came very close (may panic afterwards)
     float    alarm = -1;             // >= 0: will react to a danger after this delay
     Vector2  alarmFrom{};  float alarmDur = 0;
     bool     alarmSecondHand = false;
     bool     secondHand = false;     // fleeing because others flee (does not spread further)
     int      alarmVehicle = -1;      // the reaction is a dodge from this vehicle
+    uint32_t alarmVehicleSerial = 0;
     float    sense = 0;              // time until the next look at the traffic
-    float    reaction = 0.3f;        // personal reaction time (s)
+    PedAttention attention = PedAttention::Attentive;
+    float    sensePeriod = 0, noticeHorizon = 0;  // profile's scan interval and collision horizon (s)
+    float    reaction = 0;           // sampled personal reaction time, including the look's factor (s)
+    float    mobility = 0;           // the look's walking and evasive mobility
+    float    freezeDelay = 0;        // personal freeze duration on a fresh vehicle threat (s)
+    float    freezeT = 0;            // time left frozen during this dodge (s)
     float    patience = 30;          // waiting at a red light before crossing on a gap
     float    courage = 0;            // > 0.85: hits back when punched instead of running
     float    punchCd = 0, punchT = 0;   // Fight: time to the next punch / punch animation left

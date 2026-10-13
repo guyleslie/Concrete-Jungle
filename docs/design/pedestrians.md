@@ -30,7 +30,7 @@ Source: `src/pedestrian.h`, `src/pedestrian.cpp`; drivers on foot in `src/traffi
 | `Wander` | Walks to a random spot inside a park or plaza |
 | `Flee` | Runs from a threat along the sidewalk |
 | `Rejoin` | Pauses, then returns to the nearest point of its sidewalk ring |
-| `Dodge` | Jumps (or, for a slow vehicle, steps) sideways out of a vehicle's path |
+| `Dodge` | Briefly freezes if that is a personal trait, then accelerates out of a vehicle's path |
 | `Fight` | Hits the player back after being punched; a driver in an incident may fight the other driver instead |
 | `Confront` | A driver out of their car walks to the other party and argues |
 | `ToCar` | A driver walks back to the door of their own car |
@@ -43,7 +43,7 @@ A person interrupted by a dodge returns to what it was doing (`Walk`, `Wait`, `C
 
 - Each person walks on a personal line up to 0.56 m (9 px) either side of the sidewalk centre line, so people do not all walk single file. The steering aims at a point 2.5 m ahead on that line, which brings anyone pushed aside back onto it.
 - At each corner a person picks the next leg: a short idle (6 %), in parks and plazas sometimes a wander (14 %), a street crossing to the neighbouring block (up to 39 %), otherwise the next corner of its own block.
-- Walking speed is 1.2–1.7 m/s per person; crossing is 1.25 times faster.
+- Walking speed is 1.2–1.7 m/s per person, scaled by the look's mobility; crossing is 1.25 times faster. The older looks use 0.75 mobility in `civilians.cfg`.
 
 ## Crossing the street
 
@@ -56,7 +56,9 @@ Traffic stops for people in the road (see [Traffic › Obstacles and impatience]
 
 ## Perception and dodging
 
-Every 0.1 s (with a random offset per person) each person predicts the motion of the vehicles near it over the next 1.6 s:
+At creation a person samples one persistent attention profile, a reaction time and a brief freeze duration (usually zero). The look supplies mobility and a reaction multiplier. The required `ATTENTION`, `DODGE`, `FREEZE` and `CIVILIAN` records in [civilians.cfg](../guides/adding-content.md#civilians) control these traits; [ADR-0013](../adr/0013-individual-pedestrian-attention.md) refines the original predictive steering decision. The [specification](pedestrian-attention-proposal.md) records the research and its limits, and the [measurements](pedestrian-attention-results.md) record before and after.
+
+Attentive people scan about every 0.1 s and predict 1.6 s ahead. The distracted profiles scan about every 0.35 s and predict 1.0 s ahead. The intervals have independent offsets and jitter. About 30 % are distracted, including 11 % wearing headphones. A fresh vehicle threat must be in the person's viewing cone or audible from behind; headphones suppress that rear warning. This angle gate is applied before choosing the most urgent danger, so an unheard car cannot hide a visible one. Predictions retain the existing model:
 
 | Vehicle | Prediction |
 |---|---|
@@ -65,7 +67,11 @@ Every 0.1 s (with a random offset per person) each person predicts the motion of
 
 The person is in danger when its predicted position falls inside the vehicle's body grown by 0.35 m of personal space (0.1 m for a vehicle that is about to stop), and not beside its rear half. Normal traffic passing a sidewalk therefore never alarms anyone.
 
-A person in danger reacts after its personal reaction time of 0.18–0.45 s (1.5 times longer when the vehicle comes from behind). It then moves sideways out of the danger zone, to the nearer edge unless a wall, furniture or the city edge is in the way there: at 5.5 m/s for a vehicle faster than 20 km/h, otherwise at a calm 1.8 m/s. It keeps dodging until it is out of the vehicle's path (at most 2 s), and re-plans if another vehicle becomes the more urgent danger. After a close call (the vehicle was less than 0.9 s away) it panics and flees with a 50 % chance, sometimes screaming; otherwise it stands startled for 0.5–1.4 s and carries on.
+A person in danger reacts after its sampled reaction time: initially 0.18–0.45 s for attentive people or 0.35–0.75 s for distracted people, scaled by the look, the rear-hearing factor and small jitter. The vehicle must still be perceived and predicted to collide when the delay expires; a serial guards against a reused vehicle slot. Someone already dodging can keep track of that learned threat after turning away, while other vehicles still pass the perception gate. The crossing gap check is deliberately independent of these distraction filters and continues to look in every direction.
+
+The person chooses the nearer free side unless a wall, furniture or the city edge blocks it. Initially 8 % freeze for 0.25–0.65 s before stepping; they slow with bounded acceleration rather than resetting their velocity. Replanning an ongoing dodge cannot restart the freeze. The voluntary step targets 4.5 m/s for a vehicle faster than 20 km/h, otherwise 1.8 m/s, with the look's mobility and personal pace applied. Its actual velocity change, including heading projection, is limited to 6 m/s² times mobility. Avoidance cannot accelerate it past the target speed; faster motion inherited from fleeing or a contact stagger decelerates within the same limit. The stagger itself remains the immediate physical contact response specified by CJ-035.
+
+It keeps dodging until it is out of the vehicle's path (at most 2 s), and replans if another perceived vehicle becomes more urgent. After a close call (the vehicle was less than 0.9 s away) it panics and flees with a 50 % chance, sometimes screaming; otherwise it stands startled for 0.5–1.4 s and carries on.
 
 ## Fleeing and panic
 
@@ -100,7 +106,7 @@ People walk where their body faces. The steering produces a desired velocity; th
 |---|---|---|---|
 | Walking, waiting, crossing | 3 m/s² | 4.5 rad/s | 4 m/s² |
 | Fleeing | 6 m/s² | 8 rad/s | 8 m/s² |
-| Dodging | 12 m/s² | 20 rad/s | 3 m/s² |
+| Dodging | `DODGE` acceleration × mobility (initially 6 m/s²) | `DODGE` turn rate (20 rad/s) | 3 m/s² × mobility |
 | Fighting | 6 m/s² | 8 rad/s | 4 m/s² |
 | Confronting, returning to a car | 3 m/s² | 4.5 rad/s | 4 m/s² |
 
@@ -140,10 +146,12 @@ The 28 looks are atlases rendered from 3D models: men and women of three age gro
 
 | Constant | Value | Where |
 |---|---|---|
-| `LOOK_AHEAD`, `SENSE_PERIOD` | 1.6 s, 0.1 s | `pedestrian.cpp` |
+| Attention profiles | Shares, scan intervals, prediction horizons, viewing angle, reaction ranges and hearing | `ATTENTION` in `civilians.cfg` |
 | `BODY_MARGIN` | 0.35 m | `pedestrian.cpp` |
 | `SLOW_VEHICLE` | 20 km/h | `pedestrian.cpp` |
-| `RUN_SPEED`, `DODGE_SPEED`, `STEP_SPEED` | 5.2, 5.5, 1.8 m/s | `pedestrian.cpp` |
+| `RUN_SPEED` | 5.2 m/s, scaled by walking speed | `pedestrian.cpp` |
+| Dodge and freezing | Evasive speed, acceleration and turn rate; freeze share and duration | `DODGE`, `FREEZE` in `civilians.cfg` |
+| Look mobility and reaction | Walking/evasion factor and reaction multiplier | `CIVILIAN` in `civilians.cfg` |
 | `TTC_K`, `TTC_TAU0`, `TTC_MAX` | 1.5 m², 3 s, 4 s | `pedestrian.cpp` |
 | `NEIGHBOUR_R`, `GOAL_TIME` | 5 m, 0.5 s | `pedestrian.cpp` |
 | `PED_BODY_FADE`, `PED_BODY_GONE` | 24 s, 27 s | `pedestrian.h` |

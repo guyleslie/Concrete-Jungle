@@ -15,6 +15,7 @@ The game has an automated test mode that runs a scripted scenario for a fixed nu
 - [Turning fixture](#turning-fixture)
 - [Person-hit scenes](#person-hit-scenes)
 - [Radio scenes](#radio-scenes)
+- [Pedestrian attention and evasion](#pedestrian-attention-and-evasion)
 - [Startup loading checks](#startup-loading-checks)
 - [Workflow](#workflow)
 
@@ -107,7 +108,7 @@ The run ends by logging:
 | `PEDS` crossing | Person-seconds spent on a crossing's road part while the crossing traffic has green, split into people who started on green and jaywalkers | Close to 0 in `foot` and `day` |
 | `PEDS` down too long | Person-seconds spent knocked down for more than 1 s beyond their get-up time | 0 |
 | `PEDS` sliding | Share of moving time in which a person's body faces more than 35° away from its motion | Close to 0 % |
-| `PEDS` hits | People hit by traffic and by the player; in `rampage`, people in the car's straight path within 2 s and how many of them were hit | Traffic hits 0 in `foot` and `day`; at least 70 % escape in `rampage` |
+| `PEDS` hits | People hit by traffic and by the player; in `rampage`, people in the car's straight path within 2 s and how many of them were hit | Traffic hits 0 in `foot` and `day`; CJ-038 replaces the historical 70 % minimum with 50–65 % escape in `rampage` |
 | `PEDS at the end` | People per state and within 30, 60 and 110 m of the player | Most people walking; everyone within 110 m |
 | `PEDS` fights | People who fought back and punches they landed (`brawl`) | Some in `brawl` |
 | `PLAYER` (`player`) | Per weapon and phase: the gait the legs show (share of the moving frames with the expected one) and the settled speed; how fast the weapon is raised to aim; how long after the last shot it is lowered; shots or blows; the clip after the reload and its time | Gaits above 85 % (the rest is the turn between phases); walk 1.50 m/s, run 6.50 m/s; raised within 0.20 s; lowered 0.8 s after the last shot plus half the 0.25 s lowering |
@@ -387,6 +388,27 @@ The fixture writes `build/radio/<scene>.wav` (the mix, to listen to), `<scene>_d
 **Excerpts (2026-10-13).** After the user's playtest the programme plays a talk clip after every song, a song as a 90 s slice from a random point, and a game joins every station at a random point ([ADR-0015](adr/0015-radio-song-excerpts.md)). Run on the changed parts (the programme, an `EXCERPT`, an `INCAR` and a `PASS` scene): 17,672 clips over 240 h with a talk clip after every song and never two in a row, songs back after 9.6 minutes at the soonest (13.0 on average), slices starting from 0 to 100 % of the way into their songs, talk 7.9 % of the airtime; three 12 s slices and two talk clips aired their slots to the millisecond, changes 0–21 ms, the fades within 0.04 dB of their curves, the radio's update at most 4.1 ms in a frame against 0.3–0.7 s for a seek on the main thread; the in-car talk clip at −16.0 LUFS and the passing car within 0.46 dB, as before. The world's start-up took 802 ms against 797 ms before.
 
 In the city the radio leaves the simulation as it was: the metric lines of `foot`, `drive`, `crash` (1,500 frames) and `rampage` (3,600) are identical with and without it. Its `RADIO` line reports 0.072–0.075 ms of main-thread time per frame and 0.07–0.09 % of a core on the audio thread.
+
+## Pedestrian attention and evasion
+
+[CJ-038](backlog.md#cj-038-pedestrian-attention-and-evasion) uses the person-hit runner with [`tests/person-evasion.cfg`](../tests/person-evasion.cfg), rather than replacing the CJ-035 impact scenes. Its [specification](design/pedestrian-attention-proposal.md) separates research findings from game tuning; the [measurement report](design/pedestrian-attention-results.md) preserves failed intermediate runs as well as final evidence.
+
+```bash
+python tools/run_cj038.py --phase before --run-name baseline --suite all
+python tools/run_cj038.py --phase after --run-name attention --suite all
+```
+
+Build separately. The runner runs one game window at a time, saves hashes and the git state in `build/shots/cj038/<phase>/<run-name>/manifest.json`, and refuses existing output directories. `--suite city`, `evasion` or `impacts` runs one part; `--repeat N` repeats it. `--exe <path>` selects a retained build. An exit code of 1 means incomplete evidence or failed acceptance, including failed baseline checks. The current city criteria are 50–65 % escape in `rampage`, zero traffic hits in `foot`/`day`, and pedestrian CPU time at most 0.5 ms per frame.
+
+Seven fixed-seed comparison scenes cover front and rear warning, rows, crowds and a slow vehicle. Their layout generator is independent of random trait sampling. `threatened-escaped` uses only living people initially in the vehicle's straight swept body plus person radius, so safe bystanders do not inflate the denominator. Exact row/crowd outcomes are measurements; the city's escape target is not imposed on every isolated geometry.
+
+The additional scenes pin traits for meaningful behavioural checks: a headphone wearer approached from behind must stay unaware before contact; a visible approach must produce a real dodge; reaction and freeze timing have numeric bounds; a frozen person initially at rest must stay still; the same seed compares adult and older-look sampled reaction (factor 1.25) and mobility (1.0 against 0.75). An inherited-running-speed scene requires actual deceleration within 0.4 s, with no speed increase or excessive change of velocity.
+
+The optional scene records are documented in [`tests/person-hits.cfg`](../tests/person-hits.cfg): `SEED`, `LOOK`, `TRAITS` and `MOTION`, with the additional named `CHECK` and `EXPECT` values. The `PERSONHIT evasion` and trait/motion lines record onset, movement, sampled traits and actual unhit speed/acceleration. Contact impulses are excluded from voluntary movement checks. The paired look-reaction check must run with its earlier reference scene; filtering `CJ_TEST_CASE=pinned-look` keeps both.
+
+City logs also emit split `PERSON CONTACT`, `PERSON CAR`, `PERSON PED` and `PERSON CROSS` records in screenshot mode, before an impact changes either actor. They report the car's planned stop and distraction, the person's state and attention, and the crossing signal. Each record fits raylib's log length; a successful process exit alone does not imply safe crossings.
+
+The original CJ-035 suite remains mandatory to guard the contact, injury, throw, run-over and get-up model. Automated success leaves CJ-038 awaiting the user's playtest.
 
 ## Workflow
 

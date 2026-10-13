@@ -7,6 +7,7 @@
 #include "math_utils.h"
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include "datafile.h"
 #include "config.h"
 #include "startup_loading.h"
@@ -654,12 +655,24 @@ static spritegen::PedAnim PedAnimByName(const std::string& s) {
     return PedAnim::COUNT;
 }
 
+// Behaviour values must be real, finite numbers; atof would silently accept a typo as zero.
+static float CivilianValue(const DataRecord& r, size_t at, float lo, float hi) {
+    char* end = nullptr;
+    const std::string& token = r[at];
+    float value = strtof(token.c_str(), &end);
+    AssetValidate(end != token.c_str() && *end == '\0' && std::isfinite(value) && value >= lo && value <= hi,
+                  TextFormat("civilians.cfg line %d: %s value %d must be a number from %g to %g",
+                             r.line, r[0].c_str(), (int)at, lo, hi));
+    return value;
+}
+
 static void LoadCivilians(Assets& A) {
     using spritegen::PedAnim;
     int framePx = 0, frames = 0;
-    float frameM = 0, walkM = 1.3f, scale = 1.0f, sway = 0.05f, fallS = 0;
+    float frameM = 0, scale = 1.0f, sway = 0.05f, fallS = 0;
     PedFrames layout[(int)PedAnim::COUNT];
     PedGait jog, run;
+    bool attentionSeen[3] = {}, dodgeSeen = false, freezeSeen = false;
     size_t bytes = 0, uniform = 0;
     char path[256];
     const auto records = AssetData("assets/data/civilians.cfg");
@@ -669,10 +682,41 @@ static void LoadCivilians(Assets& A) {
     for (const DataRecord& r : records) {
         AssetRecordStep step("records", completed, (int64_t)records.size());
         if (r.Is("CIVILIAN")) AssetPulse(TextFormat("Civilian look %lld", (long long)(A.peds.size() + 1)));
-        if (r.Is("FRAME") && r.size() >= 3) { framePx = r.I(1); frameM = r.F(2); }
+        if (r.Is("ATTENTION")) {
+            AssetValidate(r.size() == 10, TextFormat("civilians.cfg line %d: ATTENTION takes a name and eight values", r.line));
+            const char* names[] = { "attentive", "distracted", "headphones" };
+            int k = 0;
+            while (k < 3 && r[1] != names[k]) k++;
+            AssetValidate(k < 3, TextFormat("civilians.cfg line %d: unknown attention profile '%s'", r.line, r[1].c_str()));
+            AssetValidate(!attentionSeen[k], TextFormat("civilians.cfg line %d: a second %s attention profile", r.line, names[k]));
+            PedAttentionDef& a = A.pedAttention[k];
+            a.share = CivilianValue(r, 2, 0, 1);
+            a.sensePeriod = CivilianValue(r, 3, 0.02f, 2);
+            a.noticeHorizon = CivilianValue(r, 4, 0.1f, 3);
+            a.viewCos = cosf(CivilianValue(r, 5, 180, 200) * DEG2RAD * 0.5f);
+            a.reactionMin = CivilianValue(r, 6, 0.05f, 3);
+            a.reactionMax = CivilianValue(r, 7, a.reactionMin, 3);
+            a.behindFactor = CivilianValue(r, 8, 1, 3);
+            float hearing = CivilianValue(r, 9, 0, 1);
+            AssetValidate(hearing == 0 || hearing == 1, TextFormat("civilians.cfg line %d: hearing must be 0 or 1", r.line));
+            a.hearsBehind = hearing == 1;
+            attentionSeen[k] = true;
+        } else if (r.Is("DODGE")) {
+            AssetValidate(r.size() == 5 && !dodgeSeen, TextFormat("civilians.cfg line %d: DODGE is required once, with four values", r.line));
+            A.pedEvasion.fastSpeed = CivilianValue(r, 1, 0.5f, 10) * cfg::M;
+            A.pedEvasion.slowSpeed = CivilianValue(r, 2, 0.5f, 3) * cfg::M;
+            A.pedEvasion.accel = CivilianValue(r, 3, 0.1f, 20) * cfg::M;
+            A.pedEvasion.turn = CivilianValue(r, 4, 1, 30);
+            dodgeSeen = true;
+        } else if (r.Is("FREEZE")) {
+            AssetValidate(r.size() == 4 && !freezeSeen, TextFormat("civilians.cfg line %d: FREEZE is required once, with three values", r.line));
+            A.pedEvasion.freezeShare = CivilianValue(r, 1, 0, 1);
+            A.pedEvasion.freezeMin = CivilianValue(r, 2, 0, 3);
+            A.pedEvasion.freezeMax = CivilianValue(r, 3, A.pedEvasion.freezeMin, 3);
+            freezeSeen = true;
+        } else if (r.Is("FRAME") && r.size() >= 3) { framePx = r.I(1); frameM = r.F(2); }
         else if (r.Is("SCALE") && r.size() >= 2) scale = r.F(1);
         else if (r.Is("SWAY") && r.size() >= 2) sway = r.F(1);
-        else if (r.Is("WALK") && r.size() >= 2) walkM = r.F(1);
         else if (r.Is("ANIM") && r.size() >= 4) {
             PedAnim a = PedAnimByName(r[1]);
             if (a == PedAnim::COUNT) { TraceLog(LOG_WARNING, "civilians.cfg:%d unknown animation '%s'", r.line, r[1].c_str()); continue; }
@@ -682,7 +726,8 @@ static void LoadCivilians(Assets& A) {
             PedGait g = { r.F(2), r.F(3), r.F(4), r.F(5) };
             if (r[1] == "jog") jog = g; else if (r[1] == "run") run = g;
             else TraceLog(LOG_WARNING, "civilians.cfg:%d unknown gait '%s'", r.line, r[1].c_str());
-        } else if (r.Is("CIVILIAN") && r.size() >= 2) {
+        } else if (r.Is("CIVILIAN")) {
+            AssetValidate(r.size() == 5, TextFormat("civilians.cfg line %d: CIVILIAN takes a file, stride, mobility and reaction factor", r.line));
             AssetValidate(framePx > 0 && frameM > 0, TextFormat("civilians.cfg line %d: CIVILIAN before FRAME", r.line));
             snprintf(path, sizeof(path), "assets/characters/civilians/%s", r[1].c_str());
             Image img = LoadRequiredImage(path);
@@ -698,7 +743,9 @@ static void LoadCivilians(Assets& A) {
             frames = n;
             uniform += (size_t)img.width * img.height * 4;
             CivilianAtlas a;
-            a.walkCycleM = r.F(2, walkM);
+            a.walkCycleM = CivilianValue(r, 2, 0.2f, 4);
+            a.mobility = CivilianValue(r, 3, 0.25f, 1.5f);
+            a.reactionFactor = CivilianValue(r, 4, 0.5f, 3);
             guard.Release();
             bytes += PackCivilian(a, img, framePx);
             A.peds.push_back(a);
@@ -716,6 +763,10 @@ static void LoadCivilians(Assets& A) {
         A.pedRun = run;
     }
     AssetValidate(!A.peds.empty(), "No usable civilian atlases are available");
+    AssetValidate(attentionSeen[0] && attentionSeen[1] && attentionSeen[2] && dodgeSeen && freezeSeen,
+                  "civilians.cfg requires attentive, distracted and headphones ATTENTION profiles, DODGE and FREEZE");
+    AssetValidate(fabsf(A.pedAttention[0].share + A.pedAttention[1].share + A.pedAttention[2].share - 1) < 0.0001f,
+                  "civilians.cfg attention shares must add up to 1");
     for (const CivilianAtlas& atlas : A.peds) AssetValidate(IsTextureValid(atlas.tex), "A civilian atlas is unavailable");
     AssetDone("validation");
     TraceLog(LOG_INFO, "CIVILIANS: %d looks, %d px frames for %.2f m, drawn x%.2f, %.1f MB packed from %.1f MB (before mipmaps)",

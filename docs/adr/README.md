@@ -11,13 +11,14 @@ An architecture decision record (ADR) captures one significant technical decisio
 | [0003](0003-world-scale.md) | World scale of 16 pixels per metre | Accepted | 2026-09-26 |
 | [0004](0004-kinematic-rail-traffic.md) | Kinematic "rail" traffic | Accepted | 2026-09-26 |
 | [0005](0005-vehicle-contact-solver.md) | Sub-stepped impulse solver for vehicle contacts | Accepted | 2026-09-27 |
-| [0006](0006-pedestrian-steering.md) | Predictive perception and time-to-collision steering for pedestrians | Accepted | 2026-09-27 |
+| [0006](0006-pedestrian-steering.md) | Predictive perception and time-to-collision steering for pedestrians | Accepted; refined by ADR-0013 | 2026-09-27 |
 | [0007](0007-dynamic-vehicle-handling.md) | Dynamic axle-based vehicle handling | Proposed | 2026-09-27 |
 | [0008](0008-human-like-traffic.md) | Human-like physical traffic and persistent drivers | Proposed | 2026-10-03 |
 | [0009](0009-required-character-atlases.md) | Required atlases for the player and the civilians | Accepted; extended to all content by ADR-0010 | 2026-10-11 |
 | [0010](0010-no-fallback-content.md) | No fallback content | Accepted | 2026-10-11 |
 | [0011](0011-vehicle-person-impact.md) | A contact between a vehicle and a person is one impact | Accepted; throws shortened for play by ADR-0012 | 2026-10-11 |
 | [0012](0012-shorter-throws-for-play.md) | Throws shortened for play | Accepted | 2026-10-12 |
+| [0013](0013-individual-pedestrian-attention.md) | Individual pedestrian attention and bounded evasion | Accepted | 2026-10-12 |
 | [0014](0014-live-radio-stations.md) | Live radio stations, one decoder each | Accepted; amended by ADR-0015 | 2026-10-12 |
 | [0015](0015-radio-song-excerpts.md) | Radio songs aired as excerpts, sought on a worker thread | Accepted | 2026-10-13 |
 

@@ -5,7 +5,8 @@
 //    vehicles.cfg    CLASS (handling), SPRITE / DERIVE / COMPOSE / BIKE (image files)
 //    weapons.cfg     WEAPON lines (damage, fire rate, ammo, which animation set)
 //    foliage.cfg     TREE / BUSH image lists
-//    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / WALK / CIVILIAN: pedestrian atlases
+//    civilians.cfg   FRAME / SCALE / SWAY / ANIM / GAIT / CIVILIAN: pedestrian atlases;
+//                    ATTENTION / DODGE / FREEZE: individual perception and evasion
 //    player.cfg      FRAME / SCALE / COLS / LEGS / GAIT / SET / UPPER / LAMP: the player's layers;
 //                    DOWN / FALL / LIE / GETUP: the player on the ground
 //  Adding content = drop the image files in assets/ and add a line. Every data file and
@@ -32,11 +33,25 @@ struct CivilianAtlas {
     std::vector<Rectangle> src;          // per atlas frame: its visible part in tex
     std::vector<Vector2>   offset;       // that part's centre minus the frame centre (frame px)
     float                  walkCycleM = 1.3f;   // metres per walk cycle: the look's stride
+    float                  mobility = 0;       // the look's share of walking and evasive mobility
+    float                  reactionFactor = 0; // the look's multiplier of the personal reaction time
 };
 struct PedFrames { int first = 0, count = 0; };
 // A gait whose cadence rises with speed: steps per second from 'fromSteps' at 'fromSpeed' to
 // 'toSteps' at 'toSpeed' (m/s); it shows from 'fromSpeed' up.
 struct PedGait { float fromSpeed = 0, fromSteps = 0, toSpeed = 0, toSteps = 0; };
+
+// Personal traits, sampled once when a person appears. Every record is required in
+// civilians.cfg; zero initialization cannot substitute a missing behaviour definition.
+struct PedAttentionDef {
+    float share = 0, sensePeriod = 0, noticeHorizon = 0, viewCos = 0;
+    float reactionMin = 0, reactionMax = 0, behindFactor = 0;
+    bool hearsBehind = false;
+};
+struct PedEvasionDef {
+    float fastSpeed = 0, slowSpeed = 0, accel = 0, turn = 0;  // px/s, px/s, px/s², rad/s
+    float freezeShare = 0, freezeMin = 0, freezeMax = 0;      // share, s, s
+};
 
 // The player (player.cfg, CJ-011): a legs layer and an upper-body layer per weapon set, drawn
 // on top of each other about the same pivot. Frames are cut to their visible part at load.
@@ -115,6 +130,8 @@ struct Assets {
     float                     pedSway = 0.05f;                          // body turn with the steps (rad)
     PedFrames                 pedAnim[(int)spritegen::PedAnim::COUNT];  // atlas layout
     PedGait                   pedJog, pedRun;                           // used when the atlas has those frames
+    PedAttentionDef           pedAttention[3];                          // attentive, distracted, headphones
+    PedEvasionDef             pedEvasion;
     const PedFrames& PedAnimFrames(spritegen::PedAnim a) const { return pedAnim[(int)a]; }
     // the player (player.cfg): a legs layer and an upper-body layer per weapon set
     int                       playerFramePx = 144;

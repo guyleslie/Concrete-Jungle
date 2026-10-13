@@ -1685,6 +1685,22 @@ void Game::VehiclePedCollisions() {
             Vector2 wn; float wd;                                // someone lying is driven over by the wheels,
             if (lying && (!CircleOBB(p.pos, PED_RADIUS, v.Wheels(), wn, wd) || StillUnder(p.body, v, time))) continue;   // not the bumper above them
             PersonHit h = VehicleMeetsPerson(v, n, depth, p.vel, p.body, lying);
+            if (debugContacts && (h.kind == HitKind::Bump || h.kind == HitKind::Launch || h.kind == HitKind::RunOver)) {
+                // Capture the contact before either participant is changed: city regressions
+                // need the driver's planned stop and the person's actual state, not the fall.
+                TraceLog(LOG_INFO, "PERSON CONTACT t=%.3f kind=%d car=%d serial=%u class=%s driver=%d rail=%d person=%d ped_serial=%u depth_px=%.3f closing_m_s=%.3f normal=(%.3f,%.3f)",
+                         time, (int)h.kind, (int)i, v.serial, v.S().name.c_str(), (int)v.driver, AIOnRail(v) ? 1 : 0,
+                         k, p.serial, depth, Dot(v.vel - p.vel, n) / M, n.x, n.y);
+                TraceLog(LOG_INFO, "PERSON CAR t=%.3f car=%d pos_px=(%.1f,%.1f) vel_px_s=(%.1f,%.1f) ai_speed_px_s=%.1f stop_px=%.1f turn=%d shift_px=%.1f distracted_s=%.3f panic_s=%.3f heading_rad=%.3f",
+                         time, (int)i, v.pos.x, v.pos.y, v.vel.x, v.vel.y, v.ai.speed, v.ai.stopDist,
+                         v.ai.curTurn, v.ai.laneShift, v.ai.distracted, v.ai.panic, v.angle);
+                TraceLog(LOG_INFO, "PERSON PED t=%.3f person=%d state=%d resume=%d attention=%d pos_px=(%.1f,%.1f) vel_px_s=(%.1f,%.1f) heading_rad=%.3f tile=%d alarm_s=%.3f freeze_s=%.3f",
+                         time, k, (int)p.state, (int)p.resume, (int)p.attention, p.pos.x, p.pos.y, p.vel.x, p.vel.y,
+                         p.angle, (int)map.TileAt(p.pos), p.alarm, p.freezeT);
+                TraceLog(LOG_INFO, "PERSON CROSS t=%.3f person=%d junction=(%d,%d,%d) signal=%d green_left_s=%.3f target_px=(%.1f,%.1f) walk_px_s=%.3f jaywalk=%d",
+                         time, k, p.ci, p.cj, p.caxis, map.SignalState(p.ci, p.cj, p.caxis), map.GreenTimeLeft(p.ci, p.cj, p.caxis),
+                         p.target.x, p.target.y, p.walkSpeed, p.jaywalk ? 1 : 0);
+            }
             v.vel = v.vel + h.vehicleDv;
             switch (h.kind) {
             case HitKind::Obstacle: p.pos = p.pos + h.push; break;
