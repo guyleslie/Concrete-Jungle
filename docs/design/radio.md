@@ -1,6 +1,6 @@
 # Radio
 
-The car radio: stations that broadcast live, the player's own radio, and the music of cars passing by, heard as from inside a closed car. Every station, clip and sound value comes from [`assets/data/radio.cfg`](../../assets/data/radio.cfg); the decision behind the design is [ADR-0014](../adr/0014-live-radio-stations.md).
+The car radio: stations that broadcast live, the player's own radio, and the music of cars passing by, heard as from inside a closed car. Every station, clip and sound value comes from [`assets/data/radio.cfg`](../../assets/data/radio.cfg); the decisions behind the design are [ADR-0014](../adr/0014-live-radio-stations.md) and [ADR-0015](../adr/0015-radio-song-excerpts.md).
 
 Source: `src/radio.h`, `src/radio.cpp`; measurements in `src/radio_tests.*`, `tests/radio.cfg` and `tools/run_cj040.py`.
 
@@ -19,15 +19,17 @@ Source: `src/radio.h`, `src/radio.cpp`; measurements in `src/radio_tests.*`, `te
 
 ## Stations
 
-A station is a folder of clips under `assets/radio/` and a `STATION` record naming it. The first and only station so far is **Asphalt Rock FM**, 1980s American rock (`assets/radio/asphalt_rock/`). Stations broadcast live: from the first frame of play each one decodes its programme all the time, whether anyone listens or not. A car tuned to a station joins the broadcast where it is, possibly in the middle of a song, and every car on a station plays the same moment of it. The pause menu pauses the broadcast; the title screen has none.
+A station is a folder of clips under `assets/radio/` and a `STATION` record naming it. The first and only station so far is **Asphalt Rock FM**, 1980s American rock (`assets/radio/asphalt_rock/`). Stations broadcast live: from the first frame of play each one decodes its programme all the time, whether anyone listens or not. A game joins every station at a random point of its programme, so the radio is in the middle of a song when play begins. A car tuned to a station joins the broadcast where it is, and every car on a station plays the same moment of it. The title screen and the pause menu hold the broadcast.
 
 ## The programme
 
-Each station plays songs, and between two songs at most one talk clip: the DJ (`DJ`) or a commercial (`AD`). After every song a clip follows with the station's talk share (0.65 for Asphalt Rock FM), never two clips in a row. A song comes back only after the station's song gap of other songs (5), a clip only after its talk gap of other clips (3); each gap must be smaller than the number of songs or clips, so there is always a choice. The broadcast opens with a song.
+Each station plays songs, and between two songs at most one talk clip: the DJ (`DJ`) or a commercial (`AD`). After every song a clip follows with the station's talk share (1.0 for Asphalt Rock FM: after every song), never two clips in a row. A song comes back only after the station's song gap of other songs (5), a clip only after its talk gap of other clips (3); each gap must be smaller than the number of songs or clips, so there is always a choice. The broadcast opens with a song.
+
+A song longer than the station's `EXCERPT` (90 s) is aired as a slice of that length from a random point of it, a different part every time ([ADR-0015](../adr/0015-radio-song-excerpts.md)). The slice fades in over 2 s, unless it starts at the beginning, and out over 4 s, with a smoothstep curve; the fades are applied by the station's processor, so a passing car's radio fades too. Talk clips play whole. With the slices, a talk clip comes about every 1.6 minutes, and talk fills 7.9 % of the airtime.
 
 The programme has its own random generator, seeded from the clock (a fixed seed in test runs), so every game sounds different and the gameplay generator never moves for the radio. Every clip has a gain in `radio.cfg` that brings it to the `LOUDNESS` target (−16 LUFS), measured by `tools/radio_gain.py`; nothing is re-encoded.
 
-A clip's end is counted in device frames on the audio thread, and the next clip starts within a frame of it. raylib's own end-of-stream signal comes only after padding of up to a buffer (267 ms at 48 kHz).
+The end of a clip's slot is counted on the audio thread, and the next clip starts within a frame of it. raylib's own end-of-stream signal comes only after padding of up to a buffer (267 ms at 48 kHz), and an excerpt ends inside its file.
 
 ## The player's radio
 
@@ -66,7 +68,9 @@ A station has one raylib music stream, for its current clip, and one stream proc
 3. outputs the player's radio, if tuned to this station, at its volume;
 4. for each voice, reads the ring at the voice's travel time (linearly interpolated), filters it through one body or, smoothly blended, two, and adds it with the voice's left and right gains.
 
-The main thread hands the targets over in atomics, and the processor moves towards them: gains and the second body in 30 ms, the travel time in 50 ms. A voice that takes another car does so only after 0.25 s of silence, and starts from that car's travel time, so nothing clicks. raylib reports neither the device's sample rate nor the end of a clip, so a processor on the final mix counts the frames mixed. After the first second the nearest standard rate is taken (48 kHz is assumed until then), and each clip's end is counted in those frames.
+The main thread hands the targets over in atomics, and the processor moves towards them: gains and the second body in 30 ms, the travel time in 50 ms. A voice that takes another car does so only after 0.25 s of silence, and starts from that car's travel time, so nothing clicks. raylib reports neither the device's sample rate nor the end of a clip, so a processor on the final mix counts the frames mixed. After the first second the nearest standard rate is taken (48 kHz is assumed until then). The slot's start, end and fades are handed over in seconds, so they stay right when the rate is learnt.
+
+While a clip plays, the next one is prepared: the main thread opens its file, and a worker thread seeks into it (an MP3 seek decodes from the start of the file, 0.3–0.7 s). When the slot has been aired, the main thread switches streams and opens the following clip a frame later; its radio update stays under 5 ms in that frame. At start-up the worker seeks into the first song at a random point while the title screen shows.
 
 ## Content of a station
 
@@ -88,18 +92,19 @@ Asphalt Rock FM has eight songs, three DJ clips and three commercials so far, se
 | `HEARING` | `radio.cfg` | How far a radio is heard |
 | `TRAFFIC` | `radio.cfg` | How many cars play one, and which classes never do |
 | `PROGRAMME` | `radio.cfg` | Talk between songs, and how soon a song or clip comes back |
+| `EXCERPT` | `radio.cfg` | How long a song is aired, and its fades |
 | `VOICES` | `RadioSystem` | Radios in traffic heard at once per station (4) |
 | `GAIN_TAU`, `DELAY_TAU`, `FADE_DB`, `RELEASE_S` | `src/radio.cpp` | Smoothing and fading; changing them changes the measurements' expectations in `tools/run_cj040.py` |
 
 ## Measured behaviour
 
-The [radio scenes](../testing.md#radio-scenes) record the final mix and the station's own signal on an empty road. The results of 2026-10-12 are in [Testing › Radio scenes](../testing.md#radio-scenes): the programme follows its rules over 240 simulated hours; clips change within 16 ms; every talk clip plays at −16.0 LUFS; a passing car's level follows the model within 0.6 dB (95 % of the windows); its sound is 26–32 dB duller than the player's radio, 25 dB duller again from inside a car; its Doppler shift is within 0.24 % of the car's motion; it falls silent where the model says, on the side where the car is, without a click. In the city the gameplay metrics are unchanged, and the radio takes 0.075 ms of main-thread time per frame.
+The [radio scenes](../testing.md#radio-scenes) record the final mix and the station's own signal on an empty road. The results of 2026-10-12 and 2026-10-13 are in [Testing › Radio scenes](../testing.md#radio-scenes): the programme follows its rules over 240 simulated hours, with a talk clip after every song; every clip airs its slot to the millisecond, and the fades follow their curves within 0.04 dB; clips change within 21 ms; every talk clip plays at −16.0 LUFS; a passing car's level follows the model within 0.6 dB (95 % of the windows); its sound is 26–32 dB duller than the player's radio, 25 dB duller again from inside a car; its Doppler shift is within 0.24 % of the car's motion; it falls silent where the model says, on the side where the car is, without a click. In the city the gameplay metrics are unchanged, and the radio takes 0.075 ms of main-thread time per frame.
 
 ## Limits
 
 - Buildings do not block or muffle a radio; sound is not occluded anywhere in the game yet ([CJ-012](../backlog.md#cj-012-audio-overhaul)).
 - Windows and doors are always closed: a car never plays with its windows down.
 - Every station decodes all the time: about 0.5 % of a core each. Up to eight stations are supported.
-- The main thread starts the next clip: if it stalls (saving a screenshot in a test run takes up to half a second), the silence between two clips lasts as long.
+- The main thread switches to the next clip: if it stalls (saving a screenshot in a test run takes up to half a second), the silence between two clips lasts as long.
 - From inside a car only the radio outside is muffled by the body; every other sound outside is still heard as on foot ([CJ-012](../backlog.md#cj-012-audio-overhaul)).
 - The player's radio has no volume setting of its own.

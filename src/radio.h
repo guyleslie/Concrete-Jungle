@@ -1,8 +1,10 @@
 // =====================================================================================
-//  Car radio (CJ-040). The stations of assets/data/radio.cfg broadcast live: from the
-//  first moment of play each one plays its programme of songs, DJ talk and commercials,
-//  whether anyone listens or not, so a car tuned to a station joins the broadcast where
-//  it is, and every car on a station plays the same moment of it.
+//  Car radio (CJ-040). The stations of assets/data/radio.cfg broadcast live: each one
+//  plays its programme of songs, DJ talk and commercials whether anyone listens or not,
+//  so a car tuned to a station joins the broadcast where it is, and every car on a station
+//  plays the same moment of it. A game joins every station at a random point of its
+//  programme; a song is aired as a random excerpt of it (ADR-0015), and the next clip is
+//  prepared on a worker thread while the current one plays, so changing clips never stalls.
 //
 //  One decoder per station. A stream processor on the audio thread makes everything the
 //  player hears of that station from its one signal: the player's own radio as it is,
@@ -23,6 +25,7 @@
 
 class Game;
 struct Vehicle;
+namespace startup { class Reporter; }
 
 enum class RadioClip : int { Song = 0, Dj, Ad };
 
@@ -35,10 +38,14 @@ struct RadioItem {
 
 struct RadioStationDef {
     std::string folder, name;
-    float talkShare = 0.65f;     // share of the songs followed by a clip
+    float talkShare = 1.0f;      // share of the songs followed by a clip
     int songGap = 5, talkGap = 3;   // other songs / clips before one comes back
+    float excerpt = 0, fadeIn = 0, fadeOut = 0;   // s of a song aired (0: whole songs), and its fades
     std::vector<RadioItem> items;
 };
+
+// One clip of a programme: which item, from which second of it, for how long.
+struct RadioSlot { int item = -1; float start = 0, seconds = 0; };
 
 struct RadioConfig {
     float inCar = 0.5f;                                  // game volume of the player's radio
@@ -60,11 +67,12 @@ void WriteRadioWav(const std::string& path, const std::vector<float>& data, int 
 
 // One station's programme: which clip comes next. A clip follows a song with the
 // station's talk share and never another clip; a song or clip played recently is not
-// chosen again until the station's gaps have passed.
+// chosen again until the station's gaps have passed. A song longer than the station's
+// excerpt is aired as a slice of that length from a random point of it.
 class RadioProgramme {
 public:
     void Reset(const RadioStationDef& station, uint32_t seed);
-    int Next();                          // index into the station's items
+    RadioSlot Next();
     void Queue(int item) { queued.push_back(item); }   // tests: play these next, in order
 private:
     const RadioStationDef* st = nullptr;
@@ -73,6 +81,7 @@ private:
     std::vector<int> queued;
     bool lastTalk = true;                // the broadcast opens with a song
     void Played(int item);
+    int Pick();                          // a song or, after a song, a clip by the talk share
 };
 
 class RadioSystem {
@@ -83,7 +92,8 @@ public:
     uint32_t seed = 0;                   // programme seed; 0 takes one from the clock
     bool recordTransitions = false;      // tests: keep the gap of every change of clip
 
-    bool Init(bool audioReady);          // after the audio device: clip lengths, processors
+    bool Init(bool audioReady, startup::Reporter* loading = nullptr);   // after the audio device: clip
+                                         // lengths, processors, every station joined at a random point
     void Unload();
     void Update(Game& g, float dt);      // once per frame, after the rest of the frame
     void Entered(const Vehicle& v);      // the player got into a vehicle: tune its radio
@@ -101,11 +111,13 @@ public:
 
     // ---- measurement hooks (CJ-040 radio scenes) ----
     struct VoiceProbe { int vehicle = -1; float gain = 0, delay = 0, cabin = 0, targetGain = 0, level = -999; };
-    struct Transition { int station = -1, from = -1, to = -1; double gapMs = -1; int64_t startFrame = -1; };
+    struct Transition { int station = -1, from = -1, to = -1; double gapMs = -1; int64_t startFrame = -1; RadioSlot slot; };
     void Force(uint32_t serial, int station, float cabinDb);   // a car's radio, instead of its draw
     void SetTuned(uint32_t serial, int station) { tuned[serial] = station; }   // as if the player had tuned it
-    void StartAt(int station, int item, float seconds);        // restart a station mid-clip
-    void QueueNext(int station, int item);
+    // Restart a station: the whole clip from a second of it, then the clips given, then the programme.
+    void StartAt(int station, int item, float seconds, const std::vector<int>& then = {});
+    void SetExcerpt(int station, float seconds, float fadeIn, float fadeOut);
+    double TakeWorstUpdateMs();          // the slowest radio update since the last call
     VoiceProbe Probe(int station, int voice) const;
     int  CurrentItem(int station) const;
     void StartCapture(int station);      // record the final mix and the station's own signal
@@ -121,7 +133,7 @@ private:
         bool started = false, paused = false;
         Music music{};
         int item = -1;
-        double lengthFrames = 0;         // the current clip's length in device frames
+        RadioSlot slot;                  // what the current clip airs
         RadioProgramme programme;
         Voice voice[VOICES];
         float dry = 0;                   // the player's radio, faded in and out
@@ -138,12 +150,17 @@ private:
     std::vector<Transition> transitions;
     // statistics for LogSummary
     double cpuMain = 0; int64_t frames = 0; int items = 0, maxVoices = 0;
-    double voiceSeconds = 0, playerHeard = 0;
+    double voiceSeconds = 0, playerHeard = 0, worstUpdate = 0, worstSinceTake = 0;
     std::string mixPath;                 // CJ_RADIO_MIX: record the final mix of the whole run here
     std::vector<float> mix;
 
-    void Start(int s);
-    void Play(int s, int item, float offset);
+    void Start(int s, startup::Reporter* loading);
+    void Play(int s, const RadioSlot& slot, float from);   // now, from a second of the clip (a seek)
+    // Open the programme's next clip (or the slot given, from the second given); a worker seeks into it.
+    void Prepare(int s, const RadioSlot* slot = nullptr, float from = -1);
+    void Switch(int s);                  // play the prepared clip
+    void Drop(int s);                    // discard the prepared clip
+    void Arm(int s, Music& m, const RadioSlot& slot, float from);
     void Voices(Game& g, float dt);
     void EstimateRate();
 };

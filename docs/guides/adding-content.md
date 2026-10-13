@@ -336,11 +336,12 @@ The clips are MP3 (or any format raylib streams: OGG, WAV, QOA). They are used a
 ### Adding a station or clips
 
 1. Put the clips into `assets/radio/<folder>/`, named by kind and number: `song_01.mp3`, `dj_01.mp3`, `ad_01.mp3`.
-2. Add a `STATION <folder> <name>` record, its `PROGRAMME` and one `SONG`, `DJ` or `AD` record per clip, with a gain of `+0.0`:
+2. Add a `STATION <folder> <name>` record, its `PROGRAMME` and `EXCERPT` (how long a song is aired, and its fades) and one `SONG`, `DJ` or `AD` record per clip, with a gain of `+0.0`:
 
    ```
    STATION   asphalt_rock Asphalt Rock FM
-   PROGRAMME 0.65 5 3
+   PROGRAMME 1.0 5 3
+   EXCERPT   90 2 4
    SONG song_01.mp3 +0.0
    DJ   dj_01.mp3   +0.0
    AD   ad_01.mp3   +0.0

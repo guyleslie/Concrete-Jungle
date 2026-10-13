@@ -5,10 +5,13 @@
 //  frame, what the player hears of each station (their own radio, and which cars in
 //  traffic at what gain, direction, travel time and through how many car bodies). It
 //  hands those targets to the audio thread in atomics; the station's stream processor
-//  moves towards them smoothly, sample by sample, so nothing clicks.
+//  moves towards them smoothly, sample by sample, so nothing clicks. While a clip plays,
+//  the next one is opened and a worker thread seeks into it (an MP3 seek decodes from the
+//  start: up to 0.7 s), so the main thread only switches streams.
 // =====================================================================================
 #include "radio.h"
 #include "game.h"
+#include "startup_loading.h"
 #include "vehicle_types.h"
 #include <algorithm>
 #include <atomic>
@@ -16,6 +19,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <thread>
 
 namespace {
 constexpr float SOUND_SPEED = 343.0f;      // m/s in air at 20 C
@@ -46,6 +50,7 @@ uint32_t Hash(uint32_t serial, uint32_t salt) {
 }
 float Unit(uint32_t serial, uint32_t salt) { return (Hash(serial, salt) & 0xFFFFFF) / 16777216.0f; }
 float DbToGain(float db) { return powf(10.0f, db / 20.0f); }
+float Smooth(float x) { x = Saturate(x); return x * x * (3 - 2 * x); }
 
 // ---- audio thread --------------------------------------------------------------------
 // Second-order Butterworth low-pass (RBJ cookbook, Q = 1/sqrt 2): a closed car body.
@@ -89,11 +94,15 @@ struct StationDsp {
     // main thread -> audio thread
     std::atomic<float> dry{ 0 }, itemGain{ 1 };
     std::atomic<int> itemSerial{ 0 };      // bumped for every clip
-    std::atomic<int64_t> itemLength{ 0 }, itemOffset{ 0 };   // device frames
+    // Seconds of the clip's file: where playback starts, where the slot aired ends, and the
+    // fades: in from fadeFrom (-1: none) over fadeIn, out over the last fadeOut before the end.
+    // In seconds, so that they stay right when the device's rate is measured.
+    std::atomic<double> offsetS{ 0 }, endS{ 0 }, fadeFromS{ -1 }, fadeInS{ 0 }, fadeOutS{ 0 };
     SharedVoice voice[VOICES];
     // audio thread -> main thread
     std::atomic<int> countedSerial{ 0 };
-    std::atomic<int64_t> itemFrames{ 0 }, gapFrames{ -1 }, startFrame{ -1 };
+    std::atomic<double> posS{ 0 };         // second of the clip's file reached
+    std::atomic<int64_t> gapFrames{ -1 }, startFrame{ -1 };
     std::atomic<int> gapSerial{ 0 };
     // audio thread only
     float ring[RING]{};
@@ -101,7 +110,8 @@ struct StationDsp {
     float dryNow = 0, rate = 0, corner = 0;
     struct Local { float gL = 0, gR = 0, delay = 0, cabin = 0; uint32_t epoch = 0; Biquad body, own; } local[VOICES];
     int counting = 0;
-    int64_t counted = 0, endFrame = -1;
+    double pos = 0;
+    int64_t endFrame = -1;
     uint64_t lastCallback = ~0ull;
     unsigned inCallback = 0;
 
@@ -121,13 +131,16 @@ struct StationDsp {
         int serial = itemSerial.load(std::memory_order_acquire);
         if (serial != counting) {          // the first frames of a new clip
             if (endFrame >= 0) { gapFrames.store(blockStart - endFrame); startFrame.store(blockStart); gapSerial.store(serial); }
-            counting = serial; counted = itemOffset.load(); endFrame = -1;
+            counting = serial; pos = offsetS.load(); endFrame = -1;
         }
-        int64_t length = itemLength.load(std::memory_order_relaxed);
-        if (endFrame < 0 && length > 0 && counted + (int64_t)n >= length) endFrame = blockStart + (length - counted);
-        counted += n;
-        itemFrames.store(counted, std::memory_order_relaxed);
+        double end = endS.load(std::memory_order_relaxed), step = 1.0 / fs, p0 = pos;
+        if (endFrame < 0 && end > 0 && pos + n * step >= end) endFrame = blockStart + (int64_t)std::max(0.0, (end - pos) * fs);
+        pos += n * step;
+        posS.store(pos, std::memory_order_relaxed);
         countedSerial.store(serial, std::memory_order_release);
+        double fadeFrom = fadeFromS.load(std::memory_order_relaxed), fadeIn = fadeInS.load(std::memory_order_relaxed);
+        double fadeOut = fadeOutS.load(std::memory_order_relaxed);
+        bool fadingIn = fadeFrom >= 0 && fadeIn > 0, fadingOut = fadeOut > 0 && end > 0;
 
         float kG = 1 - expf(-1 / (GAIN_TAU * fs)), kD = 1 - expf(-1 / (DELAY_TAU * fs));
         float dryT = dry.load(std::memory_order_relaxed), g = itemGain.load(std::memory_order_relaxed);
@@ -149,6 +162,14 @@ struct StationDsp {
         bool capture = gCap.on.load(std::memory_order_acquire) && gCap.station.load(std::memory_order_relaxed) == s;
         for (unsigned i = 0; i < n; i++) {
             float L = b[2 * i] * g, R = b[2 * i + 1] * g;
+            float plain = 0.5f * (L + R);  // recorded before the fades, so a measurement sees them
+            if (fadingIn || fadingOut) {
+                double p = p0 + i * step;
+                float e = 1;
+                if (fadingIn) e *= Smooth((float)((p - fadeFrom) / fadeIn));
+                if (fadingOut) e *= Smooth((float)((end - p) / fadeOut));
+                L *= e; R *= e;
+            }
             float mono = 0.5f * (L + R);
             ring[w & RING_MASK] = mono;
             dryNow += (dryT - dryNow) * kG;
@@ -168,7 +189,7 @@ struct StationDsp {
                 lv.gL += (tL[v] - lv.gL) * kG; lv.gR += (tR[v] - lv.gR) * kG;
                 oL += y * lv.gL; oR += y * lv.gR;
             }
-            if (capture && gCap.staged < sizeof(gCap.stage) / sizeof(float)) gCap.stage[gCap.staged++] = mono;
+            if (capture && gCap.staged < sizeof(gCap.stage) / sizeof(float)) gCap.stage[gCap.staged++] = plain;
             b[2 * i] = oL; b[2 * i + 1] = oR;
             w++;
         }
@@ -184,6 +205,16 @@ struct StationDsp {
 };
 
 StationDsp gDsp[RadioSystem::MAX_STATIONS];
+
+// The next clip of each station, opened while the current one plays; a worker seeks into it.
+struct Prepared {
+    Music music{};
+    RadioSlot slot;
+    float from = 0;                        // the second of the file it plays from
+    std::thread worker;
+    std::atomic<bool> ready{ false };
+    bool active = false;
+} gPrep[RadioSystem::MAX_STATIONS];
 
 template <int S> void Process(void* buffer, unsigned int frames) { gDsp[S].Run((float*)buffer, frames, S); }
 const AudioCallback PROCESSORS[RadioSystem::MAX_STATIONS] = {
@@ -251,7 +282,7 @@ bool LoadRadio(const std::vector<DataRecord>& records, std::string& error) {
     const char* globals[] = { "INCAR", "CABIN", "BODY", "HEARING", "TRAFFIC", "LOUDNESS" };
     bool seen[6] = {};
     RadioStationDef* st = nullptr;
-    bool programme = false;
+    bool programme = false, excerpt = false;
     for (const DataRecord& r : records) {
         int g = 0;
         while (g < 6 && !r.Is(globals[g])) g++;
@@ -282,13 +313,14 @@ bool LoadRadio(const std::vector<DataRecord>& records, std::string& error) {
             if (r.size() != 2 || !value(r, 1, -70, 0, C.loudness)) return r.size() != 2 ? fail(r, "LOUDNESS takes 1 value") : false;
         } else if (r.Is("STATION")) {
             if (r.size() < 3) return fail(r, "STATION needs a folder and a name");
+            if (st && !excerpt) return fail(r, "station " + st->name + " has no EXCERPT record");
             if ((int)C.stations.size() == RadioSystem::MAX_STATIONS)
                 return fail(r, TextFormat("at most %d stations", RadioSystem::MAX_STATIONS));
             C.stations.push_back({});
             st = &C.stations.back();
             st->folder = r[1];
             for (size_t i = 2; i < r.size(); i++) st->name += (i > 2 ? " " : "") + r[i];
-            programme = false;
+            programme = excerpt = false;
         } else if (r.Is("PROGRAMME")) {
             if (!st) return fail(r, "PROGRAMME before any STATION");
             if (programme) return fail(r, "a second PROGRAMME for station " + st->name);
@@ -297,6 +329,13 @@ bool LoadRadio(const std::vector<DataRecord>& records, std::string& error) {
             if (b != floorf(b) || c != floorf(c)) return fail(r, "the gaps of PROGRAMME are whole numbers");
             st->songGap = (int)b; st->talkGap = (int)c;
             programme = true;
+        } else if (r.Is("EXCERPT")) {
+            if (!st) return fail(r, "EXCERPT before any STATION");
+            if (excerpt) return fail(r, "a second EXCERPT for station " + st->name);
+            if (r.size() != 4) return fail(r, "EXCERPT takes 3 values");
+            if (!value(r, 1, 0, 600, st->excerpt) || !value(r, 2, 0, 30, st->fadeIn) || !value(r, 3, 0, 30, st->fadeOut)) return false;
+            if (st->excerpt > 0 && st->fadeIn + st->fadeOut >= st->excerpt) return fail(r, "the fades of EXCERPT must be shorter than it");
+            excerpt = true;
         } else if (r.Is("SONG") || r.Is("DJ") || r.Is("AD")) {
             if (!st) return fail(r, std::string(r[0]) + " before any STATION");
             if (r.size() != 3) return fail(r, r[0] + " takes a file and a gain");
@@ -311,6 +350,7 @@ bool LoadRadio(const std::vector<DataRecord>& records, std::string& error) {
     }
     for (int g = 0; g < 6; g++)
         if (!seen[g]) { error = std::string("radio.cfg: no ") + globals[g] + " record"; return false; }
+    if (st && !excerpt) { error = "radio.cfg: station " + st->name + " has no EXCERPT record"; return false; }
     if (C.stations.empty()) { error = "radio.cfg: no STATION"; return false; }
     for (const RadioStationDef& s : C.stations) {
         int songs = 0, talks = 0;
@@ -342,8 +382,22 @@ void RadioProgramme::Played(int item) {
     lastTalk = talk;
 }
 
-int RadioProgramme::Next() {
-    if (!queued.empty()) { int item = queued.front(); queued.erase(queued.begin()); Played(item); return item; }
+RadioSlot RadioProgramme::Next() {
+    RadioSlot slot;
+    if (!queued.empty()) { slot.item = queued.front(); queued.erase(queued.begin()); }
+    else slot.item = Pick();
+    Played(slot.item);
+    // A song longer than the excerpt is aired as a slice of it from a random point.
+    const RadioItem& it = st->items[slot.item];
+    slot.seconds = it.seconds;
+    if (it.kind == RadioClip::Song && st->excerpt > 0 && it.seconds > st->excerpt) {
+        slot.start = rng.Float() * (it.seconds - st->excerpt);
+        slot.seconds = st->excerpt;
+    }
+    return slot;
+}
+
+int RadioProgramme::Pick() {
     bool hasTalk = false;
     for (const RadioItem& it : st->items) hasTalk = hasTalk || it.kind != RadioClip::Song;
     bool talk = !lastTalk && hasTalk && rng.Chance(st->talkShare);
@@ -351,15 +405,13 @@ int RadioProgramme::Next() {
     std::vector<int> pick;
     for (int i = 0; i < (int)st->items.size(); i++)
         if ((st->items[i].kind != RadioClip::Song) == talk && std::find(recent.begin(), recent.end(), i) == recent.end()) pick.push_back(i);
-    int item = pick[rng.Int(0, (int)pick.size() - 1)];   // never empty: the gaps are smaller than the counts
-    Played(item);
-    return item;
+    return pick[rng.Int(0, (int)pick.size() - 1)];   // never empty: the gaps are smaller than the counts
 }
 
 // -------------------------------------------------------------------------------------
 //  Stations
 // -------------------------------------------------------------------------------------
-bool RadioSystem::Init(bool audioReady) {
+bool RadioSystem::Init(bool audioReady, startup::Reporter* loading) {
     stations.assign(C.stations.size(), Station{});
     ok = audioReady && IsAudioDeviceReady();
     if (!ok) return true;              // silent; the clips were checked when the data loaded
@@ -375,12 +427,14 @@ bool RadioSystem::Init(bool audioReady) {
     AttachAudioMixedProcessor(MixTap);
     // Everything the player hears, recorded for a listening or a measurement of any run.
     if (const char* path = getenv("CJ_RADIO_MIX")) { mixPath = path; StartCapture(0); }
+    for (int s = 0; s < (int)stations.size(); s++) Start(s, loading);
     return true;
 }
 
 void RadioSystem::Unload() {
     if (!ok) return;
     StopCapture();
+    for (int s = 0; s < (int)stations.size(); s++) Drop(s);
     if (!mixPath.empty()) {
         DrainCapture(mix);
         WriteRadioWav(mixPath, mix, 3, (int)gRate.load(), false);
@@ -413,26 +467,26 @@ void RadioSystem::EstimateRate() {
         if (fabs(measured / r - 1) < 0.03) rate = r;
     gRate.store((float)rate);
     rateT0 = -2;
-    for (int s = 0; s < (int)stations.size(); s++) {
-        Station& st = stations[s];
-        if (st.item < 0) continue;
-        st.lengthFrames = (double)st.music.frameCount * rate / st.music.stream.sampleRate;
-        gDsp[s].itemLength.store((int64_t)st.lengthFrames);
-    }
     TraceLog(LOG_INFO, "RADIO: device sample rate %.0f Hz (measured %.0f Hz)", rate, measured);
 }
 
-void RadioSystem::Start(int s) {
+// A game joins each station at a random point of its programme: a worker seeks into the
+// first song's slice while the title screen shows, and the broadcast holds until play begins.
+void RadioSystem::Start(int s, startup::Reporter* loading) {
     Station& st = stations[s];
     uint32_t base = seed ? seed : (uint32_t)time(nullptr);
     st.programme.Reset(C.stations[s], base ^ Hash((uint32_t)s + 1, 77));
     st.started = true;
-    Play(s, st.programme.Next(), 0);
+    st.paused = true;
+    RadioSlot slot = st.programme.Next();
+    Rng join(base ^ Hash((uint32_t)s + 1, 99));
+    startup::AtomicSpan atomic(loading, "audio", "radio station");
+    Prepare(s, &slot, slot.start + join.Range(0, 0.8f) * slot.seconds);
 }
 
-// Ends the station's clip (if any) and plays one from the given second. The old clip is
-// stopped before the new one starts: a station's processor must never see two streams.
-void RadioSystem::Play(int s, int item, float offset) {
+// Hands a clip's stream to the station's processor: its gain, where it plays from and to,
+// and its fades. The old clip is stopped first: a processor must never see two streams.
+void RadioSystem::Arm(int s, Music& m, const RadioSlot& slot, float from) {
     Station& st = stations[s];
     StationDsp& d = gDsp[s];
     if (st.item >= 0) {
@@ -441,26 +495,75 @@ void RadioSystem::Play(int s, int item, float offset) {
         UnloadMusicStream(st.music);
         st.music = Music{}; st.item = -1;
     }
-    const RadioItem& it = C.stations[s].items[item];
-    Music m = LoadMusicStream(it.path.c_str());
-    if (!IsMusicValid(m)) { TraceLog(LOG_ERROR, "RADIO: cannot open %s", it.path.c_str()); return; }
-    m.looping = false;
-    float rate = gRate.load();
-    st.lengthFrames = (double)m.frameCount * rate / m.stream.sampleRate;
-    d.itemLength.store((int64_t)st.lengthFrames);
-    d.itemOffset.store((int64_t)(offset * rate));
+    const RadioStationDef& def = C.stations[s];
+    const RadioItem& it = def.items[slot.item];
+    bool slice = slot.seconds < it.seconds - 0.01f;   // a song's excerpt fades; a whole clip does not
+    d.offsetS.store(from);
+    d.endS.store(slot.start + slot.seconds);
+    d.fadeFromS.store(slice && slot.start > 0 ? slot.start : -1.0);
+    d.fadeInS.store(slice ? def.fadeIn : 0.0);
+    d.fadeOutS.store(slice ? def.fadeOut : 0.0);
     d.itemGain.store(DbToGain(it.gainDb));
     d.itemSerial.fetch_add(1, std::memory_order_release);
     AttachAudioStreamProcessor(m.stream, PROCESSORS[s]);
     SetMusicVolume(m, 1.0f);
-    PlayMusicStream(m);
-    if (offset > 0) SeekMusicStream(m, offset);
-    UpdateMusicStream(m);
-    if (st.paused) PauseMusicStream(m);
     st.music = m;
-    st.item = item;
+    st.item = slot.item;
+    st.slot = slot;
     items++;
-    TraceLog(LOG_INFO, "RADIO: %s plays %s", C.stations[s].name.c_str(), GetFileName(it.path.c_str()));
+    TraceLog(LOG_INFO, "RADIO: %s plays %s from %.1f s for %.1f s", def.name.c_str(), GetFileName(it.path.c_str()), slot.start, slot.seconds);
+}
+
+// Plays a slot now, from a second of its file: a seek on the main thread, for loading and tests.
+void RadioSystem::Play(int s, const RadioSlot& slot, float from) {
+    const RadioItem& it = C.stations[s].items[slot.item];
+    Music m = LoadMusicStream(it.path.c_str());
+    if (!IsMusicValid(m)) { TraceLog(LOG_ERROR, "RADIO: cannot open %s", it.path.c_str()); return; }
+    m.looping = false;
+    Arm(s, m, slot, from);
+    PlayMusicStream(m);
+    if (from > 0) SeekMusicStream(m, from);
+    UpdateMusicStream(m);
+    if (stations[s].paused) PauseMusicStream(m);
+}
+
+// Opens the programme's next clip while the current one plays; a worker seeks into it, so
+// that changing clips costs the main thread no more than opening a file.
+void RadioSystem::Prepare(int s, const RadioSlot* given, float from) {
+    Prepared& p = gPrep[s];
+    if (p.active) return;
+    RadioSlot slot = given ? *given : stations[s].programme.Next();
+    if (from < 0) from = slot.start;
+    const RadioItem& it = C.stations[s].items[slot.item];
+    Music m = LoadMusicStream(it.path.c_str());
+    if (!IsMusicValid(m)) { TraceLog(LOG_ERROR, "RADIO: cannot open %s", it.path.c_str()); return; }
+    m.looping = false;
+    p.music = m; p.slot = slot; p.from = from; p.active = true; p.ready.store(false);
+    if (from > 0) p.worker = std::thread([&p] { SeekMusicStream(p.music, p.from); p.ready.store(true, std::memory_order_release); });
+    else p.ready.store(true);
+}
+
+void RadioSystem::Switch(int s) {
+    Prepared& p = gPrep[s];
+    if (p.worker.joinable()) p.worker.join();
+    Music m = p.music;
+    RadioSlot slot = p.slot;
+    float from = p.from;
+    p.active = false;
+    Arm(s, m, slot, from);
+    PlayMusicStream(m);              // raylib's own count restarts; the decoder stays where it was sought
+    UpdateMusicStream(m);
+    if (stations[s].paused) PauseMusicStream(m);
+    // The following clip is opened in the next frame: filling this one's buffers and opening a
+    // file in the same frame would add up to about 7 ms.
+}
+
+void RadioSystem::Drop(int s) {
+    Prepared& p = gPrep[s];
+    if (p.worker.joinable()) p.worker.join();
+    if (p.active) UnloadMusicStream(p.music);
+    p.active = false;
+    p.ready.store(false);
 }
 
 int RadioSystem::CarStation(const Vehicle& v) const {
@@ -512,7 +615,7 @@ void RadioSystem::Update(Game& g, float dt) {
     double t0 = GetTime();
     bannerTime = std::max(0.0f, bannerTime - dt);
     bool running = g.state == GameState::Playing || g.state == GameState::Wasted || g.state == GameState::Busted;
-    bool paused = g.state == GameState::Paused;
+    bool hold = !running;                // the title and the pause menu hold the broadcast
     const Vehicle* car = g.player.inVehicle && g.player.vehicle >= 0 ? &g.vehicles[g.player.vehicle] : nullptr;
     if (!car || car->S().twoWheeler()) playerCar = 0;
     else if (car->serial != playerCar) Entered(*car);
@@ -522,22 +625,22 @@ void RadioSystem::Update(Game& g, float dt) {
     for (int s = 0; s < (int)stations.size(); s++) {
         Station& st = stations[s];
         StationDsp& d = gDsp[s];
-        if (!st.started) {
-            if (!running) continue;
-            Start(s);
-        }
-        if (paused != st.paused) {
-            st.paused = paused;
-            if (st.item >= 0) { if (paused) PauseMusicStream(st.music); else ResumeMusicStream(st.music); }
+        if (!st.started) Start(s, nullptr);
+        if (hold != st.paused) {
+            st.paused = hold;
+            if (st.item >= 0) { if (hold) PauseMusicStream(st.music); else ResumeMusicStream(st.music); }
         }
         if (st.paused) continue;
         if (st.item >= 0) UpdateMusicStream(st.music);
-        // The clip's content has been played: its stream only pads the end with silence now.
+        // The slot has been aired (a whole clip's stream only pads its end with silence now,
+        // an excerpt has faded out): change to the prepared clip once its seek is done.
         bool counted = d.countedSerial.load(std::memory_order_acquire) == d.itemSerial.load();
-        if (st.item < 0 || !IsMusicStreamPlaying(st.music) || (counted && d.itemFrames.load() >= (int64_t)st.lengthFrames)) {
+        bool aired = st.item < 0 || !IsMusicStreamPlaying(st.music) || (counted && d.posS.load() >= st.slot.start + st.slot.seconds);
+        if (!gPrep[s].active) Prepare(s);
+        if (aired && gPrep[s].active && gPrep[s].ready.load(std::memory_order_acquire)) {
             int from = st.item;
-            Play(s, st.programme.Next(), 0);
-            if (recordTransitions) transitions.push_back({ s, from, st.item, -1 });
+            Switch(s);
+            if (recordTransitions) { Transition tr; tr.station = s; tr.from = from; tr.to = st.item; tr.slot = st.slot; transitions.push_back(tr); }
         }
         int gs = d.gapSerial.load();
         for (Transition& tr : transitions)
@@ -554,7 +657,10 @@ void RadioSystem::Update(Game& g, float dt) {
     }
     if (running) Voices(g, dt);
     if (!mixPath.empty()) DrainCapture(mix);
-    cpuMain += GetTime() - t0;
+    double spent = GetTime() - t0;
+    cpuMain += spent;
+    worstUpdate = std::max(worstUpdate, spent);
+    worstSinceTake = std::max(worstSinceTake, spent);
     frames++;
 }
 
@@ -629,14 +735,25 @@ void RadioSystem::Voices(Game& g, float dt) {
 // -------------------------------------------------------------------------------------
 void RadioSystem::Force(uint32_t serial, int station, float cabinDb) { forced[serial] = { station, cabinDb }; }
 
-void RadioSystem::StartAt(int s, int item, float seconds) {
+void RadioSystem::StartAt(int s, int item, float seconds, const std::vector<int>& then) {
     if (!ok || s < 0 || s >= (int)stations.size()) return;
     Station& st = stations[s];
     if (!st.started) { st.programme.Reset(C.stations[s], seed ? seed : 1); st.started = true; }
-    Play(s, item, seconds);
+    Drop(s);
+    for (int next : then) st.programme.Queue(next);
+    RadioSlot slot;
+    slot.item = item; slot.start = 0; slot.seconds = C.stations[s].items[item].seconds;
+    Play(s, slot, seconds);
+    Prepare(s);
 }
 
-void RadioSystem::QueueNext(int s, int item) { if (s >= 0 && s < (int)stations.size()) stations[s].programme.Queue(item); }
+void RadioSystem::SetExcerpt(int s, float seconds, float fadeIn, float fadeOut) {
+    if (s < 0 || s >= (int)C.stations.size()) return;
+    C.stations[s].excerpt = seconds; C.stations[s].fadeIn = fadeIn; C.stations[s].fadeOut = fadeOut;
+    if (ok) Drop(s);                   // the prepared clip was cut with the old excerpt
+}
+
+double RadioSystem::TakeWorstUpdateMs() { double w = worstSinceTake * 1000.0; worstSinceTake = 0; return w; }
 
 int RadioSystem::CurrentItem(int s) const { return s >= 0 && s < (int)stations.size() ? stations[s].item : -1; }
 
@@ -686,8 +803,8 @@ std::vector<RadioSystem::Transition> RadioSystem::TakeTransitions() {
 void RadioSystem::LogSummary() const {
     double f = (double)std::max<int64_t>(1, frames);
     double mixed = gMixFrames.load() / std::max(1.0f, gRate.load());
-    TraceLog(LOG_INFO, "RADIO: stations %d, clips started %d, device %.0f Hz | main thread %.4f ms per frame | audio thread %.3f %% of a core | "
+    TraceLog(LOG_INFO, "RADIO: stations %d, clips started %d, device %.0f Hz | main thread %.4f ms per frame, worst %.2f ms | audio thread %.3f %% of a core | "
              "voices at once max %d, voice-seconds %.1f | the player's radio %.1f s | dropped capture frames %lld",
-             (int)stations.size(), items, gRate.load(), cpuMain * 1000.0 / f, mixed > 0 ? gDspNanos.load() / 1e9 / mixed * 100.0 : 0.0,
-             maxVoices, voiceSeconds, playerHeard, (long long)gCap.dropped.load());
+             (int)stations.size(), items, gRate.load(), cpuMain * 1000.0 / f, worstUpdate * 1000.0,
+             mixed > 0 ? gDspNanos.load() / 1e9 / mixed * 100.0 : 0.0, maxVoices, voiceSeconds, playerHeard, (long long)gCap.dropped.load());
 }

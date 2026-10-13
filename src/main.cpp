@@ -258,6 +258,8 @@ int main(int argc, char** argv) {
     TraceLog(LOG_INFO, "STARTUP phase turns %.3f ms", (GetTime() - startupPhase) * 1000.0);
     startupPhase = GetTime();
     static Game game;                     // large object: keep it off the stack
+    if (shot) game.radio.seed = 0x0CA40040u;      // the same radio programme in every test run (CJ-040); set before
+                                                  // Init, which joins every station at a point drawn from it
     if (loaded) loaded = game.Init(&reporter);
     TraceLog(LOG_INFO, "STARTUP phase world %.3f ms", (GetTime() - startupPhase) * 1000.0);
     if (loaded) {
@@ -306,7 +308,6 @@ int main(int argc, char** argv) {
     TrafficTurnTests turnTests;
     PersonHitTests hitTests;
     RadioTests radioTests;
-    if (shot) game.radio.seed = 0x0CA40040u;      // the same radio programme in every test run (CJ-040)
     bool vehicleFixture = shot && (TextIsEqual(scenario, "handling") || TextIsEqual(scenario, "crash-handling"));
     bool trafficFixture = shot && TextIsEqual(scenario, "traffic-recovery");
     bool clearanceFixture = shot && TextIsEqual(scenario, "traffic-clearance");

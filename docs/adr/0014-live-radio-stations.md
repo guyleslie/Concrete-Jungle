@@ -1,6 +1,6 @@
 # ADR-0014: Live radio stations, one decoder each
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0015](0015-radio-song-excerpts.md) (songs aired as excerpts, sought on a worker thread)
 - **Date:** 2026-10-12
 
 ## Context

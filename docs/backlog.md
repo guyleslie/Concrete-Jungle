@@ -704,6 +704,15 @@ The design is in [Radio](design/radio.md) and [ADR-0014](adr/0014-live-radio-sta
 
 **Playtest (2026-10-12).** The user did not hear the radio in a car. Two causes: the game in the main folder was another branch's build, without the radio (the game reads `assets/` from its working directory), and in the radio's own build the engine drowned it: recorded in `drive` (`CJ_RADIO_MIX`), the radio played at −27.8 LUFS against −17.5 LUFS of everything else. The user chose the balance of a real car: `INCAR 1.0` and the engine 10 dB quieter, heard from the cabin. In steady driving the radio now plays at −21.7 LUFS against −27.7 LUFS of the engine and the city, 6 dB above them; its peak stays at 0.5 before the master volume.
 
+**Playtest (2026-10-13).** The user did not hear the talk between the songs. With whole songs of 2:20–3:19 and a clip after 65 % of them, every game opened with three minutes of music (the median) and ten minutes of radio held about two clips; the 3.5-minute recording of a drive ended before the first song did. The user chose a talk clip after every song, a broadcast joined at a random point when a game starts, and songs aired as a different 90 s part every time ([ADR-0015](adr/0015-radio-song-excerpts.md)). Criterion 1 is now a clip after every song; three were added and measured in the [radio scenes](testing.md#radio-scenes):
+
+| # | Criterion | Target | Result |
+|---|---|---|---|
+| 1 | Programme over 24 h, ten seeds | A clip after every song, never two in a row; every song aired as its slice | 17,672 clips: a clip after 100 % of the songs, none in a row, every slice right, starting 0–100 % into its song; talk 7.9 % of the airtime |
+| 8 | A slot's airtime | Within 50 ms | Exact to the millisecond for three slices and two talk clips |
+| 9 | Fades | Flat within 0.5 dB between them, within 1 dB of their curves | 0.00 dB; 0.02–0.04 dB |
+| 10 | Main thread at a change of clip | At most 5 ms in a frame | 4.1 ms (a seek on the main thread: 0.3–0.7 s) |
+
 **Found during the work.** Saving a screenshot stalls the main thread for up to half a second, and a clip change that falls into it waits as long (491 ms in a run with `--every`, 0–16 ms without). The radio scenes are run without screenshots.
 
 ## Done

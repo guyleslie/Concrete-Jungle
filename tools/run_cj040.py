@@ -20,7 +20,10 @@ station's own signal, delayed by the sound's travel time:
   direction  a car to the left (more than 3 m) is louder on the left channel, and to the right
   clicks     no 5 ms window whose second difference jumps above the scene's smooth signal
 For the player's own radio (INCAR scenes) the loudness of every complete talk clip in the
-mix, with the in-car volume and the pan law taken out: within 1 LU of the LOUDNESS target. The fixture itself checks the programme and the gaps between clips.
+mix, with the in-car volume and the pan law taken out: within 1 LU of the LOUDNESS target.
+For songs cut to slices (EXCERPT scenes) the mix against the station's own signal before
+the fades: flat within 0.5 dB between the fades (95 % of the 20 ms windows), and the fades
+within 1 dB of their smoothstep curves wherever they are above -20 dB. The fixture itself checks the programme and the gaps between clips.
 """
 import math
 import re
@@ -262,6 +265,47 @@ def analyse_pass(c, s, results):
     results.append(rec)
 
 
+def smooth(x):
+    x = np.clip(x, 0, 1)
+    return x * x * (3 - 2 * x)
+
+
+def slots(log, scene):
+    """The fixture's slot lines of an EXCERPT scene: every clip aired, with its boundaries."""
+    out = []
+    for line in log.splitlines():
+        if "RADIOTEST slot scene=" + scene + " " in line:
+            out.append(dict(re.findall(r"(\w+)=(\S+)", line.split("RADIOTEST slot", 1)[1])))
+    return out
+
+
+def analyse_excerpt(c, s, results, log):
+    name = s["scene"]
+    rate, data, _ = read_wav(OUT / f"{name}_data.wav")
+    mix, src = data[:, :2].mean(axis=1), data[:, 2]
+    fade_in, fade_out = float(s["fade_in_s"]), float(s["fade_out_s"])
+    win = int(rate * 0.02)
+    for slot in slots(log, name):
+        if slot["kind"] != "song":
+            continue
+        a, aired, start = int(slot["start_frame"]), float(slot["aired_s"]), float(slot["start_s"])
+        n = int(aired * rate) // win
+        seg_m = mix[a:a + n * win].reshape(n, win)
+        seg_s = src[a:a + n * win].reshape(n, win)
+        t = (np.arange(n) + 0.5) * win / rate
+        expect = (smooth(t / fade_in) if start > 0 else np.ones(n)) * smooth((aired - t) / fade_out)
+        level = np.sqrt((seg_m ** 2).mean(axis=1) / np.maximum((seg_s ** 2).mean(axis=1), 1e-20))
+        live = (seg_s ** 2).mean(axis=1) > 1e-8
+        flat = live & (t > fade_in) & (t < aired - fade_out)
+        ref = np.median(level[flat])
+        db = 20 * np.log10(np.maximum(level, 1e-9) / ref)
+        flat_p95 = float(np.percentile(np.abs(db[flat]), 95))
+        fading = live & ~flat & (expect >= 0.1)
+        fade_p95 = float(np.percentile(np.abs(db[fading] - 20 * np.log10(expect[fading])), 95)) if fading.any() else 0.0
+        results.append({"scene": f"{name}/{slot['clip']}", "slice_start_s": start, "aired_s": aired, "flat_p95_db": flat_p95,
+                        "fade_p95_db": fade_p95, "fades_pass": flat_p95 <= 0.5 and fade_p95 <= 1.0})
+
+
 def analyse_incar(c, s, results):
     name = s["scene"]
     rate, data, _ = read_wav(OUT / f"{name}_data.wav")
@@ -287,8 +331,14 @@ def main():
     c = config()
     found = scenes(LOG)
     results = []
+    text = LOG.read_text(encoding="utf-8", errors="replace")
     for s in found:
-        (analyse_pass if s.get("kind") == "pass" else analyse_incar)(c, s, results)
+        if s.get("kind") == "pass":
+            analyse_pass(c, s, results)
+        elif s.get("kind") == "excerpt":
+            analyse_excerpt(c, s, results, text)
+        else:
+            analyse_incar(c, s, results)
     by = {r["scene"]: r for r in results}
     # From inside a car: at least 8 dB duller than the same car heard on foot.
     for r in results:
@@ -313,7 +363,7 @@ def main():
     print(f"\nmeasured checks: {checks}, failed: {failed}")
     if fixture:
         print(fixture.group(0))
-    for line in re.findall(r"RADIOTEST schedule .*", log):
+    for line in re.findall(r"RADIOTEST (?:schedule|schedule-slices|slot) .*", log):
         print(line)
     summary = re.search(r"RADIO: stations .*", log)
     if summary:

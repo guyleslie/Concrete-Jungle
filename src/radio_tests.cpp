@@ -5,8 +5,9 @@
 //    SCHEDULE <hours> <seeds>
 //    PASS  <name> <km/h> <side m> <cabin dB> <foot|car>
 //    INCAR <name> <clip> <clip after it> <song after that>
-//  The fixture checks the programme and the gaps between clips itself; the recordings of
-//  the passing cars are measured by tools/run_cj040.py.
+//    EXCERPT <name> <seconds> <fade in s> <fade out s> <songs>
+//  The fixture checks the programme, the gaps between clips, the length every clip is aired
+//  and the main thread's time itself; the recordings are measured by tools/run_cj040.py.
 // =====================================================================================
 #include "radio_tests.h"
 #include "game.h"
@@ -30,19 +31,22 @@ constexpr float MARGIN_M = 8;                 // a passing car starts and ends t
 constexpr float LEAD_S = 6;                   // an in-car scene joins its first clip this long before the end
 constexpr double TAIL_S = 4;                  // and records this much of its last song
 constexpr double GAP_MS = 50;                 // the most silence allowed between two clips
+constexpr double AIRED_S = 0.05;              // how far a clip's airtime may be from its slot
+constexpr double WORST_MS = 5;                // the slowest radio update allowed while clips change
 const char* OUT_DIR = "build/radio";
 
 // The screen's left part is the fixture's panel; the scene is drawn centred beside it.
 float UiScale() { return Clampf(GetScreenHeight() / 900.0f, 0.75f, 1.6f); }
 float PanelWidth() { return std::min(600.0f * UiScale(), GetScreenWidth() * 0.42f); }
 
-enum class Kind { Pass, InCar };
+enum class Kind { Pass, InCar, Excerpt };
 struct Scene {
     Kind kind = Kind::Pass;
     std::string name;
     float kmh = 0, side = 0, cabin = 80;      // a passing car: speed (negative: westwards), path, cabin level
     bool inCar = false;                       // the player listens from a car with its radio off
     int clips[3] = { -1, -1, -1 };            // in the car: the first clip, the clip after it, the song after that
+    float excerpt = 0, fadeIn = 0, fadeOut = 0; int songs = 0;   // excerpts: their length and fades, songs to air
 };
 
 bool Number(const std::string& s, float& out) {
@@ -84,6 +88,8 @@ struct RadioTests::State {
     } live;
     std::vector<std::pair<double, float>> delays;   // (audio s, travel time s) for the Doppler factor
     std::string programme;                    // the programme check, for the screen
+    RadioStationDef original;                 // the first station's excerpt, restored after an EXCERPT scene
+    double worstMs = 0;
 
     void Check(bool pass) { checks++; failures += !pass; }
 
@@ -111,6 +117,14 @@ struct RadioTests::State {
                     if (sc.clips[k] < 0) return bad(TextFormat("no clip %s on the first station", r[2 + k].c_str()));
                 }
                 scenes.push_back(sc);
+            } else if (r.Is("EXCERPT")) {
+                Scene sc; sc.kind = Kind::Excerpt;
+                float songs = 0;
+                if (r.size() != 6 || !Number(r[2], sc.excerpt) || !Number(r[3], sc.fadeIn) || !Number(r[4], sc.fadeOut) ||
+                    !Number(r[5], songs) || sc.excerpt <= sc.fadeIn + sc.fadeOut || songs < 1)
+                    return bad("EXCERPT <name> <seconds> <fade in s> <fade out s> <songs>");
+                sc.name = r[1]; sc.songs = (int)songs;
+                scenes.push_back(sc);
             } else return bad("unknown record");
         }
         return true;
@@ -122,8 +136,9 @@ struct RadioTests::State {
     void Schedule() {
         const RadioConfig& C = RadioData();
         for (const RadioStationDef& st : C.stations) {
-            int n = (int)st.items.size(), consecutive = 0, songGap = INT_MAX, talkGap = INT_MAX, unplayed = 0;
-            double shareMin = 1, shareMax = 0, backMin = 1e9, backSum = 0; int backs = 0, clips = 0;
+            int n = (int)st.items.size(), consecutive = 0, songGap = INT_MAX, talkGap = INT_MAX, unplayed = 0, badSlices = 0;
+            double shareMin = 1, shareMax = 0, backMin = 1e9, backSum = 0, talkTime = 0, allTime = 0;
+            double sliceMin = 1, sliceMax = 0; int backs = 0, clips = 0;
             for (int seed = 1; seed <= seeds; seed++) {
                 RadioProgramme p;
                 p.Reset(st, 0xCA400000u + (uint32_t)seed * 7919u);
@@ -131,8 +146,20 @@ struct RadioTests::State {
                 std::vector<double> lastT(n, -1);
                 int songs = 0, talks = 0, gaps = 0, talkGaps = 0, prev = -1;
                 for (double t = 0; t < hours * 3600.0;) {
-                    int i = p.Next();
-                    bool talk = st.items[i].kind != RadioClip::Song;
+                    RadioSlot slot = p.Next();
+                    int i = slot.item;
+                    const RadioItem& it = st.items[i];
+                    bool talk = it.kind != RadioClip::Song;
+                    // A song longer than the excerpt airs exactly the excerpt, from inside the song.
+                    bool sliced = !talk && st.excerpt > 0 && it.seconds > st.excerpt;
+                    float want = sliced ? st.excerpt : it.seconds;
+                    if (fabsf(slot.seconds - want) > 1e-3f || slot.start < 0 || slot.start + slot.seconds > it.seconds + 1e-3f) badSlices++;
+                    if (sliced) {
+                        double u = slot.start / (it.seconds - st.excerpt);
+                        sliceMin = std::min(sliceMin, u); sliceMax = std::max(sliceMax, u);
+                    }
+                    if (talk) talkTime += slot.seconds;
+                    allTime += slot.seconds;
                     bool prevTalk = prev >= 0 && st.items[prev].kind != RadioClip::Song;
                     if (talk && prevTalk) consecutive++;
                     if (prev >= 0 && !prevTalk) { gaps++; talkGaps += talk; }
@@ -143,28 +170,33 @@ struct RadioTests::State {
                         if (!talk) { backMin = std::min(backMin, (t - lastT[i]) / 60); backSum += (t - lastT[i]) / 60; backs++; }
                     }
                     lastAt[i] = at; lastT[i] = t; played[i]++; clips++;
-                    t += st.items[i].seconds;
+                    t += slot.seconds;
                     prev = i;
                 }
                 double share = gaps ? (double)talkGaps / gaps : 0;
                 shareMin = std::min(shareMin, share); shareMax = std::max(shareMax, share);
                 for (int k = 0; k < n; k++) unplayed += played[k] == 0;
             }
-            bool pass[5] = { consecutive == 0, songGap >= st.songGap, talkGap >= st.talkGap,
-                             shareMin >= 0.55 && shareMax <= 0.75, unplayed == 0 };
+            bool pass[6] = { consecutive == 0, songGap >= st.songGap, talkGap >= st.talkGap,
+                             shareMin >= st.talkShare - 0.1 && shareMax <= st.talkShare + 0.1, unplayed == 0, badSlices == 0 };
             for (bool b : pass) Check(b);
-            bool all = pass[0] && pass[1] && pass[2] && pass[3] && pass[4];
+            bool all = pass[0] && pass[1] && pass[2] && pass[3] && pass[4] && pass[5];
             programme += TextFormat("%s, %d runs of %.0f h\n", st.name.c_str(), seeds, hours);
             programme += TextFormat("two clips in a row: %d\n", consecutive);
             programme += TextFormat("a song back after %d others at least (rule %d)\n", songGap, st.songGap);
             programme += TextFormat("a clip back after %d others at least (rule %d)\n", talkGap, st.talkGap);
-            programme += TextFormat("a clip after %.0f-%.0f %% of the songs (rule 55-75 %%)\n", shareMin * 100, shareMax * 100);
+            programme += TextFormat("a clip after %.0f-%.0f %% of the songs (rule %.0f %%)\n", shareMin * 100, shareMax * 100, st.talkShare * 100);
             programme += TextFormat("clips never played: %d\n", unplayed);
+            programme += TextFormat("songs aired as %.0f s slices, from %.0f-%.0f %% of the way in; wrong slices %d\n", st.excerpt,
+                                    sliceMin * 100, sliceMax * 100, badSlices);
             programme += all ? "PASS\n" : "FAIL\n";
             TraceLog(LOG_INFO, "RADIOTEST schedule station=\"%s\" hours=%.0f seeds=%d clips=%d consecutive_clips=%d song_gap_min=%d rule=%d "
                      "talk_gap_min=%d rule=%d talk_share=%.3f-%.3f target=%.2f song_back_min=%.1f avg=%.1f minutes unplayed=%d %s",
                      st.name.c_str(), hours, seeds, clips, consecutive, songGap, st.songGap, talkGap, st.talkGap, shareMin, shareMax,
                      st.talkShare, backMin, backs ? backSum / backs : 0.0, unplayed, all ? "PASS" : "FAIL");
+            // raylib cuts a log line at 256 characters: the slices on a line of their own
+            TraceLog(LOG_INFO, "RADIOTEST schedule-slices station=\"%s\" excerpt_s=%.0f slice_start=%.3f-%.3f bad_slices=%d talk_airtime=%.1f %%",
+                     st.name.c_str(), st.excerpt, sliceMin, sliceMax, badSlices, allTime > 0 ? talkTime / allTime * 100 : 0.0);
         }
     }
 
@@ -191,10 +223,11 @@ struct RadioTests::State {
         g.radio.recordTransitions = s.kind == Kind::InCar;
         g.radio.TakeTransitions();
         transitions.clear(); lastChange = -1;
-        if (s.kind == Kind::InCar || s.inCar) {          // the player sits in a car
+        g.radio.TakeWorstUpdateMs();
+        if (s.kind == Kind::InCar || s.kind == Kind::Excerpt || s.inCar) {          // the player sits in a car
             int own = g.SpawnVehicle(taxi, centre, 0, DriverType::Player);
             g.player.inVehicle = true; g.player.vehicle = own;
-            g.radio.SetTuned(g.vehicles[own].serial, s.kind == Kind::InCar ? 0 : -1);
+            g.radio.SetTuned(g.vehicles[own].serial, s.kind == Kind::Pass ? -1 : 0);
         }
         if (s.kind == Kind::Pass) {
             range = Range(s.cabin, s.inCar);
@@ -209,11 +242,18 @@ struct RadioTests::State {
             for (int i = 0, k = 0; i < (int)C.stations[0].items.size(); i++)
                 if (C.stations[0].items[i].kind == RadioClip::Song && k++ == index % 8) song = i;
             g.radio.StartAt(0, song, 30);
-        } else {
+        } else if (s.kind == Kind::InCar) {
             const RadioItem& first = C.stations[0].items[s.clips[0]];
-            g.radio.StartAt(0, s.clips[0], std::max(0.0f, first.seconds - LEAD_S));
-            g.radio.QueueNext(0, s.clips[1]);
-            g.radio.QueueNext(0, s.clips[2]);
+            g.radio.StartAt(0, s.clips[0], std::max(0.0f, first.seconds - LEAD_S), { s.clips[1], s.clips[2] });
+        } else {
+            // Short excerpts, so that the changes come quickly: from the end of a talk clip on,
+            // the programme runs as it would in the game.
+            g.radio.recordTransitions = true;
+            g.radio.SetExcerpt(0, s.excerpt, s.fadeIn, s.fadeOut);
+            int talk = -1;
+            for (int i = 0; i < (int)C.stations[0].items.size() && talk < 0; i++)
+                if (C.stations[0].items[i].kind != RadioClip::Song) talk = i;
+            g.radio.StartAt(0, talk, std::max(0.0f, C.stations[0].items[talk].seconds - 3));
         }
         view = s.kind == Kind::InCar ? 24.0f : Clampf(2.3f * (std::max(range, 6.0f) + 3), 24, 125);
         live = Live{}; delays.clear();
@@ -269,6 +309,12 @@ struct RadioTests::State {
         (void)g;
         const Scene& s = S();
         if (s.kind == Kind::Pass) return t * fabsf(s.kmh) * KMH >= travel;
+        if (s.kind == Kind::Excerpt) {
+            int songs = 0;
+            for (const RadioSystem::Transition& tr : transitions)
+                songs += tr.from >= 0 && RadioData().stations[0].items[tr.from].kind == RadioClip::Song;
+            return songs >= s.songs && t - lastChange >= 1.0;
+        }
         return transitions.size() >= 2 && t - lastChange >= TAIL_S;
     }
 
@@ -290,6 +336,32 @@ struct RadioTests::State {
                      "master=%.3f incar=%.3f files=%s",
                      s.name.c_str(), s.kmh, s.side, s.cabin, s.inCar ? "car" : "foot", range, capture.size() / 3, rate,
                      GetMasterVolume(), C.inCar, base.c_str());
+        } else if (s.kind == Kind::Excerpt) {
+            // Each clip aired for its slot: from its first frame to the next clip's, less the gap.
+            int64_t start = g.radio.CaptureStart();
+            double worst = g.radio.TakeWorstUpdateMs();
+            bool pass = worst <= WORST_MS;
+            Check(pass);
+            for (size_t k = 0; k < transitions.size(); k++) {
+                const RadioSystem::Transition& tr = transitions[k];
+                bool gapOk = tr.gapMs >= 0 && tr.gapMs <= GAP_MS;
+                Check(gapOk);
+                pass = pass && gapOk;
+                const RadioItem& it = C.stations[0].items[tr.to];
+                if (k + 1 >= transitions.size()) continue;
+                const RadioSystem::Transition& next = transitions[k + 1];
+                double aired = (next.startFrame - tr.startFrame) / (double)rate - next.gapMs / 1000.0;
+                bool ok = fabs(aired - tr.slot.seconds) <= AIRED_S;
+                Check(ok);
+                pass = pass && ok;
+                TraceLog(LOG_INFO, "RADIOTEST slot scene=%s clip=%s kind=%s start_frame=%lld start_s=%.3f planned_s=%.3f aired_s=%.3f gap_ms=%.2f %s",
+                         s.name.c_str(), GetFileName(it.path.c_str()), it.kind == RadioClip::Song ? "song" : "talk",
+                         (long long)(tr.startFrame - start), tr.slot.start, tr.slot.seconds, aired, next.gapMs, ok ? "PASS" : "FAIL");
+            }
+            TraceLog(LOG_INFO, "RADIOTEST scene=%s kind=excerpt excerpt_s=%.1f fade_in_s=%.1f fade_out_s=%.1f worst_update_ms=%.2f "
+                     "frames=%zu rate=%.0f incar=%.3f files=%s %s",
+                     s.name.c_str(), s.excerpt, s.fadeIn, s.fadeOut, worst, capture.size() / 3, rate, C.inCar, base.c_str(), pass ? "PASS" : "FAIL");
+            g.radio.SetExcerpt(0, original.excerpt, original.fadeIn, original.fadeOut);
         } else {
             int64_t start = g.radio.CaptureStart();
             std::string bounds;
@@ -341,6 +413,7 @@ bool RadioTests::Init(Game& g, const char* testFile) {
     g.player.inVehicle = false; g.player.vehicle = -1; g.player.pos = s.centre;
     TraceLog(LOG_INFO, "RADIOTEST run file=%s scenes=%d schedule_hours=%.0f seeds=%d build=%s_%s", s.file.c_str(), (int)s.scenes.size(),
              s.hours, s.seeds, __DATE__, __TIME__);
+    s.original = RadioData().stations[0];
     s.Schedule();
     s.phase = State::Phase::Warmup;
     s.phaseStart = GetTime();
@@ -474,6 +547,23 @@ void RadioTests::Draw(Game& g) const {
         row("gain", TextFormat("model %s, radio %s", model.c_str(), db(L.gain)));
         row("pitch", L.heard ? TextFormat("%+.2f %% (%s)", (L.doppler - 1) * 100, L.doppler > 1 ? "coming" : "going") : "-");
         meters(L.meterL, L.meterR);
+    } else if (sc->kind == Kind::Excerpt) {
+        auto name = [&](int item) { return GetFileName(C.stations[0].items[item].path.c_str()); };
+        text("The player sits in a car tuned to", ColorA(WHITE, 0.85f));
+        text(TextFormat("%s, with songs cut to %.0f s slices", C.stations[0].name.c_str(), sc->excerpt), ColorA(WHITE, 0.85f));
+        text(TextFormat("from a random point, fading in %.0f s and out %.0f s.", sc->fadeIn, sc->fadeOut), ColorA(WHITE, 0.85f));
+        gap();
+        text("Expected", dim);
+        row("airtime", TextFormat("each clip its slot, within %.0f ms", AIRED_S * 1000));
+        row("changes", TextFormat("at most %.0f ms of silence", GAP_MS));
+        row("main thread", TextFormat("at most %.0f ms per frame", WORST_MS));
+        gap();
+        text("Now", dim);
+        int now = g.radio.CurrentItem(0);
+        row("playing", now >= 0 ? name(now) : "-", amber);
+        for (const RadioSystem::Transition& tr : s.transitions)
+            row("change", TextFormat("%s %.1f ms", name(tr.to), tr.gapMs), tr.gapMs >= 0 && tr.gapMs <= GAP_MS ? green : red);
+        meters(s.live.meterL, s.live.meterR);
     } else {
         auto name = [&](int item) { return GetFileName(C.stations[0].items[item].path.c_str()); };
         text("The player sits in a car tuned to", ColorA(WHITE, 0.85f));

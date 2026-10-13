@@ -18,7 +18,8 @@ An architecture decision record (ADR) captures one significant technical decisio
 | [0010](0010-no-fallback-content.md) | No fallback content | Accepted | 2026-10-11 |
 | [0011](0011-vehicle-person-impact.md) | A contact between a vehicle and a person is one impact | Accepted; throws shortened for play by ADR-0012 | 2026-10-11 |
 | [0012](0012-shorter-throws-for-play.md) | Throws shortened for play | Accepted | 2026-10-12 |
-| [0014](0014-live-radio-stations.md) | Live radio stations, one decoder each | Accepted | 2026-10-12 |
+| [0014](0014-live-radio-stations.md) | Live radio stations, one decoder each | Accepted; amended by ADR-0015 | 2026-10-12 |
+| [0015](0015-radio-song-excerpts.md) | Radio songs aired as excerpts, sought on a worker thread | Accepted | 2026-10-13 |
 
 ADRs 0001–0004 were recorded retroactively on 2026-09-27 for decisions made during the first development session.
 

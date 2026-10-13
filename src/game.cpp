@@ -23,7 +23,7 @@ bool Game::Init(startup::Reporter* loading) {
     if (!map.BuildMinimap(loading)) return false;
     if (!renderer.Init(GetScreenWidth(), GetScreenHeight(), loading)) return false;
     if (!audio.Init(loading)) return false;
-    if (!radio.Init(audio.ok)) return false;
+    if (!radio.Init(audio.ok, loading)) return false;
     if (!NewGame(loading)) return false;
     state = GameState::Title;
     startupInitialized = true;
