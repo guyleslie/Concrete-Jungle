@@ -2,23 +2,15 @@
 
 A top-down open-city action game in the spirit of GTA 1 and GTA 2, written in C++17 with [raylib](https://www.raylib.com/) 6.0. The classic overhead view is rendered as real 3D geometry, so buildings lean with perspective and bridges hide what passes beneath them.
 
-> **Status:** early development. The game is playable end to end; the vehicle handling and damage models are being reworked. See the [backlog](docs/backlog.md).
+> **Status:** early development. The [changelog](CHANGELOG.md) lists what each release brings, the [backlog](docs/backlog.md) what comes next.
 
 ![A junction at dusk: a school bus crossing, traffic at the lights, people on the sidewalks, street lamps and lit windows](docs/images/drive-dusk.png)
 
-## Features
+## The game
 
-| Area | Highlights |
-|---|---|
-| City | A procedurally generated 584 × 584 m island: streets with traffic lights, buildings with rooftop detail, parks, plazas, parking lots, a police station and a hospital, gate buildings, skybridges and an elevated metro with a running train |
-| Rendering | Perspective top-down camera, day/night cycle with sun shadows, headlights and street lamps, lit windows and neon, bloom |
-| Startup | Night-city loading screen with current work, content-derived counters and overall progress; appears for as long as preparation actually takes |
-| Traffic | Lane-following traffic that obeys signals and junction rules, overtakes, honks and makes U-turns; drivers stopped nose to nose give way to each other; physical recovery or persistent holding after a knock; calm, normal and aggressive drivers, and after a collision an aggressive one may get out to argue or fight, then drives the same car on; police pursuits |
-| Physics | Sub-stepped rigid-body contact solver, crash damage based on delta-V, breakaway lamp posts, hydrants and other street furniture |
-| Pedestrians | 300 people around the player who walk their blocks, queue at the kerb and cross safely at the lights, jump out of the way of vehicles, flee gunfire and violence, sometimes fight back, and are hurt realistically by vehicles |
-| Gameplay | On-foot combat with six weapons, carjacking, a six-star wanted level, arrests, missions from ringing pay phones, pickups |
-| Audio | Every sound synthesised at start-up; any of them can be replaced with a WAV file |
-| Content | Vehicles, characters, weapons and foliage defined in plain-text data files |
+Explore a procedurally generated city on foot or in any vehicle you can take: traffic that follows the rules of the road, people going about their day, police who pursue you, missions from ringing pay phones and a car radio. The city lives through a day-and-night cycle, and vehicles, people and street furniture react to each other physically.
+
+Vehicles, people, weapons, sounds and radio stations are defined in plain-text data files, so content can be added without changing the code. How each part works is described in the [design documents](docs/README.md#design-documents).
 
 ## Quick start
 
@@ -52,7 +44,7 @@ You need the same, and about 2 GB of disk space for raylib and its tools.
    build.bat
    ```
 
-   The build takes about a minute and ends with `Built ConcreteJungle.exe`; the game is then in the project folder. If the build cannot find raylib, it says so: check `RAYLIB_DIR`.
+   The build takes a minute or two and ends with `Built ConcreteJungle.exe`; the game is then in the project folder. If the build cannot find raylib, it says so: check `RAYLIB_DIR`.
 
    In PowerShell (the default of Windows Terminal), the same two commands are `$env:RAYLIB_DIR = "C:\raylib"` and `.\build.bat`. In Git Bash, run `RAYLIB_DIR=/c/raylib sh build.sh`: it recompiles only the changed files, and the game it builds opens a console window with its log.
 4. **Play.** Double-click `ConcreteJungle.exe` in the project folder, as in [Play](#play).
@@ -100,23 +92,24 @@ Other build options (debug builds, CMake, Linux and macOS), packaging a release 
 
 | Document | Contents |
 |---|---|
-| [Documentation index](docs/README.md) | Everything below, plus the design document for each subsystem |
+| [Documentation index](docs/README.md) | Every document, including the design document of each subsystem |
 | [Architecture](docs/architecture.md) | Modules, frame lifecycle, units and conventions |
-| [Building](docs/guides/building.md) | Toolchain, build options, troubleshooting |
-| [Adding content](docs/guides/adding-content.md) | New vehicles, characters, weapons, foliage and sounds without code changes |
-| [Testing](docs/testing.md) | Automated scenario runs and their metrics |
-| [Vehicle handling baseline](docs/design/vehicle-handling-baseline.md) | Measured class performance and collision findings before the CJ-002 physics rework |
+| [Building](docs/guides/building.md) | Toolchain, build options, packaging a release, troubleshooting |
+| [Adding content](docs/guides/adding-content.md) | New vehicles, people, weapons, foliage, sounds and radio stations without code changes |
+| [Testing](docs/testing.md) | Automated scenarios, isolated test scenes and their measurements |
+| [Decision records](docs/adr/README.md) | Why the fundamental approaches are the way they are |
 | [Backlog](docs/backlog.md) | Planned work with priorities and acceptance criteria |
-| [Changelog](CHANGELOG.md) | Notable changes per milestone |
+| [Changelog](CHANGELOG.md) | Notable changes per release |
 | [Contributing](CONTRIBUTING.md) | Workflow, coding style, commits and documentation conventions |
 
 ## Project layout
 
 ```text
-assets/   data files (assets/data/*.cfg), textures, sprites, fonts
+assets/   game content: data files (assets/data/*.cfg), art, fonts and sounds
 docs/     project documentation
 src/      C++ sources, one module per subsystem
-tools/    helper scripts: derived art, sprite export, documentation check, release packaging
+tests/    scene files of the test scenarios (not part of a release)
+tools/    helper scripts: art pipelines, test runners, documentation check, release packaging
 ```
 
 ## Credits and licensing
