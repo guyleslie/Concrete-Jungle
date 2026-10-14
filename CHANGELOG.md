@@ -6,26 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-
-- Loading-screen artwork refreshed on 2026-10-14 (CJ-030): the user's wet night-city background and white CONCRETE / red graffiti JUNGLE wordmark with a crown replace the earlier art. The layout, live progress and startup logic are unchanged. The refreshed in-game composition awaits the user's visual review ([art record](docs/design/loading-background.md)).
-- Pedestrians have individual attention and reaction traits (CJ-038): distracted people notice vehicles later, headphones suppress rear warning, older looks walk and evade more slowly, and a small share briefly freeze. Actual evasive velocity changes follow the acceleration limit, including turning and avoidance. Profiles, mobility and limits come from `civilians.cfg` ([ADR-0013](docs/adr/0013-individual-pedestrian-attention.md)); the impact, balance and injury model is unchanged. Awaiting the user's playtest.
-- Known CJ-038 regression: people remain on crossings at the traffic's green longer (2.5 → 12.0 person-s in `foot`/`day`), despite zero traffic hits. The agreed retained-crossing criterion is not met; blocked-crossing/contact behaviour follows up under [CJ-031](docs/backlog.md#cj-031-pedestrian-blocking-and-contact-realism). CJ-038 remains awaiting playtest with this issue.
-
-### Fixed
-
-- Turning traffic could miss a person reached by its front corner or side because it checked a point along the nose path. Drivers now check people against the planned body poses and the current body, on road or sidewalk (CJ-038).
-
-### Added
-
-- CJ-038 crowd and pinned-trait scenes in `tests/person-evasion.cfg`: front/rear noticing, reaction and freeze timing, old-look mobility, persistent traits and actual speed/acceleration limits. `tools/run_cj038.py` retains evidence and runs the evasion fixture plus `foot`, `day` and `rampage`, with narrower suite/scenario selections ([measurements](docs/design/pedestrian-attention-results.md)).
-
 ## [0.7.0] - 2026-10-13
 
 The car radio (CJ-040): Asphalt Rock FM, 1980s American rock, plays live when the player gets into a car, with the DJ or a commercial after every song, and the music of passing cars is heard muffled through their bodies, quieter with distance and dropping in pitch as they go by. Vehicles hitting people follow published crash measurements, with throws shortened for play (CJ-035). Every data file is now required (CJ-034), and the code review's bugs are fixed (CJ-033). The radio and the vehicles hitting people await the user's playtest.
 
+Refreshed on 2026-10-14 with individual pedestrian attention and evasion (CJ-038) and the new loading-screen artwork (CJ-030). Pedestrian playtesting and visual review of the artwork remain pending; the known longer crossing occupancy is recorded under CJ-031.
+
 ### Fixed
 
+- Turning traffic could miss a person reached by its front corner or side because it checked a point along the nose path. Drivers now check people against the planned body poses and the current body, on road or sidewalk (CJ-038).
 - Every positional sound leaned to the right, the interface sounds too, and sounds on the player's left came from the right: the game still gave raylib 6.0 the pan values of raylib 5 (CJ-040).
 - Vehicles pushed people: the player was carried along at any speed and hurt frame after frame, bodies slid ahead of cars and were knocked on again, and a person lying on the road was shoved instead of driven over. Every contact between a vehicle and a person is now one impact ([ADR-0011](docs/adr/0011-vehicle-person-impact.md), CJ-035).
 - People at the front or a corner of a bus or a truck were missed by the contact step for a frame or two (CJ-035).
@@ -37,6 +26,9 @@ The car radio (CJ-040): Asphalt Rock FM, 1980s American rock, plays live when th
 
 ### Changed
 
+- Loading-screen artwork refreshed on 2026-10-14 (CJ-030): the user's wet night-city background and white CONCRETE / red graffiti JUNGLE wordmark with a crown replace the earlier art. The layout, live progress and startup logic are unchanged. The refreshed in-game composition awaits the user's visual review ([art record](docs/design/loading-background.md)).
+- Pedestrians have individual attention and reaction traits (CJ-038): distracted people notice vehicles later, headphones suppress rear warning, older looks walk and evade more slowly, and a small share briefly freeze. Actual evasive velocity changes follow the acceleration limit, including turning and avoidance. Profiles, mobility and limits come from `civilians.cfg` ([ADR-0013](docs/adr/0013-individual-pedestrian-attention.md)); the impact, balance and injury model is unchanged. Awaiting the user's playtest.
+- Known CJ-038 regression: people remain on crossings at the traffic's green longer (2.5 → 12.0 person-s in `foot`/`day`), despite zero traffic hits. The agreed retained-crossing criterion is not met; blocked-crossing/contact behaviour follows up under [CJ-031](docs/backlog.md#cj-031-pedestrian-blocking-and-contact-realism). CJ-038 remains awaiting playtest with this issue.
 - The car radio plays the DJ or a commercial after every song, airs each song as a 90 s part of it from a random point, fading in and out, and a game joins the broadcast at a random point (CJ-040 playtest, [ADR-0015](docs/adr/0015-radio-song-excerpts.md)).
 - The engine of the player's vehicle sounds 10 dB quieter, as heard from inside the cabin, so the car radio plays above it as in a real car (CJ-040 playtest).
 - Vehicles hitting people, by published measurements ([design](docs/design/impacts.md), CJ-035): a bump staggers a person, who steps back and aside; a harder hit knocks them down or throws them as far as real collisions do (Happer, Searle), by the vehicle's front, and hurts them as real collisions do (Tefft: about one in five hit at 50 km/h dies); momentum is conserved, so a scooter loses a fifth of its speed and a bus hardly any; bodies fly over a car that keeps on at about 80 km/h; vehicles drive over people lying on the road, who die. One model for the player and civilians, and for riders thrown off motorbikes; every value is in `assets/data/impacts.cfg`, and every vehicle class declares its front edge (`FRONT`).
@@ -50,6 +42,7 @@ The car radio (CJ-040): Asphalt Rock FM, 1980s American rock, plays live when th
 
 ### Added
 
+- CJ-038 crowd and pinned-trait scenes in `tests/person-evasion.cfg`: front/rear noticing, reaction and freeze timing, old-look mobility, persistent traits and actual speed/acceleration limits. `tools/run_cj038.py` retains evidence and runs the evasion fixture plus `foot`, `day` and `rampage`, with narrower suite/scenario selections ([measurements](docs/design/pedestrian-attention-results.md)).
 - Car radio ([design](docs/design/radio.md), CJ-040): the first station, Asphalt Rock FM, 1980s American rock with its DJ and commercials, broadcasts live; the radio tunes in when the player gets into a car and shows the station's name; Q or the mouse wheel changes the station or turns it off. A programme of songs and talk without repeats close together, every clip at the same loudness. Four in ten cars in traffic play the radio, some loud; their music is heard muffled through the car body, quieter with distance, from their side, dropping in pitch as they pass, and duller still from inside a car. Stations and clips are data (`assets/data/radio.cfg`, `tools/radio_gain.py`).
 - [ADR-0014](docs/adr/0014-live-radio-stations.md) Live radio stations, one decoder each.
 - The radio scenes (`--scenario radio`, CJ-040): the programme simulated over many hours, radio cars passing the player and the player's radio across clip changes, recorded and measured by `tools/run_cj040.py` ([testing](docs/testing.md#radio-scenes)). Test scenes on the empty test floor no longer show the city's lane markings.
