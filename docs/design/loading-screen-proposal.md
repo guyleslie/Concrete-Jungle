@@ -1,6 +1,6 @@
 # CJ-030: Startup loading screen proposal
 
-Design and implementation contract for a scalable startup screen, prepared on 2026-10-08, implemented after background approval and accepted by the user on 2026-10-09. The approved composition uses a fixed four-row status block and a static bar that retains confirmed work. The frozen baseline, automated results and acceptance are recorded in [CJ-030 loading measurements](../testing/cj030-loading.md). Startup ownership is documented in [Architecture](../architecture.md#start-up), rendering in [Rendering](rendering.md), and workflow in [Contributing](../../CONTRIBUTING.md).
+Design and implementation contract for a scalable startup screen, prepared on 2026-10-08, implemented after background approval and accepted by the user on 2026-10-09. The approved composition uses a fixed four-row status block and a static bar that retains confirmed work. The 2026-10-14 refresh substitutes the user's background and wordmark within this layout; its visual review is pending. The frozen baseline, automated results and original acceptance are recorded in [CJ-030 loading measurements](../testing/cj030-loading.md). Startup ownership is documented in [Architecture](../architecture.md#start-up), rendering in [Rendering](rendering.md), and workflow in [Contributing](../../CONTRIBUTING.md).
 
 ## Contents
 
@@ -26,13 +26,13 @@ Design and implementation contract for a scalable startup screen, prepared on 20
 | Decision | Specification |
 |---|---|
 | Atmosphere | Detailed, glossy night-time city viewed from above, with warm street lights and restrained neon |
-| Identity | Two-line ivory/amber CONCRETE / JUNGLE wordmark at the upper left |
+| Identity | White cracked-concrete CONCRETE, red graffiti JUNGLE and a red crown at the upper left (2026-10-14 artwork refresh) |
 | Progress | One continuous amber bar for the entire startup |
 | Active work | A prominent current task and a smaller detail/count line |
 | Completed work | Exactly one recent-completion line, replaced as each meaningful group finishes |
 | Expansion | New startup work uses the same fixed-size status block |
 | Interaction | Automatic handoff to the existing title screen; no extra dismissal key |
-| Implementation status | Implemented, measured and accepted by the user on 2026-10-09; CJ-030 closed |
+| Implementation status | Original startup implemented, measured and accepted on 2026-10-09; refreshed artwork awaits visual review |
 
 The approved status block has a fixed size as the number of startup groups grows. The complete category list belongs to internal startup reporting; the visible composition shows current work and one recent completion.
 
@@ -86,15 +86,15 @@ The [loading test interface and results](../testing/cj030-loading.md#loading-tes
 
 ## Approved visual reference
 
-![Final approved Concrete Jungle loading background](../images/cj030-loading-background.png)
+![User-supplied Concrete Jungle loading background](../images/cj030-loading-background.png)
 
-The user approved this text-free image as the final background on 2026-10-09. The [asset record](loading-background.md) preserves its native dimensions, checksum and provenance. The city is atmospheric artwork rather than an exact preview of the generated map. Its runtime copy preserves the approved bytes. The wordmark and live loading interface are separate layers, specified in the [art brief](loading-screen-art-brief.md).
+The user supplied this replacement background for the 2026-10-14 artwork refresh. The [asset record](loading-background.md) preserves its native dimensions, checksum and provenance. The city is atmospheric artwork rather than an exact preview of the generated map. Its runtime copy preserves the supplied bytes. The wordmark and live loading interface are separate layers, specified in the [art brief](loading-screen-art-brief.md). The original 2026-10-09 approval applies to the prior artwork and implemented layout, not to a review of this refreshed in-game composition.
 
 ## Composition and responsive layout
 
-Use a full-screen background with aspect-preserving cover cropping and a separately positioned wordmark. Keep the focal intersection toward the centre/right and quiet, dark space behind the upper-left wordmark. Apply a runtime lower gradient and a restrained vignette. There is no bordered status card.
+Use a full-screen background with aspect-preserving cover cropping and a separately positioned wordmark. Preserve the supplied intersection composition and verify the upper-left wordmark against the building detail behind it. Apply a runtime lower gradient and a restrained vignette. There is no bordered status card.
 
-Use a centred safe composition based on 1,920 × 1,080 px. Let s be the smaller of viewport width / 1920 and viewport height / 1080. The status area is 1728s px wide and max(152, 216s) px high, with 64s px bottom clearance. The logo aligns with its left edge, with 64s px top clearance, and fits within 640s × 360s px without distortion. These bounds accommodate the approved two-line wordmark.
+Use a centred safe composition based on 1,920 × 1,080 px. Let s be the smaller of viewport width / 1920 and viewport height / 1080. The status area is 1728s px wide and max(152, 216s) px high, with 64s px bottom clearance. The logo aligns with its left edge, with 64s px top clearance, and fits within 640s × 360s px without distortion. These bounds remain fixed for the refreshed wordmark.
 
 | Viewport | Status area x / y | Width / height | Bottom margin | Wordmark left / top |
 |---|---|---|---|---|
@@ -130,7 +130,7 @@ Reserve the percentage column from the measured width of “100%” plus 24s px 
 
 Treat these as starting tokens for art QA. Validate text contrast against the composed pixels, including the brightest street lights; target at least 4.5:1 for every status text row. The lower scrim may need near-opaque backing locally. Material texture belongs to the wordmark, while changing text remains plain and crisp.
 
-No text may be baked into the city background. Letterboxing, stretching, independent per-row scaling, scrolling labels and a new line for every loading group are excluded.
+The game title and loading information must remain separate from the city background; the supplied city artwork includes in-scene shop signs. Letterboxing, stretching, independent per-row scaling, scrolling labels and a new line for every loading group are excluded.
 
 ## Content and wording
 
@@ -286,19 +286,19 @@ Runtime layers:
 
 | Layer | Deliverable | Ownership |
 |---|---|---|
-| Background | Final approved text-free 1,672 × 941 px PNG | Loading presentation |
-| Wordmark | Transparent two-line ivory/amber PNG, bounded near 640 × 360 px at reference scale | Loading presentation |
+| Background | User-supplied 1,670 × 942 px PNG, preserved byte-for-byte | Loading presentation |
+| Wordmark | Transparent cutout of the supplied white/red wordmark and crown, bounded within 640 × 360 px at reference scale | Loading presentation |
 | Status text | Small loading-only Rajdhani font atlas (required since [ADR-0010](../adr/0010-no-fallback-content.md)) | Loading presentation |
 | Contrast | Runtime gradient/vignette | Drawn directly |
 | Progress/status | Runtime geometry and live text | Drawn directly |
 
-The runtime background is [assets/ui/loading-city.png](../../assets/ui/loading-city.png), a byte-identical copy of the approved source; the independent transparent wordmark is [assets/ui/loading-logo.png](../../assets/ui/loading-logo.png). [assets/data/loading.cfg](../../assets/data/loading.cfg) holds cosmetic paths, colours and display strings with validated built-in defaults. This file cannot create tasks, set dependency order or encode counts/percentages. Work registration and dependencies belong to their subsystem owners. [CREDITS](../../CREDITS.md#cj-030-loading-screen-background) records generated-art provenance and checksums.
+The runtime background is [assets/ui/loading-city.png](../../assets/ui/loading-city.png), a byte-identical copy of the supplied source; the independent transparent wordmark is [assets/ui/loading-logo.png](../../assets/ui/loading-logo.png). [assets/data/loading.cfg](../../assets/data/loading.cfg) holds cosmetic paths, colours and display strings with validated built-in defaults. This file cannot create tasks, set dependency order or encode counts/percentages. Work registration and dependencies belong to their subsystem owners. [CREDITS](../../CREDITS.md#cj-030-loading-screen-background) records the supplied artwork's provenance, wordmark transparency preparation and checksums.
 
 The existing Rajdhani font is already documented in [CREDITS](../../CREDITS.md). The loading-only font owner may use those source files early while leaving the normal game font loader intact; account for temporary duplicate atlases and release the loading atlas after its last transition draw. Future localization needs explicit glyph coverage rather than assuming the default atlas supports every language.
 
 PNG is required; this project's raylib build cannot load JPG. Use bilinear filtering and retain aspect ratios. The background/wordmark are loaded once; changing text and bar geometry do not require regenerating images.
 
-Target at most 16 MiB of additional loading-presentation GPU storage, including background, logo, font and mipmaps. The approved 1,672 × 941 px RGBA background costs about 6.0 MiB before mipmaps. Avoid additional full-screen render targets, live-world rendering, per-frame image processing or a bloom pass solely for the loading screen.
+Target at most 16 MiB of additional loading-presentation GPU storage, including background, logo, font and mipmaps. The supplied 1,670 × 942 px RGBA background costs about 6.0 MiB before mipmaps. Avoid additional full-screen render targets, live-world rendering, per-frame image processing or a bloom pass solely for the loading screen.
 
 Target presentation draw CPU time of at most 0.5 ms at 1,920 × 1,080 px on the matched baseline machine. Measure separately from waiting on VSync. The [measurement report](../testing/cj030-loading.md) records enqueue CPU, bootstrap time and resident GPU estimates; allocator-level transient CPU image memory remains uninstrumented.
 
@@ -306,7 +306,7 @@ Release loading-only textures/font after the transition; keep them available in 
 
 ## Acceptance criteria
 
-The [measurement record](../testing/cj030-loading.md#verification-checklist) records passing model, layout, real-startup, fallback, cleanup and deterministic-output checks. Draw CPU and GPU targets are met on the measured machine. The user accepted the result on 2026-10-09. Physical no-audio-device behavior and individually unlogged keyboard/close cases remain measurement limits.
+The original [measurement record](../testing/cj030-loading.md#verification-checklist) records passing model, layout, real-startup, fallback, cleanup and deterministic-output checks. Draw CPU and GPU targets were met on that measured build, and the user accepted the result on 2026-10-09. Physical no-audio-device behavior and individually unlogged keyboard/close cases remain measurement limits. Artwork replacements require fresh layout/resource checks and a visual review; the old acceptance does not establish those results for the refreshed assets.
 
 | ID | Test | Required result |
 |---|---|---|
@@ -337,7 +337,7 @@ The [measurement record](../testing/cj030-loading.md#verification-checklist) rec
 7. Run fixed-frame title/day/drive smoke captures and relevant existing checks under [Testing](../testing.md). Expand to traffic/recovery suites if state differences or changes to warmup/generation expose risk. Do not rerun unrelated long suites without such evidence.
 8. Review resolution/state contact sheets, then let the user watch and playtest actual startup and title handoff. Mark the backlog item complete only after measured verification and visual acceptance.
 
-Five alternating warm before/after pairs preserve the initialized digest/RNG and exact title pixels. Median full startup changes from 9,623.369 ms to 10,352.527 ms (7.58%); the matched initialization chain increases by 2.33%. Loading-owned GPU storage is 10.02 MiB. Atomic audio/decode/resize stalls are reported separately from short cooperative gaps. These machine-specific observations, their limits and the user's acceptance are in the [measurement record](../testing/cj030-loading.md).
+The original five alternating warm before/after pairs preserve the initialized digest/RNG and exact title pixels. Median full startup changes from 9,623.369 ms to 10,352.527 ms (7.58%); the matched initialization chain increases by 2.33%. That build's loading-owned GPU storage is 10.02 MiB. Atomic audio/decode/resize stalls are reported separately from short cooperative gaps. These machine-specific observations, their limits and the user's acceptance are in the [measurement record](../testing/cj030-loading.md).
 
 ## Delivery sequence
 
@@ -348,7 +348,7 @@ Five alternating warm before/after pairs preserve the initialized digest/RNG and
 5. **Verification:** build/run accounting and layout fixtures, matched startup comparisons, fallback/cancel/fail injection and deterministic title/day/drive captures. Record results before claiming targets passed.
 6. **User review and documentation:** implemented startup accepted by the user on 2026-10-09; runtime documents, credits and changelog updated; CJ-030 closed.
 
-The final background and visual/UX direction are approved, automated verification is recorded, and the user accepted the implemented startup on 2026-10-09. CJ-030 is complete.
+The original background and visual/UX direction were approved, automated verification is recorded, and the user accepted the implemented startup on 2026-10-09. That implementation is complete. The 2026-10-14 artwork replacement retains its layout and startup behavior; the refreshed composition awaits the user's visual review.
 
 ## References and open measurements
 

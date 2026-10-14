@@ -1,0 +1,7 @@
+Use case: background-extraction
+Asset type: transparent cutout of the provided Concrete Jungle game title logo.
+Input image 1: the exact edit target, not a style reference.
+Primary request: remove ONLY the vivid magenta/pink background from the supplied image and replace it with genuine transparent alpha. Remove magenta everywhere, including every enclosed letter counter, crown opening, gap between brush strokes, and small background hole. Preserve the complete foreground logo without redesigning or redrawing it.
+Text (verbatim): "CONCRETE JUNGLE".
+Invariants: preserve the exact existing white cracked-concrete block letters, their black outlines and black speckled/shadow details; preserve the red graffiti JUNGLE lettering, underline, paint drips and splatters; preserve the red crown over the upper right corner. Retain the original lettering shapes, texture, edge detail, colours, relative positions, proportions, angle and overall composition. Keep the full original 1774 by 887 canvas and original logo placement, with no cropping, stretching, recolouring or added elements. Clean magenta fringe from foreground edges while retaining the existing black and red edge details. Output a PNG with actual alpha transparency, including all holes, rather than a painted checkerboard or any solid background.
+Avoid: a newly generated logo, any new text, altered text, altered typography, extra elements, new shadows, a halo, checkerboard pixels, and any remaining magenta background.

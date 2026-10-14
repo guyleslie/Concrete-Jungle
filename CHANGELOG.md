@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Loading-screen artwork refreshed on 2026-10-14 (CJ-030): the user's wet night-city background and white CONCRETE / red graffiti JUNGLE wordmark with a crown replace the earlier art. The layout, live progress and startup logic are unchanged. The refreshed in-game composition awaits the user's visual review ([art record](docs/design/loading-background.md)).
 - Pedestrians have individual attention and reaction traits (CJ-038): distracted people notice vehicles later, headphones suppress rear warning, older looks walk and evade more slowly, and a small share briefly freeze. Actual evasive velocity changes follow the acceleration limit, including turning and avoidance. Profiles, mobility and limits come from `civilians.cfg` ([ADR-0013](docs/adr/0013-individual-pedestrian-attention.md)); the impact, balance and injury model is unchanged. Awaiting the user's playtest.
 - Known CJ-038 regression: people remain on crossings at the traffic's green longer (2.5 → 12.0 person-s in `foot`/`day`), despite zero traffic hits. The agreed retained-crossing criterion is not met; blocked-crossing/contact behaviour follows up under [CJ-031](docs/backlog.md#cj-031-pedestrian-blocking-and-contact-realism). CJ-038 remains awaiting playtest with this issue.
 

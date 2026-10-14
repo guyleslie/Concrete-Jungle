@@ -1,6 +1,6 @@
 # CJ-030 loading measurements
 
-This record separates the frozen startup baseline from verification of the [loading-screen implementation](../design/loading-screen-proposal.md). Baseline and implemented-build measurements were collected on 2026-10-09. Automated checks pass, and the user accepted the implemented result and requested closure on the same date. The limitations below distinguish measured behavior from untested hardware and individually unlogged physical input cases.
+This record separates the frozen startup baseline from verification of the [loading-screen implementation](../design/loading-screen-proposal.md). Baseline and implemented-build measurements were collected on 2026-10-09, and the user accepted that result and requested closure on the same date. A separate 2026-10-14 artwork refresh retains its layout and logic; the refreshed in-game composition awaits visual review. The limitations below distinguish measured behavior from untested hardware and individually unlogged physical input cases.
 
 ## Contents
 
@@ -12,6 +12,7 @@ This record separates the frozen startup baseline from verification of the [load
 - [Matched startup times](#matched-startup-times)
 - [Responsiveness and resource cost](#responsiveness-and-resource-cost)
 - [Closure and retained evidence](#closure-and-retained-evidence)
+- [Artwork refresh on 2026-10-14](#artwork-refresh-on-2026-10-14)
 
 ## Frozen baseline
 
@@ -184,4 +185,24 @@ The bar remains still during these calls and then reflects newly confirmed work.
 
 On 2026-10-09 the user accepted the result and requested cleanup and integration into `main`. The backlog item is Done. Disposable object files, the headless test executable, copied fallback content, the superseded layout output and scratch files were removed from `build/cj030/`. Keep the headless test source for regression checks. The ordinary fallback fixture can be recreated by copying runtime assets to an isolated working directory and omitting `assets/data/civilians.cfg`; never remove the production file to perform that check.
 
-The ignored local evidence retains the before/after executables and manifests, measurement logs, final layout captures, actual startup snapshots, stop/fallback logs and matched title/day/drive captures. The committed report preserves the measured results even when local build output is unavailable. The approved runtime images, configuration and documentation source remain part of the normal project.
+The ignored local evidence retains the before/after executables and manifests, measurement logs, final layout captures, actual startup snapshots, stop/fallback logs and matched title/day/drive captures. The committed report preserves the measured results even when local build output is unavailable. The current runtime images, configuration and documentation source remain part of the normal project; the originally accepted images remain in Git history.
+
+## Artwork refresh on 2026-10-14
+
+The user supplied a replacement wet night-city background and a white cracked-concrete CONCRETE / red graffiti JUNGLE wordmark with a crown. The [background record](../design/loading-background.md) documents the 1,670 × 942 px source, stored byte-identically in the canonical and runtime files. The [wordmark record](../design/loading-screen-art-brief.md#wordmark) retains the original magenta-background source and the first transparent cutout, prepared by built-in ImageGen on 2026-10-13 and integrated on 2026-10-14. The [exact edit prompt](../design/loading-wordmark-prompt.txt) requests background extraction without redesign. The supplied artwork's original creation tool is not recorded. No C++ source or loading configuration changed.
+
+| Check | Before | After |
+|---|---:|---:|
+| `--loading-test` exit code | 0 | 0 |
+| Presentation captures / errors | 20 / 0 | 20 / 0 |
+| Background texture | 1,672 × 941 px | 1,670 × 942 px |
+| Wordmark GPU upload | 1,280 × 720 px | 1,280 × 640 px |
+| Loading-owned GPU storage | 10,503,608 bytes (10.017 MiB) | 10,093,372 bytes (9.626 MiB) |
+
+Both resource totals are below the 16 MiB target. The wordmark's packaged 1,774 × 887 px RGBA source is resized only on upload; its 2:1 aspect ratio is retained. Before/after evidence is `build/shots/loading-refresh/before/` and `after/`, with `test.log`, `cases.jsonl` and 20 PNGs per fixture. The ignored before directory retains the original runtime images; the refreshed images are the shipping assets.
+
+The existing fixture covers all eight recorded resolution requests, fixed 5/25/100-group plans, long text, unknown work, readiness and stopped/error states. For 3,840 × 2,160 and 3,440 × 1,440 px requests Windows clamps the physical window; the fixture uses an exact-size off-screen capture through the same drawing implementation. These are render/crop checks, not evidence of a physical 4K or ultrawide monitor.
+
+The actual startup capture in `after/startup.log` and `startup.tsv` reaches Ready/100%, exports 16 startup PNGs and produces `after/title.png`, then closes cleanly. It records digest `dfbc9a7dc91e533d` and RNG `cfb7245e`, with 91 vehicles, 300 pedestrians, 338 buildings and 4,266 objects. Presentation enqueue CPU is 0.119 ms mean and 0.320 ms maximum in that run. The 24,571.967 ms total includes 17,723.318 ms of PNG export, so it is not a matched normal-startup timing comparison. The original model and simulation suites were not rerun for this asset-only replacement.
+
+The source and cutout were visually compared for lettering, crown and composition. The prepared foreground is not claimed to be pixel-identical to the source. A few enclosed background holes retain alpha values of 1–4/255; they and any magenta fringe are not visible in the inspected composed capture. The second extraction attempt was rejected and is not shipped. These checks do not replace the user's visual review of the refreshed in-game composition, which remains pending.

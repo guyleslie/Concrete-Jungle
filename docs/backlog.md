@@ -34,6 +34,8 @@ Recommended order, updated after the CJ-023 specification was agreed on 2026-10-
 
 CJ-010 (pedestrians), CJ-013 (full screen) and CJ-033 (code review fixes) await user playtest acceptance.
 
+The [CJ-030 artwork refresh](#cj-030-startup-loading-screen) of 2026-10-14 awaits the user's visual review; the original startup implementation remains accepted.
+
 Before each item, search for open-source code, assets and references that would help (the licence must allow redistribution; see [Adding content](guides/adding-content.md#art-and-licence-requirements)). Examples worth evaluating: Box2D or Jolt Physics as a reference for CJ-002, recorded CC0 sound libraries for CJ-012, OpenGameArt and Kenney-style texture packs of the right quality for CJ-014.
 
 ## Summary
@@ -787,15 +789,17 @@ The compact stride of 2026-10-08 is dropped. The stride is now measured on the f
 ### CJ-030 Startup loading screen
 
 - **Priority:** Medium
-- **Status:** Done on 2026-10-09; implemented, reviewed and accepted by the user
+- **Status:** Original implementation Done on 2026-10-09; artwork refreshed on 2026-10-14, awaiting the user's visual review
 
 **Problem.** Startup displayed three static messages on a plain dark background, without overall progress or current-content detail.
 
-**Accepted result.** The final night-city background, upper-left ivory/amber wordmark and one overall amber bar accompany a fixed-size four-row status block: current task, useful detail with a qualified count, overall percentage and one recent completion. The static bar retains confirmed fill through stage changes. Subsystems publish real work into a frozen weighted plan; metadata and optional successful-startup timing history adapt budgets, while actual local plans supply counts and actual completion controls screen duration. See the [loading screen specification](design/loading-screen-proposal.md) and [art brief](design/loading-screen-art-brief.md).
+**Accepted result (2026-10-09).** The original night-city background, upper-left ivory/amber wordmark and one overall amber bar accompany a fixed-size four-row status block: current task, useful detail with a qualified count, overall percentage and one recent completion. The static bar retains confirmed fill through stage changes. Subsystems publish real work into a frozen weighted plan; metadata and optional successful-startup timing history adapt budgets, while actual local plans supply counts and actual completion controls screen duration. See the [loading screen specification](design/loading-screen-proposal.md) and [art brief](design/loading-screen-art-brief.md).
 
-**Safety and compatibility.** Original initialization order and RNG are preserved. Failure or cancellation prevents title handoff and unwinds partial resources. Held Enter/Space rearm independently on release. The approved [background source](images/cj030-loading-background.png) and runtime copy have identical bytes; the [asset record](design/loading-background.md) preserves its dimensions, checksum and provenance.
+**Safety and compatibility.** Original initialization order and RNG are preserved. Failure or cancellation prevents title handoff and unwinds partial resources. Held Enter/Space rearm independently on release. The current [background source](images/cj030-loading-background.png) and runtime copy have identical bytes; the [asset record](design/loading-background.md) preserves its dimensions, checksum and provenance.
 
 **Verification and acceptance.** [Loading measurements](testing/cj030-loading.md) record 49 passing model cases, 20 presentation captures, six partial stop checks, fallback runs and five alternating startup pairs with exact initialized state and title pixels. Day/drive captures also match. On 2026-10-09 the user accepted the implemented result and requested closure, cleanup and integration into `main`. Device-specific unmeasured cases remain documented limitations, rather than pending user acceptance.
+
+**Artwork refresh (2026-10-14).** Replaced the background with the user's 1,670 × 942 px wet night-city image and the wordmark with the supplied white cracked-concrete CONCRETE / red graffiti JUNGLE and crown. The supplied background bytes and original magenta wordmark source are retained; built-in ImageGen only prepared the wordmark's transparency. No C++ code, layout or loading configuration changed. Before and after presentation fixtures each pass with 20 captures and zero errors; loading GPU storage falls from 10.017 to 9.626 MiB. The [refresh measurements](testing/cj030-loading.md#artwork-refresh-on-2026-10-14) separate this verification from the original acceptance. The refreshed in-game composition awaits the user's visual review.
 
 ### CJ-016 Road rage and traffic incidents
 

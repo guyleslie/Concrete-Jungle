@@ -69,6 +69,8 @@ Screenshot paths must be **relative** to the working directory: raylib prefixes 
 
 [CJ-030 loading checks](testing/cj030-loading.md) cover the frozen progress model, eight presentation resolutions, startup timing and unchanged world state. Loading frames never count toward `--frames`; `--shot` bypasses the optional title overlay fade.
 
+The [2026-10-14 artwork refresh](testing/cj030-loading.md#artwork-refresh-on-2026-10-14) reruns the presentation fixtures before and after replacing the background and wordmark, with asset hashes, crop/capture limits and loading-resource measurements. Its in-game visual review remains pending.
+
 | Option | Meaning |
 |---|---|
 | `--loading-test <directory>` | Runs visible snapshot fixtures and saves captures/evidence, then exits without initializing the world |
